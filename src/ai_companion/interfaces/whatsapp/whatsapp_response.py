@@ -31,16 +31,22 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
 @whatsapp_router.api_route("/whatsapp_response", methods=["GET", "POST"])
 async def whatsapp_handler(request: Request) -> Response:
+
+    print("whatsapp_handler")
     """Handles incoming messages and status updates from the WhatsApp Cloud API."""
 
     if request.method == "GET":
         params = request.query_params
+        print("params", params)
         if params.get("hub.verify_token") == os.getenv("WHATSAPP_VERIFY_TOKEN"):
+            print("Verification token match")
             return Response(content=params.get("hub.challenge"), status_code=200)
+        print("Verification token mismatch")
         return Response(content="Verification token mismatch", status_code=403)
 
     try:
         data = await request.json()
+        print("data", data)
         change_value = data["entry"][0]["changes"][0]["value"]
         if "messages" in change_value:
             message = change_value["messages"][0]

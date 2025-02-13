@@ -29,6 +29,9 @@ ENV VIRTUAL_ENV=/app/.venv \
 # Install the package in editable mode
 RUN uv pip install -e .
 
+# Copy .env file
+COPY .env .env
+
 # Define volumes
 VOLUME ["/app/data"]
 

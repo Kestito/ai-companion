@@ -52,6 +52,37 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
     )
     return {"messages": AIMessage(content=response)}
 
+async def rag_node(state: AICompanionState, config: RunnableConfig):
+    current_activity = ScheduleContextGenerator.get_current_activity()
+    memory_context = state.get("memory_context", "")
+
+    chain = get_character_response_chain(state.get("summary", ""))
+
+    response = await chain.ainvoke(
+        {
+            "messages": state["messages"],
+            "current_activity": current_activity,
+            "memory_context": memory_context,
+        },
+        config,
+    )
+    return {"messages": AIMessage(content=response)}
+
+async def web_search_node(state: AICompanionState, config: RunnableConfig):
+    current_activity = ScheduleContextGenerator.get_current_activity()
+    memory_context = state.get("memory_context", "")
+
+    chain = get_character_response_chain(state.get("summary", ""))
+
+    response = await chain.ainvoke(
+        {
+            "messages": state["messages"],
+            "current_activity": current_activity,
+            "memory_context": memory_context,
+        },
+        config,
+    )
+    return {"messages": AIMessage(content=response)}
 
 async def image_node(state: AICompanionState, config: RunnableConfig):
     current_activity = ScheduleContextGenerator.get_current_activity()
