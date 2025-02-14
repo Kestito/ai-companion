@@ -98,7 +98,7 @@ async def image_node(state: AICompanionState, config: RunnableConfig):
 
     # Inject the image prompt information as an AI message
     scenario_message = HumanMessage(
-        content=f"<image attached by Ava generated from prompt: {scenario.image_prompt}>"
+        content=f"<image attached by Evelina generated from prompt: {scenario.image_prompt}>"
     )
     updated_messages = state["messages"] + [scenario_message]
 
@@ -140,14 +140,14 @@ async def summarize_conversation_node(state: AICompanionState):
 
     if summary:
         summary_message = (
-            f"This is summary of the conversation to date between Ava and the user: {summary}\n\n"
+            f"This is summary of the conversation to date between Evelina and the user: {summary}\n\n"
             "Extend the summary by taking into account the new messages above:"
         )
     else:
         summary_message = (
-            "Create a summary of the conversation above between Ava and the user. "
+            "Create a summary of the conversation above between Evelina and the user. "
             "The summary must be a short description of the conversation so far, "
-            "but that captures all the relevant information shared between Ava and the user:"
+            "but that captures all the relevant information shared between Evelina and the user:"
         )
 
     messages = state["messages"] + [HumanMessage(content=summary_message)]

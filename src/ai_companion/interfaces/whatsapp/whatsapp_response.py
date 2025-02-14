@@ -14,6 +14,11 @@ from ai_companion.modules.speech import SpeechToText, TextToSpeech
 
 from ai_companion.settings import settings
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Global module instances
@@ -28,36 +33,46 @@ whatsapp_router = APIRouter()
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
+# Add debug logging for environment variables
+logger.debug(f"WHATSAPP_TOKEN: {'Set' if WHATSAPP_TOKEN else 'Not Set'}")
+logger.debug(f"WHATSAPP_PHONE_NUMBER_ID: {'Set' if WHATSAPP_PHONE_NUMBER_ID else 'Not Set'}")
 
 @whatsapp_router.api_route("/whatsapp_response", methods=["GET", "POST"])
 async def whatsapp_handler(request: Request) -> Response:
-
-    print("whatsapp_handler")
-    """Handles incoming messages and status updates from the WhatsApp Cloud API."""
+    logger.debug("Received WhatsApp request")
+    logger.debug(f"Method: {request.method}")
 
     if request.method == "GET":
         params = request.query_params
-        print("params", params)
+        logger.debug(f"Query params: {params}")
         if params.get("hub.verify_token") == os.getenv("WHATSAPP_VERIFY_TOKEN"):
-            print("Verification token match")
+            logger.info("Verification token matched successfully")
             return Response(content=params.get("hub.challenge"), status_code=200)
-        print("Verification token mismatch")
+        logger.warning("Verification token mismatch")
         return Response(content="Verification token mismatch", status_code=403)
 
     try:
         data = await request.json()
-        print("data", data)
+        logger.debug(f"Received webhook data: {data}")
+        
         change_value = data["entry"][0]["changes"][0]["value"]
+        logger.debug(f"Change value: {change_value}")
+
         if "messages" in change_value:
             message = change_value["messages"][0]
             from_number = message["from"]
             session_id = from_number
+            logger.info(f"Processing message from {from_number}")
+            logger.debug(f"Message content: {message}")
 
             # Get user message and handle different message types
             content = ""
             if message["type"] == "audio":
+                logger.info("Processing audio message")
                 content = await process_audio_message(message)
+                logger.debug(f"Transcribed content: {content}")
             elif message["type"] == "image":
+                logger.info("Processing image message")
                 # Get image caption if any
                 content = message.get("image", {}).get("caption", "")
                 # Download and analyze image
@@ -72,6 +87,7 @@ async def whatsapp_handler(request: Request) -> Response:
                     logger.warning(f"Failed to analyze image: {e}")
             else:
                 content = message["text"]["body"]
+                logger.info(f"Received text message: {content}")
 
             # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(
@@ -124,7 +140,7 @@ async def whatsapp_handler(request: Request) -> Response:
 
 
 async def download_media(media_id: str) -> bytes:
-    """Download media from WhatsApp."""
+    logger.debug(f"Downloading media with ID: {media_id}")
     media_metadata_url = f"https://graph.facebook.com/v21.0/{media_id}"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
 
@@ -140,7 +156,7 @@ async def download_media(media_id: str) -> bytes:
 
 
 async def process_audio_message(message: Dict) -> str:
-    """Download and transcribe audio message."""
+    logger.debug(f"Processing audio message: {message}")
     audio_id = message["audio"]["id"]
     media_metadata_url = f"https://graph.facebook.com/v21.0/{audio_id}"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
@@ -170,7 +186,8 @@ async def send_response(
     message_type: str = "text",
     media_content: bytes = None,
 ) -> bool:
-    """Send response to user via WhatsApp API."""
+    logger.debug(f"Sending {message_type} response to {from_number}")
+    logger.debug(f"Response text: {response_text}")
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json",

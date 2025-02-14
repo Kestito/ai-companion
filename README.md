@@ -1,12 +1,16 @@
 <p align="center">
         <img alt="logo" src="img/project_overview_diagram.gif" width=600 />
-    <h1 align="center">📱 Ava 📱</h1>
+    <h1 align="center">📱 Evelina 📱</h1>
     <h3 align="center">Turning the Turing Test into a Whatsapp Agent</h3>
 </p>
 
 <p align="center">
     <img alt="logo" src="img/whatsapp_logo.png" width=100 />
 </p>
+
+startuoti studio - langgraph dev 
+startuoti whatsapp webhook endpoint - uvicorn - src.ai_companion.interfaces.whatsapp.webhook_endpoint:app --reload --log-level debug --port 8080 
+startuoti - docker run -p 8000:8000 --env-file .env evelina-chainlit
 
 ## Table of Contents
 
@@ -16,11 +20,11 @@
 - [Course Outline](#course-outline)
   - [🛠️ Lesson 0: Before we begin](#️-lesson-0-before-we-begin)
   - [🏗️ Lesson 1: Project overview](#️-lesson-1-project-overview)
-  - [🕸️ Lesson 2: Dissecting Ava's brain](#️-lesson-2-dissecting-avas-brain)
-  - [🧠 Lesson 3: Unlocking Ava's memories](#-lesson-3-unlocking-avas-memories)
-  - [🗣️ Lesson 4: Giving Ava a Voice](#️-lesson-4-giving-ava-a-voice)
-  - [👀 Lesson 5: Ava learns to see](#-lesson-5-ava-learns-to-see)
-  - [📱 Lesson 6: Ava installs Whatsapp](#-lesson-6-ava-installs-whatsapp)
+  - [🕸️ Lesson 2: Dissecting Evelina's brain](#️-lesson-2-dissecting-evelinas-brain)
+  - [🧠 Lesson 3: Unlocking Evelina's memories](#-lesson-3-unlocking-evelinas-memories)
+  - [🗣️ Lesson 4: Giving Evelina a Voice](#️-lesson-4-giving-evelina-a-voice)
+  - [👀 Lesson 5: Evelina learns to see](#-lesson-5-evelina-learns-to-see)
+  - [📱 Lesson 6: Evelina installs Whatsapp](#-lesson-6-evelina-installs-whatsapp)
 - [Contributors](#contributors)
 - [License](#license)
 
@@ -32,11 +36,11 @@
 
 What happens when [two ML Engineers](#contributors) with a love for sci-fi movies team up? 🤔
 
-You get **Ava**, a Whatsapp agent that can engage with users in a "realistic" way, inspired by the great film [Ex Machina](https://www.imdb.com/es-es/title/tt0470752/). Ok, you won't find a fully sentient robot here, but you **will** have some pretty interesting Whatsapp conversations.
+You get **Evelina**, a Whatsapp agent that can engage with users in a "realistic" way, inspired by the great film [Ex Machina](https://www.imdb.com/es-es/title/tt0470752/). Ok, you won't find a fully sentient robot here, but you **will** have some pretty interesting Whatsapp conversations.
 
 >You can think of it as a modern reinterpretation of the Turing Test 🤣
 
-By the end of this course, you'll have built your own Ava too, capable of:
+By the end of this course, you'll have built your own Evelina too, capable of:
 
 
 * Receiving and sending Whatsapp messages 📲
@@ -77,13 +81,13 @@ Excited? Let's get started!
   </tr>
   <tr>
     <td><img src="img/together_logo.png" width="100" alt="Together AI Logo"/></td>
-    <td>Behind Ava's image generation process</td>
+    <td>Behind Evelina's image generation process</td>
   </tr>
 </table>
 
 ## Course Outline
 
-This course is divided into 6 lessons. Each lesson is a step forward in building Ava, and it has a written and video version. 
+This course is divided into 6 lessons. Each lesson is a step forward in building Evelina, and it has a written and video version. 
 
 These two versions are complementaty, so we recommend you to go through both, as it will improve your learning experience. Don't forget to check the [Before we start](#before-we-start) section to get everything ready for the course.
 
@@ -95,7 +99,7 @@ This project uses a lot of services and tools, so we need to get everything read
 
 ---
 
-### [🏗️ Lesson 1: Project overview](https://theneuralmaze.substack.com/p/meet-ava-the-whatsapp-agent)
+### [🏗️ Lesson 1: Project overview](https://theneuralmaze.substack.com/p/meet-evelina-the-whatsapp-agent)
 
 Date: **2025-02-05**
 
@@ -105,7 +109,7 @@ Date: **2025-02-05**
 
 The first lesson is about getting to know the project and its general structure. 
 
-> 🔗 Article ✨ [Meet Ava - The WhatsApp Agent](https://theneuralmaze.substack.com/p/meet-ava-the-whatsapp-agent)
+> 🔗 Article ✨ [Meet Evelina - The WhatsApp Agent](https://theneuralmaze.substack.com/p/meet-evelina-the-whatsapp-agent)
 
 <div align="center">
   <a href="https://youtu.be/u5y06cFK2WA?si=RCx__sJNtr2DYf0U">
@@ -115,7 +119,7 @@ The first lesson is about getting to know the project and its general structure.
 
 ---
 
-### [🕸️ Lesson 2: Dissecting Ava's brain](https://theneuralmaze.substack.com/p/dissecting-avas-brain)
+### [🕸️ Lesson 2: Dissecting Evelina's brain](https://theneuralmaze.substack.com/p/dissecting-evelinas-brain)
 
 Date: **2025-02-12**
 
@@ -123,9 +127,9 @@ Date: **2025-02-12**
         <img alt="lesson2" src="img/lesson2.png" width=400 />
 </p>
 
-Lesson 2 is about LangGraph. Simple as that. You'll learn about graphs, state, nodes and edges and understand how Ava's "brain" actually works.
+Lesson 2 is about LangGraph. Simple as that. You'll learn about graphs, state, nodes and edges and understand how Evelina's "brain" actually works.
 
-> 🔗 Article ✨ [Dissecting Ava's brain](https://theneuralmaze.substack.com/p/dissecting-avas-brain)
+> 🔗 Article ✨ [Dissecting Evelina's brain](https://theneuralmaze.substack.com/p/dissecting-evelinas-brain)
 
 <div align="center">
   <a href="https://youtu.be/nTsLL3htkCU?si=aSmSkpL-U3rzw9Za">
@@ -135,7 +139,7 @@ Lesson 2 is about LangGraph. Simple as that. You'll learn about graphs, state, n
 
 ---
 
-### 🧠 Lesson 3: Unlocking Ava's memories
+### 🧠 Lesson 3: Unlocking Evelina's memories
         
 Date: **2025-02-19**
 
@@ -143,7 +147,7 @@ Date: **2025-02-19**
 
 ---
 
-### 🗣️ Lesson 4: Giving Ava a Voice
+### 🗣️ Lesson 4: Giving Evelina a Voice
 
 Date: **2025-02-26**
 
@@ -151,7 +155,7 @@ Date: **2025-02-26**
 
 ---
 
-### 👀 Lesson 5: Ava learns to see
+### 👀 Lesson 5: Evelina learns to see
 
 Date: **2025-03-05**
 
@@ -159,7 +163,7 @@ Date: **2025-03-05**
 
 ---
 
-### 📱 Lesson 6: Ava installs Whatsapp
+### 📱 Lesson 6: Evelina installs Whatsapp
 
 Date: **2025-03-12**
 
