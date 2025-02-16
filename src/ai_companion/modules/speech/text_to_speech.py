@@ -9,9 +9,6 @@ from ai_companion.settings import settings
 class TextToSpeech:
     """A class to handle text-to-speech conversion using ElevenLabs."""
 
-    # Required environment variables
-    REQUIRED_ENV_VARS = ["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]
-
     def __init__(self):
         """Initialize the TextToSpeech class and validate environment variables."""
         self._validate_env_vars()
@@ -19,11 +16,13 @@ class TextToSpeech:
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
-        missing_vars = [var for var in self.REQUIRED_ENV_VARS if not os.getenv(var)]
-        if missing_vars:
-            raise ValueError(
-                f"Missing required environment variables: {', '.join(missing_vars)}"
-            )
+        try:
+            if not settings.ELEVENLABS_API_KEY:
+                raise ValueError("Missing required setting: ELEVENLABS_API_KEY")
+            if not settings.ELEVENLABS_VOICE_ID:
+                raise ValueError("Missing required setting: ELEVENLABS_VOICE_ID")
+        except AttributeError as e:
+            raise ValueError(f"Missing required setting: {str(e)}")
 
     @property
     def client(self) -> ElevenLabs:

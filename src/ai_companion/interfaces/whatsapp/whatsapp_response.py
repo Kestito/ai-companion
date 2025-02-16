@@ -29,13 +29,15 @@ image_to_text = ImageToText()
 # Router for WhatsApp respo
 whatsapp_router = APIRouter()
 
-# WhatsApp API credentials
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+# WhatsApp API credentials from settings
+WHATSAPP_TOKEN = "EAAOp6lp8Xt4BO2BVhmHXMuAvwI1gXhi53y9OUDJs412MSnKtAo5FtVhyMqqMrU2y9ZBeZCtN9zSFhJ1WHN65wCX2jUcN3aBTpk4bVS2dAHjY5EJKxkWXGaMIuvTkZBJB4FKwpidRcy61d9GCOni3ZB8mXP6qr9HXx7poi75Wc00KbY2KfdbY2uIzoWIUXsVZBCgZDZD"
+WHATSAPP_PHONE_NUMBER_ID = "566612569868882"
+WHATSAPP_VERIFY_TOKEN = "xxx"
 
 # Add debug logging for environment variables
 logger.debug(f"WHATSAPP_TOKEN: {'Set' if WHATSAPP_TOKEN else 'Not Set'}")
 logger.debug(f"WHATSAPP_PHONE_NUMBER_ID: {'Set' if WHATSAPP_PHONE_NUMBER_ID else 'Not Set'}")
+logger.debug(f"WHATSAPP_VERIFY_TOKEN: {'Set' if WHATSAPP_VERIFY_TOKEN else 'Not Set'}")
 
 @whatsapp_router.api_route("/whatsapp_response", methods=["GET", "POST"])
 async def whatsapp_handler(request: Request) -> Response:
@@ -45,7 +47,7 @@ async def whatsapp_handler(request: Request) -> Response:
     if request.method == "GET":
         params = request.query_params
         logger.debug(f"Query params: {params}")
-        if params.get("hub.verify_token") == os.getenv("WHATSAPP_VERIFY_TOKEN"):
+        if params.get("hub.verify_token") == WHATSAPP_VERIFY_TOKEN:
             logger.info("Verification token matched successfully")
             return Response(content=params.get("hub.challenge"), status_code=200)
         logger.warning("Verification token mismatch")
@@ -93,19 +95,29 @@ async def whatsapp_handler(request: Request) -> Response:
             async with AsyncSqliteSaver.from_conn_string(
                 settings.SHORT_TERM_MEMORY_DB_PATH
             ) as short_term_memory:
-                graph = graph_builder.compile(checkpointer=short_term_memory)
-                await graph.ainvoke(
-                    {"messages": [HumanMessage(content=content)]},
-                    {"configurable": {"thread_id": session_id}},
-                )
+                logger.debug("Starting graph processing")
+                try:
+                    graph = graph_builder.compile(checkpointer=short_term_memory)
+                    logger.debug("Graph compiled successfully")
+                    
+                    await graph.ainvoke(
+                        {"messages": [HumanMessage(content=content)]},
+                        {"configurable": {"thread_id": session_id}},
+                    )
+                    logger.debug("Graph invocation completed")
 
-                # Get the workflow type and response from the state
-                output_state = await graph.aget_state(
-                    config={"configurable": {"thread_id": session_id}}
-                )
+                    # Get the workflow type and response from the state
+                    output_state = await graph.aget_state(
+                        config={"configurable": {"thread_id": session_id}}
+                    )
+                    logger.debug(f"Retrieved state: {output_state}")
+                except Exception as e:
+                    logger.error(f"Error during graph processing: {e}", exc_info=True)
+                    return Response(content="Error processing message", status_code=500)
 
             workflow = output_state.values.get("workflow", "conversation")
             response_message = output_state.values["messages"][-1].content
+            logger.debug(f"Workflow: {workflow}, Response: {response_message}")
 
             # Handle different response types based on workflow
             if workflow == "audio":
@@ -141,7 +153,7 @@ async def whatsapp_handler(request: Request) -> Response:
 
 async def download_media(media_id: str) -> bytes:
     logger.debug(f"Downloading media with ID: {media_id}")
-    media_metadata_url = f"https://graph.facebook.com/v21.0/{media_id}"
+    media_metadata_url = f"https://graph.facebook.com/v22.0/{media_id}"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
 
     async with httpx.AsyncClient() as client:
@@ -158,7 +170,7 @@ async def download_media(media_id: str) -> bytes:
 async def process_audio_message(message: Dict) -> str:
     logger.debug(f"Processing audio message: {message}")
     audio_id = message["audio"]["id"]
-    media_metadata_url = f"https://graph.facebook.com/v21.0/{audio_id}"
+    media_metadata_url = f"https://graph.facebook.com/v22.0/{audio_id}"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
 
     async with httpx.AsyncClient() as client:
@@ -225,7 +237,7 @@ async def send_response(
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"https://graph.facebook.com/v21.0/{WHATSAPP_PHONE_NUMBER_ID}/messages",
+            f"https://graph.facebook.com/v22.0/{WHATSAPP_PHONE_NUMBER_ID}/messages",
             headers=headers,
             json=json_data,
         )
@@ -241,7 +253,7 @@ async def upload_media(media_content: BytesIO, mime_type: str) -> str:
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"https://graph.facebook.com/v21.0/{WHATSAPP_PHONE_NUMBER_ID}/media",
+            f"https://graph.facebook.com/v22.0/{WHATSAPP_PHONE_NUMBER_ID}/media",
             headers=headers,
             files=files,
             data=data,

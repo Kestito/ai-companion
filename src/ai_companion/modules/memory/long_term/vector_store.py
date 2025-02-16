@@ -6,7 +6,7 @@ from datetime import datetime
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from sentence_transformers import SentenceTransformer
+from openai import AzureOpenAI
 
 from ai_companion.settings import settings
 
@@ -32,10 +32,10 @@ class Memory:
 class VectorStore:
     """A class to handle vector storage operations using Qdrant."""
 
-    REQUIRED_ENV_VARS = ["QDRANT_URL", "QDRANT_API_KEY"]
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+    REQUIRED_ENV_VARS = ["QDRANT_URL", "QDRANT_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_EMBEDDING_DEPLOYMENT"]
+    EMBEDDING_MODEL = "text-embedding-3-small"
     COLLECTION_NAME = "long_term_memory"
-    SIMILARITY_THRESHOLD = 0.9  # Threshold for considering memories as similar
+    SIMILARITY_THRESHOLD = 0.9
 
     _instance: Optional["VectorStore"] = None
     _initialized: bool = False
@@ -48,9 +48,13 @@ class VectorStore:
     def __init__(self) -> None:
         if not self._initialized:
             self._validate_env_vars()
-            self.model = SentenceTransformer(self.EMBEDDING_MODEL)
             self.client = QdrantClient(
                 url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY
+            )
+            self.azure_client = AzureOpenAI(
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                api_version="2024-02-15-preview",
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
             )
             self._initialized = True
 
@@ -69,7 +73,7 @@ class VectorStore:
 
     def _create_collection(self) -> None:
         """Create a new collection for storing memories."""
-        sample_embedding = self.model.encode("sample text")
+        sample_embedding = self._get_embedding("sample text")
         self.client.create_collection(
             collection_name=self.COLLECTION_NAME,
             vectors_config=VectorParams(
@@ -77,6 +81,14 @@ class VectorStore:
                 distance=Distance.COSINE,
             ),
         )
+
+    def _get_embedding(self, text: str) -> List[float]:
+        """Get embedding using Azure OpenAI."""
+        response = self.azure_client.embeddings.create(
+            model=os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
+            input=text
+        )
+        return response.data[0].embedding
 
     def find_similar_memory(self, text: str) -> Optional[Memory]:
         """Find if a similar memory already exists.
@@ -102,15 +114,14 @@ class VectorStore:
         if not self._collection_exists():
             self._create_collection()
 
-        # Check if similar memory exists
         similar_memory = self.find_similar_memory(text)
         if similar_memory and similar_memory.id:
-            metadata["id"] = similar_memory.id  # Keep same ID for update
+            metadata["id"] = similar_memory.id
 
-        embedding = self.model.encode(text)
+        embedding = self._get_embedding(text)
         point = PointStruct(
             id=metadata.get("id", hash(text)),
-            vector=embedding.tolist(),
+            vector=embedding,
             payload={
                 "text": text,
                 **metadata,
@@ -135,10 +146,10 @@ class VectorStore:
         if not self._collection_exists():
             return []
 
-        query_embedding = self.model.encode(query)
+        query_embedding = self._get_embedding(query)
         results = self.client.search(
             collection_name=self.COLLECTION_NAME,
-            query_vector=query_embedding.tolist(),
+            query_vector=query_embedding,
             limit=k,
         )
 

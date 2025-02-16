@@ -9,7 +9,7 @@
 </p>
 
 startuoti studio - langgraph dev 
-startuoti whatsapp webhook endpoint - uvicorn - src.ai_companion.interfaces.whatsapp.webhook_endpoint:app --reload --log-level debug --port 8080 
+startuoti whatsapp webhook endpoint - uvicorn src.ai_companion.interfaces.whatsapp.webhook_endpoint:app --reload --log-level debug --port 8080 
 startuoti - docker run -p 8000:8000 --env-file .env evelina-chainlit
 
 ## Table of Contents

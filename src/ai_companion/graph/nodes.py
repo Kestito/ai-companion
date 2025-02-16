@@ -1,5 +1,6 @@
 import os
 from uuid import uuid4
+import logging
 
 from langchain_core.messages import HumanMessage, RemoveMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -18,13 +19,21 @@ from ai_companion.modules.schedules.context_generation import ScheduleContextGen
 from ai_companion.settings import settings
 from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager
 
+logger = logging.getLogger(__name__)
+
 
 async def router_node(state: AICompanionState):
-    chain = get_router_chain()
-    response = await chain.ainvoke(
-        {"messages": state["messages"][-settings.ROUTER_MESSAGES_TO_ANALYZE :]}
-    )
-    return {"workflow": response.response_type}
+    logger.debug("Starting router node processing")
+    try:
+        chain = get_router_chain()
+        response = await chain.ainvoke(
+            {"messages": state["messages"][-settings.ROUTER_MESSAGES_TO_ANALYZE :]}
+        )
+        logger.debug(f"Router response: {response}")
+        return {"workflow": response.response_type}
+    except Exception as e:
+        logger.error(f"Error in router node: {e}", exc_info=True)
+        raise
 
 
 def context_injection_node(state: AICompanionState):
@@ -37,20 +46,27 @@ def context_injection_node(state: AICompanionState):
 
 
 async def conversation_node(state: AICompanionState, config: RunnableConfig):
-    current_activity = ScheduleContextGenerator.get_current_activity()
-    memory_context = state.get("memory_context", "")
+    logger.debug("Starting conversation node processing")
+    try:
+        current_activity = ScheduleContextGenerator.get_current_activity()
+        memory_context = state.get("memory_context", "")
+        logger.debug(f"Current activity: {current_activity}")
+        logger.debug(f"Memory context: {memory_context}")
 
-    chain = get_character_response_chain(state.get("summary", ""))
-
-    response = await chain.ainvoke(
-        {
-            "messages": state["messages"],
-            "current_activity": current_activity,
-            "memory_context": memory_context,
-        },
-        config,
-    )
-    return {"messages": AIMessage(content=response)}
+        chain = get_character_response_chain(state.get("summary", ""))
+        response = await chain.ainvoke(
+            {
+                "messages": state["messages"],
+                "current_activity": current_activity,
+                "memory_context": memory_context,
+            },
+            config,
+        )
+        logger.debug(f"Conversation response: {response}")
+        return {"messages": AIMessage(content=response)}
+    except Exception as e:
+        logger.error(f"Error in conversation node: {e}", exc_info=True)
+        raise
 
 async def rag_node(state: AICompanionState, config: RunnableConfig):
     current_activity = ScheduleContextGenerator.get_current_activity()
@@ -113,6 +129,22 @@ async def image_node(state: AICompanionState, config: RunnableConfig):
 
     return {"messages": AIMessage(content=response), "image_path": img_path}
 
+async def hallucination_grader_node(state: AICompanionState, config: RunnableConfig):
+    current_activity = ScheduleContextGenerator.get_current_activity()
+    memory_context = state.get("memory_context", "")
+
+    chain = get_character_response_chain(state.get("summary", ""))
+
+    response = await chain.ainvoke(
+        {
+            "messages": state["messages"],
+            "current_activity": current_activity,
+            "memory_context": memory_context,
+        },
+        config,
+    )
+    return {"messages": AIMessage(content=response)}
+
 
 async def audio_node(state: AICompanionState, config: RunnableConfig):
     current_activity = ScheduleContextGenerator.get_current_activity()
@@ -161,13 +193,19 @@ async def summarize_conversation_node(state: AICompanionState):
 
 
 async def memory_extraction_node(state: AICompanionState):
-    """Extract and store important information from the last message."""
-    if not state["messages"]:
-        return {}
+    logger.debug("Starting memory extraction node processing")
+    try:
+        if not state["messages"]:
+            logger.debug("No messages to process")
+            return {}
 
-    memory_manager = get_memory_manager()
-    await memory_manager.extract_and_store_memories(state["messages"][-1])
-    return {}
+        memory_manager = get_memory_manager()
+        await memory_manager.extract_and_store_memories(state["messages"][-1])
+        logger.debug("Memory extraction completed")
+        return {}
+    except Exception as e:
+        logger.error(f"Error in memory extraction node: {e}", exc_info=True)
+        raise
 
 
 def memory_injection_node(state: AICompanionState):

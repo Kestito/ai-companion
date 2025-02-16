@@ -27,7 +27,7 @@ def get_character_response_chain(summary: str = ""):
 
     if summary:
         system_message += (
-            f"\n\nSummary of conversation earlier between Ava and the user: {summary}"
+            f"\n\nSummary of conversation earlier between Evelina and the user: {summary}"
         )
 
     prompt = ChatPromptTemplate.from_messages(

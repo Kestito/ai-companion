@@ -17,13 +17,13 @@ class ShortTermMemory(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the memory")
 
 class ShortTermMemoryManager:
-    """Manager class for handling short-term memory operations using Supabase."""
+    """Manager class for handling short-term memory operations."""
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.supabase: Client = create_client(
-            "https://aubulhjfeszmsheonmpy.supabase.co",
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc"
+            settings.SUPABASE_URL,
+            settings.SUPABASE_KEY
         )
         self._initialize_table()
 
@@ -31,9 +31,9 @@ class ShortTermMemoryManager:
         """Initialize the short-term memories table if it doesn't exist."""
         try:
             # Create table if not exists using SQL
-            self.supabase.table("short_term_memories").select("id").limit(1).execute()
+            self.supabase.table("short_term").select("id").limit(1).execute()
         except Exception as e:
-            self.logger.error(f"Error initializing short-term memories table: {e}")
+            self.logger.error(f"Error initializing short-term table: {e}")
             raise
 
     async def store_memory(
@@ -52,7 +52,7 @@ class ShortTermMemoryManager:
                 metadata=metadata or {}
             )
 
-            result = self.supabase.table("short_term_memories").insert({
+            result = self.supabase.table("short_term").insert({
                 "id": memory.id,
                 "content": memory.content,
                 "created_at": memory.created_at.isoformat(),
@@ -69,7 +69,7 @@ class ShortTermMemoryManager:
     async def get_memory(self, memory_id: str) -> Optional[ShortTermMemory]:
         """Retrieve a specific short-term memory by ID if not expired."""
         try:
-            result = self.supabase.table("short_term_memories").select("*").eq("id", memory_id).execute()
+            result = self.supabase.table("short_term").select("*").eq("id", memory_id).execute()
             
             if not result.data:
                 return None
@@ -88,7 +88,7 @@ class ShortTermMemoryManager:
         """Retrieve all non-expired short-term memories."""
         try:
             current_time = datetime.utcnow().isoformat()
-            result = self.supabase.table("short_term_memories")\
+            result = self.supabase.table("short_term")\
                 .select("*")\
                 .gt("expires_at", current_time)\
                 .execute()
@@ -101,7 +101,7 @@ class ShortTermMemoryManager:
     async def delete_memory(self, memory_id: str) -> None:
         """Delete a specific short-term memory."""
         try:
-            self.supabase.table("short_term_memories").delete().eq("id", memory_id).execute()
+            self.supabase.table("short_term").delete().eq("id", memory_id).execute()
             self.logger.info(f"Deleted short-term memory: {memory_id}")
         except Exception as e:
             self.logger.error(f"Error deleting short-term memory: {e}")
@@ -111,7 +111,7 @@ class ShortTermMemoryManager:
         """Remove all expired memories and return the count of deleted items."""
         try:
             current_time = datetime.utcnow().isoformat()
-            result = self.supabase.table("short_term_memories")\
+            result = self.supabase.table("short_term")\
                 .delete()\
                 .lt("expires_at", current_time)\
                 .execute()

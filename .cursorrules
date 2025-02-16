@@ -1,0 +1,215 @@
+{
+    "project": {
+        "name": "ai-companion",
+        "description": "AI Companion using LangChain and modern AI technologies",
+        "version": "1.0.0",
+        "deployment": "docker"
+    },
+    "dependencies": {
+        "required": [
+            "python>=3.9",
+            "langchain>=0.1.0",
+            "openai>=1.0.0",
+            "fastapi>=0.100.0",
+            "pydantic>=2.0.0",
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "black>=23.0.0",
+            "isort>=5.0.0",
+            "mypy>=1.0.0",
+            "ruff>=0.1.0",
+            "uvicorn>=0.15.0",
+            "gunicorn>=20.1.0"
+        ],
+        "dev": [
+            "pre-commit>=3.0.0",
+            "pytest-watch>=4.2.0",
+            "docker-compose>=2.0.0"
+        ]
+    },
+    "structure": {
+        "src": {
+            "ai_companion": {
+                "core": "Core functionality and base classes",
+                "interfaces": "External interface implementations (WhatsApp, etc.)",
+                "modules": "Feature-specific modules (RAG, Speech, etc.)",
+                "graph": "Graph-based processing logic",
+                "api": "API endpoints and routing",
+                "utils": "Shared utilities and helpers"
+            }
+        },
+        "tests": {
+            "unit": "Unit tests for individual components",
+            "integration": "Integration tests across components",
+            "e2e": "End-to-end test scenarios"
+        },
+        "docs": "Project documentation",
+        "scripts": "Utility scripts and tools"
+    },
+    "patterns": {
+        "code": {
+            "style": {
+                "formatter": "black",
+                "line_length": 88,
+                "import_order": "isort"
+            },
+            "typing": {
+                "strict": true,
+                "checker": "mypy"
+            },
+            "linting": {
+                "tool": "ruff",
+                "rules": ["E", "F", "I", "N"]
+            }
+        },
+        "testing": {
+            "framework": "pytest",
+            "coverage": {
+                "minimum": 80,
+                "exclude": ["tests/*", "setup.py"]
+            },
+            "naming": {
+                "test_files": "test_*.py",
+                "test_functions": "test_*"
+            }
+        },
+        "documentation": {
+            "style": "Google",
+            "required_sections": [
+                "Args",
+                "Returns",
+                "Raises",
+                "Examples"
+            ]
+        }
+    },
+    "tdd": {
+        "workflow": [
+            "Write failing test",
+            "Implement minimum code to pass",
+            "Refactor while keeping tests green"
+        ],
+        "test_requirements": {
+            "unit_tests": {
+                "coverage": true,
+                "isolation": true,
+                "mocking": "when necessary"
+            },
+            "integration_tests": {
+                "coverage": true,
+                "real_dependencies": true
+            }
+        }
+    },
+    "git": {
+        "branches": {
+            "main": "Production-ready code",
+            "develop": "Development integration",
+            "feature/*": "New features",
+            "bugfix/*": "Bug fixes",
+            "release/*": "Release preparation"
+        },
+        "commit_convention": {
+            "format": "<type>(<scope>): <description>",
+            "types": [
+                "feat",
+                "fix",
+                "docs",
+                "style",
+                "refactor",
+                "test",
+                "chore"
+            ]
+        }
+    },
+    "docker": {
+        "base_image": "python:3.9-slim",
+        "containers": {
+            "app": {
+                "port": 8000,
+                "environment": [
+                    "PYTHONPATH=/app",
+                    "PYTHONUNBUFFERED=1"
+                ],
+                "volumes": [
+                    "app_data:/app/data"
+                ],
+                "healthcheck": {
+                    "test": ["CMD", "curl", "-f", "http://localhost:8000/health"],
+                    "interval": "30s",
+                    "timeout": "10s",
+                    "retries": 3
+                }
+            }
+        },
+        "networks": {
+            "app_network": {
+                "driver": "bridge"
+            }
+        },
+        "volumes": {
+            "app_data": {
+                "driver": "local"
+            }
+        },
+        "build": {
+            "context": ".",
+            "dockerfile": "Dockerfile",
+            "target": "production"
+        }
+    },
+    "ci_cd": {
+        "stages": [
+            "lint",
+            "type_check",
+            "test",
+            "build",
+            "docker_build",
+            "docker_test",
+            "deploy"
+        ],
+        "requirements": {
+            "pull_requests": [
+                "All tests pass",
+                "Code review approval",
+                "No merge conflicts",
+                "Docker build success",
+                "Container tests pass"
+            ]
+        },
+        "docker": {
+            "registry": "gcr.io",
+            "repository": "ai-companion",
+            "tags": [
+                "latest",
+                "${VERSION}",
+                "${GIT_COMMIT_SHA}"
+            ],
+            "scan": {
+                "enabled": true,
+                "severity_threshold": "HIGH"
+            }
+        }
+    },
+    "security": {
+        "requirements": [
+            "Input validation",
+            "Authentication",
+            "Authorization",
+            "Data encryption",
+            "Dependency scanning",
+            "Container security scanning",
+            "Secrets management",
+            "Resource limits enforcement"
+        ],
+        "docker": {
+            "security_rules": [
+                "No root user in containers",
+                "Read-only root filesystem",
+                "Limited container capabilities",
+                "Resource quotas",
+                "Network policy enforcement"
+            ]
+        }
+    }
+}

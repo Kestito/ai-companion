@@ -11,9 +11,6 @@ from ai_companion.settings import settings
 class SpeechToText:
     """A class to handle speech-to-text conversion using Groq's Whisper model."""
 
-    # Required environment variables
-    REQUIRED_ENV_VARS = ["GROQ_API_KEY"]
-
     def __init__(self):
         """Initialize the SpeechToText class and validate environment variables."""
         self._validate_env_vars()
@@ -21,11 +18,11 @@ class SpeechToText:
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
-        missing_vars = [var for var in self.REQUIRED_ENV_VARS if not os.getenv(var)]
-        if missing_vars:
-            raise ValueError(
-                f"Missing required environment variables: {', '.join(missing_vars)}"
-            )
+        try:
+            if not settings.GROQ_API_KEY:
+                raise ValueError("Missing required setting: GROQ_API_KEY")
+        except AttributeError:
+            raise ValueError("Missing required setting: GROQ_API_KEY")
 
     @property
     def client(self) -> Groq:

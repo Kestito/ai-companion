@@ -15,6 +15,9 @@ from ai_companion.graph.nodes import (
     context_injection_node,
     memory_extraction_node,
     memory_injection_node,
+    hallucination_grader_node,
+    web_search_node,
+    rag_node,
 )
 from ai_companion.graph.state import AICompanionState
 
