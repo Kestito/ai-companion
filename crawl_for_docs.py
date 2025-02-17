@@ -2,7 +2,10 @@ import os
 import sys
 import json
 import asyncio
+from qdrant_client import QdrantClient
 import requests
+import uuid
+import hashlib
 from xml.etree import ElementTree
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -14,9 +17,8 @@ import time
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from openai import AsyncAzureOpenAI
-from qdrant_client import QdrantClient, models
-from qdrant_client.http import models as rest
-from qdrant_client.http.models import Distance, VectorParams
+from langchain.schema import Document
+from ai_companion.modules.rag.core.vector_store import VectorStoreManager
 
 from sentence_transformers import SentenceTransformer
 QDRANT_URL = os.getenv("QDRANT_URL")
@@ -63,23 +65,12 @@ last_embedding_time = 0
 COLLECTION_NAME = "Pola_docs"
 VECTOR_SIZE = 1536  # Size of OpenAI embeddings
 
-# Initialize Qdrant collection if it doesn't exist
-try:
-    # Get existing collection info properly
-    collections = qdrant_client.get_collections()
-    collection_names = {collection.name for collection in collections.collections}
-    
-    if COLLECTION_NAME not in collection_names:
-        qdrant_client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-        )
-        print(f"Created new collection: {COLLECTION_NAME}")
-    else:
-        print(f"Using existing collection: {COLLECTION_NAME}")
-except Exception as e:
-    print(f"Error initializing Qdrant collection: {e}")
-    raise  # Re-raise to prevent using broken client
+# Initialize VectorStoreManager
+vector_store = VectorStoreManager(
+    collection_name=os.getenv("COLLECTION_NAME", "Pola_docs"),
+    embedding_deployment=os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
+    embedding_model=os.getenv("EMBEDDING_MODEL")
+)
 
 @dataclass
 class PolaURL:
@@ -355,7 +346,7 @@ async def get_title_and_summary(chunk: str, url: str) -> Dict[str, str]:
         
         try:
             response = await openai_client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"URL: {url}\n\nContent:\n{chunk[:1000]}..."}
@@ -391,88 +382,63 @@ async def get_embedding(text: str) -> List[float]:
             print(f"Error getting embedding: {e}")
             return [0] * 1536  # Return zero vector on error
 
-async def process_chunk(chunk: str, chunk_number: int, url: PolaURL) -> ProcessedChunk:
-    """Process a single chunk of text."""
+async def process_chunk(chunk: str, chunk_number: int, url: PolaURL) -> Document:
+    """Process a single chunk of text into a Document."""
     # Get title and summary
     extracted = await get_title_and_summary(chunk, url.url)
     
     # Get embedding
     embedding = await get_embedding(chunk)
     
-    # Create metadata
+    # Create rich metadata
     metadata = {
         "source": "pola_docs",
+        "chunk_number": chunk_number,
         "chunk_size": len(chunk),
         "crawled_at": datetime.now(timezone.utc).isoformat(),
+        "url": url.url,
         "url_path": urlparse(url.url).path,
         "image_count": url.image_count,
-        "last_modified": url.last_modified.isoformat()
+        "last_modified": url.last_modified.isoformat(),
+        "title": extracted['title'],
+        "summary": extracted['summary'],
+        "content_type": "webpage",
+        "language": "lt",  # Lithuanian content
+        "domain": urlparse(url.url).netloc,
+        "section": urlparse(url.url).path.strip("/").split("/")[0] or "home"
     }
     
-    return ProcessedChunk(
-        url=url.url,
-        chunk_number=chunk_number,
-        title=extracted['title'],
-        summary=extracted['summary'],
-        content=chunk,  # Store the original chunk content
-        metadata=metadata,
-        embedding=embedding
+    # Create enhanced content with semantic markers
+    enhanced_content = f"""Title: {extracted['title']}
+Summary: {extracted['summary']}
+URL: {url.url}
+Content:
+{chunk}"""
+    
+    return Document(
+        page_content=enhanced_content,
+        metadata=metadata
     )
 
-async def insert_chunk(chunk: ProcessedChunk):
-    """Insert a processed chunk into Qdrant."""
-    try:
-        # Create point ID from URL and chunk number
-        point_id = hash(f"{chunk.url}_{chunk.chunk_number}")
-        
-        # Prepare payload
-        payload = {
-            "url": chunk.url,
-            "chunk_number": chunk.chunk_number,
-            "title": chunk.title,
-            "summary": chunk.summary,
-            "content": chunk.content,
-            "metadata": chunk.metadata,
-            "semantic_context": chunk.semantic_context
-        }
-        
-        # Create point
-        point = rest.PointStruct(
-            id=point_id,
-            vector=chunk.embedding,
-            payload=payload
-        )
-        
-        # Upsert point into collection
-        qdrant_client.upsert(
-            collection_name=COLLECTION_NAME,
-            points=[point]
-        )
-        
-        print(f"Inserted chunk {chunk.chunk_number} for {chunk.url}")
-        return True
-    except Exception as e:
-        print(f"Error inserting chunk into Qdrant: {e}")
-        return False
-
 async def process_and_store_document(url: PolaURL, markdown: str):
-    """Process a document and store its chunks in parallel."""
-    # Split into chunks
-    chunks = chunk_text(markdown)
-    
-    # Process chunks in parallel
-    tasks = [
-        process_chunk(chunk, i, url) 
-        for i, chunk in enumerate(chunks)
-    ]
-    processed_chunks = await asyncio.gather(*tasks)
-    
-    # Store chunks in parallel
-    insert_tasks = [
-        insert_chunk(chunk) 
-        for chunk in processed_chunks
-    ]
-    await asyncio.gather(*insert_tasks)
+    """Process a document and store its chunks."""
+    try:
+        # Split into chunks
+        chunks = chunk_text(markdown)
+        
+        # Process chunks in parallel
+        tasks = [
+            process_chunk(chunk, i, url) 
+            for i, chunk in enumerate(chunks)
+        ]
+        processed_chunks = await asyncio.gather(*tasks)
+        
+        # Store documents using VectorStoreManager
+        vector_store.add_documents(processed_chunks)
+        print(f"Successfully stored {len(processed_chunks)} chunks for {url.url}")
+    except Exception as e:
+        print(f"Error processing document {url.url}: {str(e)}")
+        return
 
 async def crawl_parallel(urls: List[PolaURL], max_concurrent: int = 5):
     """Crawl multiple URLs in parallel with a concurrency limit."""

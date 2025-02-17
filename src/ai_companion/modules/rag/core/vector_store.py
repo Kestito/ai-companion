@@ -4,6 +4,8 @@ from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
 from qdrant_client import QdrantClient, models
 import os
+import uuid
+import hashlib
 
 class VectorStoreManager:
     """Manages vector store operations using Qdrant."""
@@ -42,12 +44,27 @@ class VectorStoreManager:
         # Ensure collection exists
         self._ensure_collection()
         
-        # Initialize vector store
+        # Initialize vector store with custom id generator
         self.vector_store = QdrantVectorStore(
             client=self.client,
             collection_name=collection_name,
-            embedding=self.embeddings
+            embedding=self.embeddings,
+            content_payload_key="content",
+            metadata_payload_key="metadata"
         )
+    
+    def _generate_document_id(self, document: Document) -> str:
+        """Generate a deterministic UUID for a document.
+        
+        Args:
+            document: Document to generate ID for
+            
+        Returns:
+            UUID string
+        """
+        # Create a unique string from document content and metadata
+        unique_str = f"{document.page_content}_{str(document.metadata)}"
+        return str(uuid.UUID(hashlib.md5(unique_str.encode()).hexdigest()))
         
     def _ensure_collection(self) -> None:
         """Ensure the collection exists, create it if it doesn't."""
@@ -67,12 +84,20 @@ class VectorStoreManager:
             )
         
     def add_documents(self, documents: List[Document]) -> None:
-        """Add documents to the vector store.
+        """Add documents to the vector store with proper ID generation.
         
         Args:
             documents: List of Document objects to add
         """
-        self.vector_store.add_documents(documents)
+        try:
+            # Add documents with generated IDs
+            for doc in documents:
+                doc_id = self._generate_document_id(doc)
+                self.vector_store.add_documents([doc], ids=[doc_id])
+            print(f"Successfully added {len(documents)} documents to collection {self.collection_name}")
+        except Exception as e:
+            print(f"Error adding documents to collection: {str(e)}")
+            raise
         
     def similarity_search(
         self,
