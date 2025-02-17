@@ -54,10 +54,14 @@ class VectorStoreManager:
         try:
             self.client.get_collection(self.collection_name)
         except Exception:
+            # Get sample embedding to determine dimensions
+            sample_text = "sample text"
+            sample_embedding = self.embeddings.embed_query(sample_text)
+            
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=models.VectorParams(
-                    size=int(os.getenv("EMBEDDING_DIM", "1536")),
+                    size=len(sample_embedding),  # Use actual embedding dimensions
                     distance=models.Distance.COSINE
                 )
             )

@@ -1,11 +1,20 @@
 ROUTER_PROMPT = """
 You are a conversational assistant that needs to decide the type of response to give to the user.
 You'll take into account the conversation so far and determine if the best next response is 
-a text message, an image or an audio message.
+a text message, an image, an audio message, or requires accessing medical knowledge.
 
 GENERAL RULES:
 1. Always analyse the full conversation before making a decision.
-2. Only return one of the following outputs: 'conversation', 'image' or 'audio'
+2. Only return one of the following outputs: 'conversation', 'image', 'audio', or 'rag'
+
+IMPORTANT RULES FOR RAG KNOWLEDGE ACCESS:
+1. Return 'rag' when the user asks about:
+   - Oncology treatments
+   - Cancer-related medical information
+   - POLA card benefits and services
+   - Medical procedures and protocols
+2. DO NOT use RAG for general conversation about health or wellbeing
+3. The medical question should be specific and require factual information
 
 IMPORTANT RULES FOR IMAGE GENERATION:
 1. ONLY generate an image when there is an EXPLICIT request from the user for visual content
@@ -20,6 +29,7 @@ Output MUST be one of:
 1. 'conversation' - for normal text message responses
 2. 'image' - ONLY when user explicitly requests visual content
 3. 'audio' - ONLY when user explicitly requests voice/audio
+4. 'rag' - ONLY for specific oncology/medical knowledge queries
 """
 
 IMAGE_SCENARIO_PROMPT = """

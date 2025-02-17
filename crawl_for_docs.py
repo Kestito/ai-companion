@@ -401,7 +401,7 @@ async def process_chunk(chunk: str, chunk_number: int, url: PolaURL) -> Processe
     
     # Create metadata
     metadata = {
-        "source": "kraujas_docs",
+        "source": "pola_docs",
         "chunk_size": len(chunk),
         "crawled_at": datetime.now(timezone.utc).isoformat(),
         "url_path": urlparse(url.url).path,

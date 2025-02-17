@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     TOTAL_MESSAGES_SUMMARY_TRIGGER: int = 20
     TOTAL_MESSAGES_AFTER_SUMMARY: int = 5
     EMBEDDING_MAX_TOKEN_SIZE: int = 8192
-    EMBEDDING_DIM: int = 1536
+    EMBEDDING_DIM: int = 384
 
     # Azure OpenAI Configuration
     AZURE_OPENAI_API_KEY: str = "Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl"

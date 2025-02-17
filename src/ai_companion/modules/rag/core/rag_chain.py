@@ -62,7 +62,7 @@ class RAGChain:
             chain_type_kwargs={"prompt": self.prompt}
         )
         
-    def query(
+    async def query(
         self,
         question: str,
         filter: Optional[dict] = None
@@ -76,7 +76,7 @@ class RAGChain:
         Returns:
             Tuple of (answer, source documents)
         """
-        result = self.chain.invoke({"query": question})
+        result = await self.chain.ainvoke({"query": question})
         return result["result"], result["source_documents"]
         
     def update_prompt(self, new_template: str) -> None:
