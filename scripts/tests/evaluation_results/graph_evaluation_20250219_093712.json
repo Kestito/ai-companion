@@ -1,0 +1,39 @@
+{
+  "timestamp": "20250219_093712",
+  "total_scenarios": 4,
+  "successful_scenarios": 0,
+  "results": [
+    {
+      "scenario_name": "POLA Card Information Request",
+      "success": false,
+      "execution_time": null,
+      "validation_results": null,
+      "response_messages": [],
+      "error": "'AIMessage' object has no attribute 'get'"
+    },
+    {
+      "scenario_name": "Weather Question (No RAG)",
+      "success": false,
+      "execution_time": null,
+      "validation_results": null,
+      "response_messages": [],
+      "error": "'AIMessage' object has no attribute 'get'"
+    },
+    {
+      "scenario_name": "POLA Card Discounts",
+      "success": false,
+      "execution_time": null,
+      "validation_results": null,
+      "response_messages": [],
+      "error": "'AIMessage' object has no attribute 'get'"
+    },
+    {
+      "scenario_name": "Multi-Turn POLA Conversation",
+      "success": false,
+      "execution_time": null,
+      "validation_results": null,
+      "response_messages": [],
+      "error": "'AIMessage' object has no attribute 'get'"
+    }
+  ]
+}

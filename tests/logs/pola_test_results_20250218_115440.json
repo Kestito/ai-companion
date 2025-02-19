@@ -1,0 +1,118 @@
+[
+  {
+    "query": "Kas gali gauti POLA kortelę?",
+    "answer": "Bet kuris fizinis asmuo su onkologine diagnoze.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:26.486648",
+    "found_keywords": [
+      "fizinis asmuo",
+      "onkologine diagnoze"
+    ],
+    "expected_keywords": [
+      "fizinis asmuo",
+      "onkologine diagnoze",
+      "nemokamai"
+    ]
+  },
+  {
+    "query": "Kokia nuolaida taikoma viešajam transportui su POLA kortele?",
+    "answer": "80% nuolaida.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:27.234281",
+    "found_keywords": [
+      "80%"
+    ],
+    "expected_keywords": [
+      "80%",
+      "viešajam transportui",
+      "Lietuvoje"
+    ]
+  },
+  {
+    "query": "Kiek žmonių Lietuvoje serga vėžiu ir gauna gydymą?",
+    "answer": "Apie 110 000 žmonių Lietuvoje serga vėžiu ir gauna aktyvų gydymą.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:28.214996",
+    "found_keywords": [
+      "110 000",
+      "aktyvų gydymą"
+    ],
+    "expected_keywords": [
+      "18 000",
+      "110 000",
+      "aktyvų gydymą"
+    ]
+  },
+  {
+    "query": "Kokie yra pagrindiniai POLA tikslai?",
+    "answer": "Pagerinti onkologinių pacientų gyvenimo kokybę, sumažinti finansinę naštą, suteikti emocinę paramą ir užtikrinti informacijos prieinamumą.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:29.825645",
+    "found_keywords": [
+      "gyvenimo kokybę",
+      "finansinę naštą",
+      "emocinę paramą"
+    ],
+    "expected_keywords": [
+      "gyvenimo kokybę",
+      "finansinę naštą",
+      "emocinę paramą"
+    ]
+  },
+  {
+    "query": "Kokias papildomas paslaugas teikia POLA?",
+    "answer": "Nemokamas konsultacijas, pagalbą gaunant kompensacijas, informaciją apie gydymo galimybes, bendruomenės palaikymą.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:31.367289",
+    "found_keywords": [
+      "kompensacijas",
+      "bendruomenės"
+    ],
+    "expected_keywords": [
+      "konsultacijos",
+      "kompensacijas",
+      "informacija",
+      "bendruomenės"
+    ]
+  },
+  {
+    "query": "Koks yra Vilniaus miesto gyventojų skaičius?",
+    "answer": "Atsiprašau, pagal pateiktą kontekstą šios informacijos nežinau.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:34.312593"
+  },
+  {
+    "query": "Kas laimėjo paskutines olimpines žaidynes?",
+    "answer": "Atsiprašau, nežinau atsakymo pagal pateiktą kontekstą.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:35.813786"
+  },
+  {
+    "query": "Kiek kainuoja naujas iPhone?",
+    "answer": "Atsiprašau, remiantis pateiktu kontekstu, nežinau.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:38.026346"
+  },
+  {
+    "query": "Kokia šiandien oro prognozė?",
+    "answer": "Atsiprašau, nežinau.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:38.943671"
+  },
+  {
+    "query": "Kaip išspręsti kvadratinę lygtį?",
+    "answer": "Atsiprašau, bet pagal pateiktą kontekstą apie POLA organizaciją, aš negaliu atsakyti, kaip išspręsti kvadratinę lygtį.",
+    "sources": 3,
+    "passed": true,
+    "timestamp": "2025-02-18T11:54:40.901997"
+  }
+]

@@ -1,24 +1,27 @@
+from typing import Dict, List, Optional, TypedDict, Any, Union
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 from langgraph.graph import MessagesState
 
 
-class AICompanionState(MessagesState):
-    """State class for the AI Companion workflow.
-
-    Extends MessagesState to track conversation history and maintains the last message received.
-
+class AICompanionState(TypedDict, total=False):
+    """State type for the AI companion workflow.
+    
     Attributes:
-        last_message (AnyMessage): The most recent message in the conversation, can be any valid
-            LangChain message type (HumanMessage, AIMessage, etc.)
-        workflow (str): The current workflow the AI Companion is in. Can be "conversation", "image", or "audio".
-        audio_buffer (bytes): The audio buffer to be used for speech-to-text conversion.
-        current_activity (str): The current activity of Evelina based on the schedule.
-        memory_context (str): The context of the memories to be injected into the character card.
+        messages: List of conversation messages
+        workflow: Current workflow type
+        summary: Conversation summary
+        memory_context: Context from memory
+        current_activity: Current activity context
+        medical_knowledge: Medical knowledge from RAG
+        rag_response: RAG system response
+        image_path: Path to generated image
     """
-
-    summary: str
+    
+    messages: List[Union[BaseMessage, AIMessage, HumanMessage]]
     workflow: str
-    audio_buffer: bytes
-    image_path: str
-    current_activity: str
-    apply_activity: bool
+    summary: str
     memory_context: str
+    current_activity: str
+    medical_knowledge: str
+    rag_response: Dict[str, Any]
+    image_path: str

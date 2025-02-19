@@ -54,7 +54,6 @@ def create_workflow_graph() -> StateGraph:
     # Add all nodes
     graph_builder.add_node("memory_extraction_node", memory_extraction_node)
     graph_builder.add_node("router_node", router_node)
-    graph_builder.add_node("context_injection_node", context_injection_node)
     graph_builder.add_node("rag_node", rag_node)
     graph_builder.add_node("memory_injection_node", memory_injection_node)
     graph_builder.add_node("conversation_node", conversation_node)
@@ -62,59 +61,40 @@ def create_workflow_graph() -> StateGraph:
     graph_builder.add_node("audio_node", audio_node)
     graph_builder.add_node("summarize_conversation_node", summarize_conversation_node)
 
-    # Define parallel branches
-    parallel_branches = {
-        "context": ["context_injection_node"],
-        "rag": ["rag_node"]
-    }
-
     # Set up the graph flow
     # 1. Start with memory extraction
     graph_builder.add_edge(START, "memory_extraction_node")
 
-    # 2. Route to appropriate nodes
+    # 2. Route to router node
     graph_builder.add_edge("memory_extraction_node", "router_node")
 
-    # 3. Set up parallel processing
-    for branch_name, nodes in parallel_branches.items():
-        for node in nodes:
-            # Add edge from router to parallel node
-            graph_builder.add_edge("router_node", node)
-            
-            # Add edge from parallel node to memory injection
-            # The join function will be called automatically
-            graph_builder.add_edge(node, "memory_injection_node")
+    # 3. Always use RAG for knowledge gathering before any response
+    graph_builder.add_edge("router_node", "rag_node")
+    
+    # 4. Inject memory after RAG
+    graph_builder.add_edge("rag_node", "memory_injection_node")
 
-    # 4. Proceed to conversation
-    graph_builder.add_edge("memory_injection_node", "conversation_node")
-    graph_builder.add_edge("memory_injection_node", "image_node")
-    graph_builder.add_edge("memory_injection_node", "audio_node")
+    # 5. Route to appropriate response node based on workflow
+    graph_builder.add_conditional_edges(
+        "memory_injection_node",
+        select_workflow,
+        {
+            "conversation_node": "conversation_node",
+            "image_node": "image_node",
+            "audio_node": "audio_node"
+        }
+    )
 
-    # 5. Check for summarization
-    graph_builder.add_conditional_edges(
-        "conversation_node",
-        should_summarize_conversation,
-        {
-            "summarize_conversation_node": "summarize_conversation_node",
-            END: END
-        }
-    )
-    graph_builder.add_conditional_edges(
-        "image_node",
-        should_summarize_conversation,
-        {
-            "summarize_conversation_node": "summarize_conversation_node",
-            END: END
-        }
-    )
-    graph_builder.add_conditional_edges(
-        "audio_node",
-        should_summarize_conversation,
-        {
-            "summarize_conversation_node": "summarize_conversation_node",
-            END: END
-        }
-    )
+    # 6. Check for summarization from each response node
+    for node in ["conversation_node", "image_node", "audio_node"]:
+        graph_builder.add_conditional_edges(
+            node,
+            should_summarize_conversation,
+            {
+                "summarize_conversation_node": "summarize_conversation_node",
+                END: END
+            }
+        )
 
     graph_builder.add_edge("summarize_conversation_node", END)
 

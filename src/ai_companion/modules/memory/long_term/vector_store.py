@@ -3,6 +3,7 @@ from typing import Optional, List
 from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
@@ -56,6 +57,7 @@ class VectorStore:
                 api_version="2024-02-15-preview",
                 azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
             )
+            self.logger = logging.getLogger(__name__)
             self._initialized = True
 
     def _validate_env_vars(self) -> None:
@@ -111,56 +113,87 @@ class VectorStore:
             text: The text content of the memory
             metadata: Additional information about the memory (timestamp, type, etc.)
         """
-        if not self._collection_exists():
-            self._create_collection()
+        try:
+            if not self._collection_exists():
+                self.logger.info("Creating new memory collection")
+                self._create_collection()
 
-        similar_memory = self.find_similar_memory(text)
-        if similar_memory and similar_memory.id:
-            metadata["id"] = similar_memory.id
+            similar_memory = self.find_similar_memory(text)
+            if similar_memory and similar_memory.id:
+                self.logger.debug(f"Found similar memory with ID: {similar_memory.id}")
+                metadata["id"] = similar_memory.id
 
-        embedding = self._get_embedding(text)
-        point = PointStruct(
-            id=metadata.get("id", hash(text)),
-            vector=embedding,
-            payload={
-                "text": text,
-                **metadata,
-            },
-        )
+            embedding = self._get_embedding(text)
+            point = PointStruct(
+                id=metadata.get("id", hash(text)),
+                vector=embedding,
+                payload={
+                    "text": text,
+                    **metadata,
+                },
+            )
 
-        self.client.upsert(
-            collection_name=self.COLLECTION_NAME,
-            points=[point],
-        )
+            self.client.upsert(
+                collection_name=self.COLLECTION_NAME,
+                points=[point],
+            )
+            self.logger.info(f"Successfully stored memory with ID: {point.id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error storing memory: {e}", exc_info=True)
+            raise
 
-    def search_memories(self, query: str, k: int = 5) -> List[Memory]:
-        """Search for similar memories in the vector store.
-
+    def search_memories(self, query: str, k: int = 3) -> List[Memory]:
+        """Search for relevant memories using the vector store.
+        
         Args:
-            query: Text to search for
+            query: The search query
             k: Number of results to return
-
+            
         Returns:
             List of Memory objects
         """
-        if not self._collection_exists():
-            return []
+        try:
+            if not self._collection_exists():
+                self.logger.debug("No collection exists yet")
+                return []
 
-        query_embedding = self._get_embedding(query)
-        results = self.client.search(
-            collection_name=self.COLLECTION_NAME,
-            query_vector=query_embedding,
-            limit=k,
-        )
-
-        return [
-            Memory(
-                text=hit.payload["text"],
-                metadata={k: v for k, v in hit.payload.items() if k != "text"},
-                score=hit.score,
+            # Get embedding for the query
+            query_embedding = self._get_embedding(query)
+            
+            # Search using Qdrant client
+            search_results = self.client.search(
+                collection_name=self.COLLECTION_NAME,
+                query_vector=query_embedding,
+                limit=k
             )
-            for hit in results
-        ]
+            
+            # Convert to Memory objects
+            memories = []
+            for result in search_results:
+                memory = Memory(
+                    text=result.payload.get("text", ""),
+                    metadata={
+                        k: v for k, v in result.payload.items() 
+                        if k != "text"
+                    },
+                    score=result.score
+                )
+                memories.append(memory)
+            
+            # Log found memories
+            if memories:
+                self.logger.debug(f"Found {len(memories)} relevant memories")
+                for memory in memories:
+                    self.logger.debug(f"Memory score: {memory.score:.3f}, text: {memory.text[:100]}...")
+            else:
+                self.logger.debug("No relevant memories found")
+            
+            return memories
+            
+        except Exception as e:
+            self.logger.error(f"Error searching memories: {e}", exc_info=True)
+            return []
 
 
 @lru_cache

@@ -1,0 +1,41 @@
+{
+  "timestamp": "2025-02-18T12:34:31.819074",
+  "messages": [
+    {
+      "role": "user",
+      "content": "koks dabar oras?",
+      "used_rag": false,
+      "explanation": "General conversation about weather"
+    },
+    {
+      "role": "assistant",
+      "content": "Atsiprašau, įvyko klaida. Prašome bandyti vėliau.",
+      "used_rag": false
+    },
+    {
+      "role": "user",
+      "content": "ar galiu gauti pola kortele?",
+      "used_rag": true,
+      "explanation": "Switches to RAG for POLA card info"
+    },
+    {
+      "role": "assistant",
+      "content": "Taip, galite gauti POLA kortelę nemokamai! Ją galite gauti užsiregistravę internetu arba aplankę artimiausią POLA skyrių. Registruojimasis yra paprastas ir greitas, tad nieko nebeišdėsiokite - užsiregistruokite ir pradėkite naudotis nuolaidomis parduotuvėse!",
+      "used_rag": true
+    },
+    {
+      "role": "user",
+      "content": "ačiū už informaciją!",
+      "used_rag": false,
+      "explanation": "Back to general conversation"
+    },
+    {
+      "role": "assistant",
+      "content": "Atsiprašau, įvyko klaida. Prašome bandyti vėliau.",
+      "used_rag": false
+    }
+  ],
+  "metadata": {
+    "test_case": "Tests conversation flow switching between RAG and non-RAG responses"
+  }
+}

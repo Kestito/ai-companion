@@ -2,42 +2,46 @@ import os
 import base64
 from typing import Optional, Union
 import logging
-from groq import Groq
+from openai import AzureOpenAI
 
 from ai_companion.settings import settings
 from ai_companion.core.exceptions import ImageToTextError
 
 
 class ImageToText:
-    """A class to handle image-to-text conversion using Groq's vision capabilities."""
+    """A class to handle image-to-text conversion using Azure OpenAI's vision capabilities."""
 
-    REQUIRED_ENV_VARS = ["GROQ_API_KEY"]
+    REQUIRED_ENV_VARS = ["AZURE_OPENAI_API_KEY"]
 
     def __init__(self):
         """Initialize the ImageToText class and validate environment variables."""
         self._validate_env_vars()
-        self._client: Optional[Groq] = None
+        self._client: Optional[AzureOpenAI] = None
         self.logger = logging.getLogger(__name__)
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
         try:
-            if not settings.GROQ_API_KEY:
-                raise ValueError("Missing required setting: GROQ_API_KEY")
+            if not settings.AZURE_OPENAI_API_KEY:
+                raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
         except AttributeError:
-            raise ValueError("Missing required setting: GROQ_API_KEY")
+            raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
 
     @property
-    def client(self) -> Groq:
-        """Get or create Groq client instance using singleton pattern."""
+    def client(self) -> AzureOpenAI:
+        """Get or create Azure OpenAI client instance using singleton pattern."""
         if self._client is None:
-            self._client = Groq(api_key=settings.GROQ_API_KEY)
+            self._client = AzureOpenAI(
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            )
         return self._client
 
     async def analyze_image(
         self, image_data: Union[str, bytes], prompt: str = ""
     ) -> str:
-        """Analyze an image using Groq's vision capabilities.
+        """Analyze an image using Azure OpenAI's vision capabilities.
 
         Args:
             image_data: Either a file path (str) or binary image data (bytes)

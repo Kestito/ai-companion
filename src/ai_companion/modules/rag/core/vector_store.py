@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
@@ -6,6 +6,33 @@ from qdrant_client import QdrantClient, models
 import os
 import uuid
 import hashlib
+
+# Add at the top of the file, after imports
+_vector_store_instance = None
+
+def get_vector_store_instance(
+    collection_name: str = None,
+    embedding_deployment: str = None,
+    embedding_model: str = None
+) -> 'VectorStoreManager':
+    """Get or create a singleton instance of VectorStoreManager.
+    
+    Args:
+        collection_name: Optional collection name
+        embedding_deployment: Optional embedding deployment name
+        embedding_model: Optional embedding model name
+        
+    Returns:
+        VectorStoreManager instance
+    """
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        _vector_store_instance = VectorStoreManager(
+            collection_name=collection_name or os.getenv("COLLECTION_NAME", "Pola_docs"),
+            embedding_deployment=embedding_deployment or os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
+            embedding_model=embedding_model or os.getenv("EMBEDDING_MODEL")
+        )
+    return _vector_store_instance
 
 class VectorStoreManager:
     """Manages vector store operations using Qdrant."""
@@ -131,4 +158,20 @@ class VectorStoreManager:
         Returns:
             Collection information
         """
-        return self.client.get_collection(self.collection_name) 
+        return self.client.get_collection(self.collection_name)
+
+    def delete(self, filter: Dict[str, Any]) -> None:
+        """Delete points from the collection based on filter.
+        
+        Args:
+            filter: Filter conditions for points to delete
+        """
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=filter
+            )
+            print(f"Successfully deleted points matching filter from collection {self.collection_name}")
+        except Exception as e:
+            print(f"Error deleting points from collection: {str(e)}")
+            raise 

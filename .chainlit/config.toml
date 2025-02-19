@@ -54,10 +54,10 @@ edit_message = true
 
 [UI]
 # Name of the assistant.
-name = "Ava"
+name = "Evelina"
 
 # Description of the assistant. This is used for HTML tags.
-# description = ""
+description = "Jūsų asmeninis AI asistentas"
 
 # Large size content are by default collapsed for a cleaner ui
 default_collapse_content = true
@@ -89,8 +89,8 @@ cot = "tool_call"
 
 [UI.theme]
     default = "dark"
-    #layout = "wide"
-    #font_family = "Inter, sans-serif"
+    layout = "wide"
+    font_family = "Inter, sans-serif"
 # Override default MUI light theme. (Check theme.ts)
 [UI.theme.light]
     #background = "#FAFAFA"
@@ -119,3 +119,7 @@ cot = "tool_call"
 
 [meta]
 generated_by = "1.3.2"
+
+[language]
+default = "lt"
+fallback = "en"

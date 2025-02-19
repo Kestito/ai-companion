@@ -4,7 +4,7 @@ import os
 from typing import Optional
 
 from langchain.prompts import PromptTemplate
-from langchain_groq import ChatGroq
+from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field
 from together import Together
 
@@ -36,7 +36,7 @@ class EnhancedPrompt(BaseModel):
 class TextToImage:
     """A class to handle text-to-image generation using Together AI."""
 
-    REQUIRED_ENV_VARS = ["GROQ_API_KEY", "TOGETHER_API_KEY"]
+    REQUIRED_ENV_VARS = ["AZURE_OPENAI_API_KEY", "TOGETHER_API_KEY"]
 
     def __init__(self):
         """Initialize the TextToImage class and validate environment variables."""
@@ -99,11 +99,12 @@ class TextToImage:
 
             self.logger.info("Creating scenario from chat history")
 
-            llm = ChatGroq(
-                model=settings.TEXT_MODEL_NAME,
-                api_key=settings.GROQ_API_KEY,
+            llm = AzureChatOpenAI(
+                deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+                openai_api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
                 temperature=0.4,
-                max_retries=2,
             )
 
             structured_llm = llm.with_structured_output(ScenarioPrompt)
@@ -129,11 +130,12 @@ class TextToImage:
         try:
             self.logger.info(f"Enhancing prompt: '{prompt}'")
 
-            llm = ChatGroq(
-                model=settings.TEXT_MODEL_NAME,
-                api_key=settings.GROQ_API_KEY,
+            llm = AzureChatOpenAI(
+                deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+                openai_api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
                 temperature=0.25,
-                max_retries=2,
             )
 
             structured_llm = llm.with_structured_output(EnhancedPrompt)

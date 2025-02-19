@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import List, Optional
 
 from langchain_core.messages import BaseMessage
-from langchain_groq import ChatGroq
+from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field
+from langchain.schema import Document
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
 from ai_companion.modules.memory.long_term.vector_store import get_vector_store
@@ -30,44 +31,61 @@ class MemoryManager:
     def __init__(self):
         self.vector_store = get_vector_store()
         self.logger = logging.getLogger(__name__)
-        self.llm = ChatGroq(
-            model=settings.SMALL_TEXT_MODEL_NAME,
-            api_key=settings.GROQ_API_KEY,
+        self.llm = AzureChatOpenAI(
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            openai_api_version=settings.AZURE_OPENAI_API_VERSION,
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
             temperature=0.1,
-            max_retries=2,
         ).with_structured_output(MemoryAnalysis)
+        self.has_greeted = False
 
     async def _analyze_memory(self, message: str) -> MemoryAnalysis:
         """Analyze a message to determine importance and format if needed."""
         prompt = MEMORY_ANALYSIS_PROMPT.format(message=message)
         return await self.llm.ainvoke(prompt)
 
+    async def add_memory(self, content: str) -> None:
+        """Add a new memory to the vector store.
+        
+        Args:
+            content: The content to store as a memory
+        """
+        try:
+            # Track if this is a greeting
+            if "labas" in content.lower():
+                self.has_greeted = True
+                
+            memory_analysis = await self._analyze_memory(content)
+            if memory_analysis.is_important and memory_analysis.formatted_memory:
+                memory_id = str(uuid.uuid4())
+                metadata = {
+                    "id": memory_id,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "type": "conversation_memory",
+                    "is_greeting": "labas" in content.lower()
+                }
+                self.vector_store.store_memory(
+                    text=memory_analysis.formatted_memory,
+                    metadata=metadata
+                )
+                self.logger.info(f"Added new memory: {memory_id}")
+        except Exception as e:
+            self.logger.error(f"Error adding memory: {e}", exc_info=True)
+
+    def has_already_greeted(self) -> bool:
+        """Check if we have already greeted the user in this session."""
+        return self.has_greeted
+
     async def extract_and_store_memories(self, message: BaseMessage) -> None:
         """Extract important information from a message and store in vector store."""
         if message.type != "human":
             return
 
-        # Analyze the message for importance and formatting
-        analysis = await self._analyze_memory(message.content)
-        if analysis.is_important and analysis.formatted_memory:
-            # Check if similar memory exists
-            similar = self.vector_store.find_similar_memory(analysis.formatted_memory)
-            if similar:
-                # Skip storage if we already have a similar memory
-                self.logger.info(
-                    f"Similar memory already exists: '{analysis.formatted_memory}'"
-                )
-                return
-
-            # Store new memory
-            self.logger.info(f"Storing new memory: '{analysis.formatted_memory}'")
-            self.vector_store.store_memory(
-                text=analysis.formatted_memory,
-                metadata={
-                    "id": str(uuid.uuid4()),
-                    "timestamp": datetime.now().isoformat(),
-                },
-            )
+        try:
+            await self.add_memory(message.content)
+        except Exception as e:
+            self.logger.error(f"Error extracting memories: {e}", exc_info=True)
 
     def get_relevant_memories(self, context: str) -> List[str]:
         """Retrieve relevant memories based on the current context."""

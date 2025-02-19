@@ -2,37 +2,41 @@ import os
 import tempfile
 from typing import Optional
 
-from groq import Groq
+from openai import AzureOpenAI
 
 from ai_companion.core.exceptions import SpeechToTextError
 from ai_companion.settings import settings
 
 
 class SpeechToText:
-    """A class to handle speech-to-text conversion using Groq's Whisper model."""
+    """A class to handle speech-to-text conversion using Azure OpenAI's Whisper model."""
 
     def __init__(self):
         """Initialize the SpeechToText class and validate environment variables."""
         self._validate_env_vars()
-        self._client: Optional[Groq] = None
+        self._client: Optional[AzureOpenAI] = None
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
         try:
-            if not settings.GROQ_API_KEY:
-                raise ValueError("Missing required setting: GROQ_API_KEY")
+            if not settings.AZURE_OPENAI_API_KEY:
+                raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
         except AttributeError:
-            raise ValueError("Missing required setting: GROQ_API_KEY")
+            raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
 
     @property
-    def client(self) -> Groq:
-        """Get or create Groq client instance using singleton pattern."""
+    def client(self) -> AzureOpenAI:
+        """Get or create Azure OpenAI client instance using singleton pattern."""
         if self._client is None:
-            self._client = Groq(api_key=settings.GROQ_API_KEY)
+            self._client = AzureOpenAI(
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            )
         return self._client
 
     async def transcribe(self, audio_data: bytes) -> str:
-        """Convert speech to text using Groq's Whisper model.
+        """Convert speech to text using Azure OpenAI's Whisper model.
 
         Args:
             audio_data: Binary audio data
@@ -58,7 +62,7 @@ class SpeechToText:
                 with open(temp_file_path, "rb") as audio_file:
                     transcription = self.client.audio.transcriptions.create(
                         file=audio_file,
-                        model="whisper-large-v3-turbo",
+                        model=settings.STT_MODEL_NAME,
                         language="en",
                         response_format="text",
                     )
