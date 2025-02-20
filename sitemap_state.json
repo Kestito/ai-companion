@@ -1,0 +1,20 @@
+{
+  "sitemaps": {
+    "https://pola.lt/product-sitemap.xml": {
+      "last_processed": "2025-02-20T11:52:55.969632+00:00",
+      "urls_found": 4,
+      "status": "success"
+    },
+    "https://pola.lt/page-sitemap.xml": {
+      "last_processed": "2025-02-20T11:52:56.980986+00:00",
+      "urls_found": 49,
+      "status": "success"
+    }
+  },
+  "last_run": "2025-02-20T11:52:56.980986+00:00",
+  "stats": {
+    "total_urls_found": 106,
+    "successful_crawls": 4,
+    "failed_crawls": 0
+  }
+}

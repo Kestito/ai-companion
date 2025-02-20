@@ -126,41 +126,67 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
         rag_chain = get_rag_chain()
         last_message = state["messages"][-1].content if state["messages"] else ""
         
-        # Query the RAG chain
-        response, relevant_docs = await rag_chain.query(last_message)
-        logger.info(f"RAG response: {response}")
-        
-        # If no relevant docs found, return simple "no info" response
-        if not relevant_docs:
+        # Query the RAG chain with error handling
+        try:
+            response, relevant_docs = await rag_chain.query(last_message)
+            logger.info(f"RAG response received: {response[:100]}...")
+            
+            # If no relevant docs found, return simple response
+            if not relevant_docs:
+                return {
+                    "rag_response": {
+                        "has_relevant_info": False,
+                        "response": response,
+                        "sources": [],
+                        "context": ""
+                    }
+                }
+            
+            # Format sources with proper error handling
+            sources = []
+            for doc in relevant_docs:
+                try:
+                    metadata = doc.metadata or {}
+                    sources.append({
+                        "title": metadata.get("title", "Be pavadinimo"),
+                        "source": metadata.get("source", metadata.get("url", "Nežinomas šaltinis")),
+                        "date": metadata.get("processed_at", "Data nenurodyta")
+                    })
+                except Exception as e:
+                    logger.warning(f"Error formatting source metadata: {e}")
+                    continue
+            
+            # Create the response with sources
+            sources_info = "\nŠaltiniai:\n" + "\n".join([
+                f"- {s['source']}" for s in sources
+            ]) if sources else ""
+            
+            return {
+                "rag_response": {
+                    "has_relevant_info": True,
+                    "response": response,
+                    "sources": sources,
+                    "context": response + sources_info
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in RAG chain query: {e}", exc_info=True)
             return {
                 "rag_response": {
                     "has_relevant_info": False,
-                    "response": "no info",
+                    "response": "Atsiprašau, įvyko klaida ieškant informacijos. Prašome bandyti vėliau.",
                     "sources": [],
                     "context": ""
                 }
             }
-        
-        # Format sources if available
-        sources_info = "\nŠaltiniai:\n" + "\n".join([
-            f"- {s.get('source', 'Nežinomas šaltinis')}" 
-            for s in [doc.metadata for doc in relevant_docs]
-        ])
-        
-        return {
-            "rag_response": {
-                "has_relevant_info": True,
-                "response": response,
-                "sources": [doc.metadata for doc in relevant_docs],
-                "context": response + sources_info
-            }
-        }
+            
     except Exception as e:
-        logger.error(f"Error in RAG node: {e}", exc_info=True)
+        logger.error(f"Critical error in RAG node: {e}", exc_info=True)
         return {
             "rag_response": {
                 "has_relevant_info": False,
-                "response": "no info",
+                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.",
                 "sources": [],
                 "context": ""
             }

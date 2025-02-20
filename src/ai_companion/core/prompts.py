@@ -157,46 +157,28 @@ Svarbūs faktai apima:
 Taisyklės:
 1. Ištraukite tik faktinius duomenis, ne prašymus ar komentarus apie įsiminimą
 2. Konvertuokite faktus į aiškius, trečiojo asmens teiginius
-3. Jei nėra faktinių duomenų, pažymėkite kaip nesvarbų
+3. Jei nėra faktinių duomenų, grąžinkite tuščią tekstą
 4. Pašalinkite pokalbio elementus ir susitelkite į pagrindinę informaciją
+5. Grąžinkite tik tekstą be jokio formatavimo ar JSON struktūros
 
 Pavyzdžiai:
 Įvestis: "Ei, ar galėtum įsiminti, kad aš mėgstu Žvaigždžių karus?"
-Išvestis: {{
-    "is_important": true,
-    "formatted_memory": "Mėgsta Žvaigždžių karus"
-}}
+Išvestis: Mėgsta Žvaigždžių karus
 
 Įvestis: "Prašau užsirašyti, kad dirbu inžinieriumi"
-Išvestis: {{
-    "is_important": true,
-    "formatted_memory": "Dirba inžinieriumi"
-}}
+Išvestis: Dirba inžinieriumi
 
 Įvestis: "Įsimink: aš gyvenu Madride"
-Išvestis: {{
-    "is_important": true,
-    "formatted_memory": "Gyvena Madride"
-}}
+Išvestis: Gyvena Madride
 
 Įvestis: "Ar gali įsiminti mano detales kitam kartui?"
-Išvestis: {{
-    "is_important": false,
-    "formatted_memory": null
-}}
+Išvestis: gerai
 
 Įvestis: "Labas, kaip šiandien sekasi?"
-Išvestis: {{
-    "is_important": false,
-    "formatted_memory": null
-}}
+Išvestis: Gerai, o tau?
 
 Įvestis: "Aš studijavau informatikos mokslus MIT ir norėčiau, kad tai įsimintum"
-Išvestis: {{
-    "is_important": true,
-    "formatted_memory": "Studijavo informatikos mokslus MIT"
-}}
+Išvestis: Studijavo informatikos mokslus MIT
 
 Žinutė: {message}
-Išvestis:
-"""
+Išvestis:"""

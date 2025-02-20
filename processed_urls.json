@@ -1,0 +1,434 @@
+{
+  "https://pola.lt/prekes/wc-donation-remimas-2024": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:47:58.126493+00:00",
+    "metadata": {
+      "content_hash": "5dc14c5535645344460f58a70f37ab8e",
+      "chunks_processed": 9,
+      "document_id": "8cd6afda-f60d-4293-8af3-c71bc3273b2b"
+    }
+  },
+  "https://pola.lt": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:48:03.898735+00:00",
+    "metadata": {
+      "content_hash": "568fabbf3d14edfa188fbabee6d921fe",
+      "chunks_processed": 31,
+      "document_id": "bfeb05ad-c449-4c63-ae0b-e914688b7267"
+    }
+  },
+  "https://pola.lt/apie-pola": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:48:30.338912+00:00",
+    "metadata": {
+      "content_hash": "55ff1e7a430293d12bb9660cb594bd51",
+      "chunks_processed": 50,
+      "document_id": "563a43ba-12e0-4bec-90e8-9c9fe0981c0c"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2013-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:48:59.012040+00:00",
+    "metadata": {
+      "content_hash": "832be15a45600eb9b2cef053837ca04d",
+      "chunks_processed": 11,
+      "document_id": "043ba995-bb3f-4e29-b779-39ba4f06be28"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2012-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:49:01.201656+00:00",
+    "metadata": {
+      "content_hash": "cbf8d8cc3a345838c5e082128e4867b0",
+      "chunks_processed": 9,
+      "document_id": "f700c60a-ffc5-4087-9f43-2a5033530a07"
+    }
+  },
+  "https://pola.lt/pola-kortele": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:49:08.531195+00:00",
+    "metadata": {
+      "content_hash": "485eace07360788ac9c50ee927fe9a49",
+      "chunks_processed": 13,
+      "document_id": "c7faf315-2d37-4a12-9677-368e80fedb28"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2014-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:49:40.173887+00:00",
+    "metadata": {
+      "content_hash": "9ff7bcc46f92f04f0f7510fb55e38ba6",
+      "chunks_processed": 14,
+      "document_id": "dd2242d5-dd63-41d7-a7ca-e48bb7b38271"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2016-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:49:47.370891+00:00",
+    "metadata": {
+      "content_hash": "13fdc527236835355a506005169399ef",
+      "chunks_processed": 13,
+      "document_id": "cb78d23e-65fe-4f72-95d9-0105fc306179"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2015-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:49:52.141798+00:00",
+    "metadata": {
+      "content_hash": "1f235f84f34d07363d9dde536b696593",
+      "chunks_processed": 12,
+      "document_id": "76b2ef59-a7fd-4217-8b5f-23f3e3ddd320"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:50:06.968549+00:00",
+    "metadata": {
+      "content_hash": "fe71fa4712839d6f7a998a067365ef51",
+      "chunks_processed": 8,
+      "document_id": "50b8ab4c-28f6-4f05-88d1-b38d3912309b"
+    }
+  },
+  "https://pola.lt/prekes/psichologine-konsultacija": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:53:06.667076+00:00",
+    "metadata": {
+      "content_hash": "05346b524a4c99cd1ce0d44204fdae1b",
+      "chunks_processed": 9,
+      "document_id": "91b6a008-fb60-4446-899a-de509f23d736"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2018-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:56:24.835834+00:00",
+    "metadata": {
+      "content_hash": "5010c7983f1f72ce930e13c0e0e39ae4",
+      "chunks_processed": 14,
+      "document_id": "c6c07a22-b499-438d-9b2e-5324cc0112e2"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2017-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:56:25.289865+00:00",
+    "metadata": {
+      "content_hash": "6770fd10358ca3d6541fe12263aac8ad",
+      "chunks_processed": 14,
+      "document_id": "45e2e98a-8ca4-4f9b-90ad-17cb6b0aab95"
+    }
+  },
+  "https://pola.lt/apie-pola/veiklos-ataskaitos": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:56:50.713351+00:00",
+    "metadata": {
+      "content_hash": "d63b71627a28076b1cd1e4e4b4331483",
+      "chunks_processed": 50,
+      "document_id": "8e11b4b5-259b-41cb-9412-268b5775717e"
+    }
+  },
+  "https://pola.lt/mano-paskyra": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:57:15.425887+00:00",
+    "metadata": {
+      "content_hash": "aacca54bed95e4086ac2d11d42a9c041",
+      "chunks_processed": 9,
+      "document_id": "6116f7cc-e161-4415-96b6-dfd5b5cb1694"
+    }
+  },
+  "https://pola.lt/parduotuve": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:57:17.327606+00:00",
+    "metadata": {
+      "content_hash": "e53fd4826ddc6c98bbe7650c682225c1",
+      "chunks_processed": 8,
+      "document_id": "37c3dfc6-34f6-413d-9dfa-1024a1ebbef0"
+    }
+  },
+  "https://pola.lt/apmokejimas": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:57:20.503800+00:00",
+    "metadata": {
+      "content_hash": "00c6f11c0702eb18378869b333a4bb03",
+      "chunks_processed": 7,
+      "document_id": "979dd317-e010-4872-bf95-651de8cdf5e7"
+    }
+  },
+  "https://pola.lt/prekiu-pristatymas-ir-grazinimas": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:58:10.878590+00:00",
+    "metadata": {
+      "content_hash": "4eb45b7d2dbfc3c4625cb22cfd7f19b5",
+      "chunks_processed": 10,
+      "document_id": "e6ad3184-6083-453a-8cee-bd832440ef4d"
+    }
+  },
+  "https://pola.lt/privatumo-politika": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:58:12.393296+00:00",
+    "metadata": {
+      "content_hash": "bd89ad3305877bd600dea3597981fd05",
+      "chunks_processed": 11,
+      "document_id": "98e3e3e9-304f-4b36-b206-79e6eaa829ae"
+    }
+  },
+  "https://pola.lt/savanoryste": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:58:38.749560+00:00",
+    "metadata": {
+      "content_hash": "57eec56389db6af4a3f1b44e9c6a21dd",
+      "chunks_processed": 50,
+      "document_id": "c1529407-131d-4542-9592-756c6316a088"
+    }
+  },
+  "https://pola.lt/krepselis": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:59:25.113486+00:00",
+    "metadata": {
+      "content_hash": "8cbbcc503c7c922ff012ea4855e85e5f",
+      "chunks_processed": 7,
+      "document_id": "694b084d-873e-433f-95f6-5871dbc5c43d"
+    }
+  },
+  "https://pola.lt/pola-kortele/pola-korteles-suteikiamos-nemokamos-konsultacijos": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:59:29.544377+00:00",
+    "metadata": {
+      "content_hash": "72730597aa0f6fc659d8f85e7d6a28b4",
+      "chunks_processed": 13,
+      "document_id": "24cdae39-b6b6-4c91-825f-02bc99062781"
+    }
+  },
+  "https://pola.lt/apie-pola/konsultuojantys-specialistai": {
+    "status": "success",
+    "last_processed": "2025-02-20T11:59:55.638077+00:00",
+    "metadata": {
+      "content_hash": "197ec57fcddf6d27b5a1e0c354f74b87",
+      "chunks_processed": 50,
+      "document_id": "b63d6a8a-7c4e-40f9-b65e-1991ed9e9a42"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2019-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:00:39.172888+00:00",
+    "metadata": {
+      "content_hash": "ee3d3f9b0bfdefbb9601426b29f91a92",
+      "chunks_processed": 16,
+      "document_id": "7a0a555b-1af7-4b03-8a6a-3b9fcb48e501"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2020-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:00:49.135543+00:00",
+    "metadata": {
+      "content_hash": "e3d8ca32b6a7fab981a789b837dbc5f2",
+      "chunks_processed": 20,
+      "document_id": "51b21e0b-546e-42f7-8736-9f0c1f482fb8"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2022-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:00:58.346104+00:00",
+    "metadata": {
+      "content_hash": "dab2c835fa9fbb166b15b270443d9c8b",
+      "chunks_processed": 17,
+      "document_id": "7b363f27-cb9f-4665-9331-1f9939cf7158"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2021-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:01:48.463256+00:00",
+    "metadata": {
+      "content_hash": "ff9591e034f40d9e5699b732dc0d73f3",
+      "chunks_processed": 14,
+      "document_id": "191596d7-7edc-4dee-b223-e64eb3635226"
+    }
+  },
+  "https://pola.lt/parama": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:01:53.980836+00:00",
+    "metadata": {
+      "content_hash": "3e187331490d553613f2ce7090adbac4",
+      "chunks_processed": 10,
+      "document_id": "8b485e68-a51a-4104-acef-41a11e74cf86"
+    }
+  },
+  "https://pola.lt/konsultacijos": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:02:21.037790+00:00",
+    "metadata": {
+      "content_hash": "5902c5503e4e48562c2201b1af303b6e",
+      "chunks_processed": 50,
+      "document_id": "389bec0d-2aab-4918-9710-fa203498952b"
+    }
+  },
+  "https://pola.lt/kontaktai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:03:24.164299+00:00",
+    "metadata": {
+      "content_hash": "1c23f49f4f1c472c1056976663e2f3ad",
+      "chunks_processed": 21,
+      "document_id": "c3f75199-2e8c-454a-b7b6-b3ba6caf0971"
+    }
+  },
+  "https://pola.lt/veiklos-ataskaitos/2023-m-ataskaita": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:03:33.684892+00:00",
+    "metadata": {
+      "content_hash": "770a0525d9fe4dd77cef2a6b962b5341",
+      "chunks_processed": 21,
+      "document_id": "b1122c69-5ca8-47e4-98b9-0b42bf1436a5"
+    }
+  },
+  "https://pola.lt/apie-pola/komanda": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:04:02.386123+00:00",
+    "metadata": {
+      "content_hash": "cb6aa9d73680957fd66c479e6bcee8f4",
+      "chunks_processed": 50,
+      "document_id": "f1dbb0c7-3be0-4bbd-b0a9-47acb4fe715f"
+    }
+  },
+  "https://pola.lt/pola-kortele/kaip-gauti": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:05:12.313300+00:00",
+    "metadata": {
+      "content_hash": "dd322de44caba6608d164d86d0027e34",
+      "chunks_processed": 13,
+      "document_id": "7e247e94-8c25-47d2-a208-0eb731ffa1e2"
+    }
+  },
+  "https://pola.lt/apie-pola/aktyviausi-pola-savanoriai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:05:42.008457+00:00",
+    "metadata": {
+      "content_hash": "41427773980b9167fa98635378c6ec8f",
+      "chunks_processed": 50,
+      "document_id": "ab317ab6-ae47-4fd5-ae5c-4f510173e4b8"
+    }
+  },
+  "https://pola.lt/apie-pola/naryste": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:06:04.789056+00:00",
+    "metadata": {
+      "content_hash": "80bc501aaf1c7eb87892b1766653891e",
+      "chunks_processed": 50,
+      "document_id": "5a05f34b-5b2b-4136-93f9-114275f732ee"
+    }
+  },
+  "https://pola.lt/renginiai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:06:32.877493+00:00",
+    "metadata": {
+      "content_hash": "09ceb2be3d5010e751df7da281c2421c",
+      "chunks_processed": 11,
+      "document_id": "fd469cb7-83f6-4a2f-bc01-d0ecee11e6af"
+    }
+  },
+  "https://pola.lt/verslo-parama": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:06:40.396296+00:00",
+    "metadata": {
+      "content_hash": "ac2e027b358caff355a00f66443f344e",
+      "chunks_processed": 8,
+      "document_id": "da350a95-c71d-472d-bf9b-cc2e7613ec8b"
+    }
+  },
+  "https://pola.lt/pola-kortele/apie-pola-kortele": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:06:44.015118+00:00",
+    "metadata": {
+      "content_hash": "580cf2fa7cadb8c493f5d7ab49808b49",
+      "chunks_processed": 13,
+      "document_id": "c51765fb-6f81-467f-8336-cc2e6f3a6459"
+    }
+  },
+  "https://pola.lt/apie-pola/kiti-apie-mus": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:08:38.007531+00:00",
+    "metadata": {
+      "content_hash": "4105d77aefce78f2e9738029421a95be",
+      "chunks_processed": 50,
+      "document_id": "9cb59dd9-1430-4c26-ac22-62942b3dab75"
+    }
+  },
+  "https://pola.lt/apie-pola/pola-draugai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:08:59.310755+00:00",
+    "metadata": {
+      "content_hash": "394e941aff3bf5a3ca56f65aa03e8519",
+      "chunks_processed": 50,
+      "document_id": "374c36dc-8ec2-4e42-82fd-d20ab9473e2f"
+    }
+  },
+  "https://pola.lt/apie-pola/apie-pola": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:09:23.242798+00:00",
+    "metadata": {
+      "content_hash": "171d5490d5f74b79ce420192aa9c1053",
+      "chunks_processed": 50,
+      "document_id": "4fee2560-280e-4313-afcd-45a26459d103"
+    }
+  },
+  "https://pola.lt/pola-kortele/pola-ambasadoriai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:10:22.479172+00:00",
+    "metadata": {
+      "content_hash": "70607feafc3feb99215cc426ce02fc92",
+      "chunks_processed": 13,
+      "document_id": "b5a3b031-edc0-40d0-a109-03375c6a085e"
+    }
+  },
+  "https://pola.lt/apie-pola/pola-dokumentai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:10:41.588841+00:00",
+    "metadata": {
+      "content_hash": "63f0ea54edfae0c3d71d3cb77827a565",
+      "chunks_processed": 50,
+      "document_id": "e36a01d6-d0ea-47d5-9f07-1919bd84d018"
+    }
+  },
+  "https://pola.lt/pola-kortele/atsiimk-susitikus-su-pola-atstovais": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:10:47.345808+00:00",
+    "metadata": {
+      "content_hash": "a73af28264d18e935725fba15f3b5bd6",
+      "chunks_processed": 13,
+      "document_id": "2a9a253f-6021-4c11-aaea-790e53f3e09d"
+    }
+  },
+  "https://pola.lt/pola-kortele/pola-nuolaidos": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:11:40.945665+00:00",
+    "metadata": {
+      "content_hash": "fad0c03324c5a1b83cc02eb82ca78582",
+      "chunks_processed": 13,
+      "document_id": "e038927c-83a7-4e89-9770-9e3f4e7ac871"
+    }
+  },
+  "https://pola.lt/apie-pola/projektai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:12:06.509749+00:00",
+    "metadata": {
+      "content_hash": "9ed0ab15a0accc0f9af6c1ce7b42bc14",
+      "chunks_processed": 50,
+      "document_id": "2406aeeb-2a31-4193-80e7-2d059f7c3d82"
+    }
+  },
+  "https://pola.lt/pola-kortele/pola-kvietimai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:12:13.585503+00:00",
+    "metadata": {
+      "content_hash": "97f55e258b9caac57434fd08cc935df8",
+      "chunks_processed": 13,
+      "document_id": "6160cb07-f022-4cc2-960b-50904ff4c648"
+    }
+  },
+  "https://pola.lt/pacientu-gidai": {
+    "status": "success",
+    "last_processed": "2025-02-20T12:12:29.971439+00:00",
+    "metadata": {
+      "content_hash": "af08f9da906f51d376662b60790b552e",
+      "chunks_processed": 10,
+      "document_id": "8c8ab4c7-4cf5-4cb7-89c5-187aced1ccf1"
+    }
+  }
+}
