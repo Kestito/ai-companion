@@ -534,6 +534,39 @@ async def process_chunk(chunk: str, chunk_number: int, url: str, db: DatabaseCli
         logger.error(f"Error processing chunk {chunk_number} from {url}: {str(e)}", exc_info=True)
         return None
 
+async def save_markdown_to_file(url: str, markdown: str, base_dir: str = "data/markdown") -> str:
+    """Save markdown content to a file in the specified directory.
+    
+    Args:
+        url: The source URL
+        markdown: The markdown content to save
+        base_dir: Base directory for markdown files
+        
+    Returns:
+        The path to the saved file
+    """
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(base_dir, exist_ok=True)
+        
+        # Generate a safe filename from the URL
+        # Remove protocol and replace special characters
+        safe_name = url.replace("https://", "").replace("http://", "")
+        safe_name = safe_name.replace("/", "_").replace(".", "_")
+        filename = f"{safe_name}.md"
+        file_path = os.path.join(base_dir, filename)
+        
+        # Save the file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(markdown)
+            
+        logger.info(f"Saved markdown to {file_path}")
+        return file_path
+        
+    except Exception as e:
+        logger.error(f"Error saving markdown file for {url}: {str(e)}")
+        raise
+
 async def process_and_store_document(url: PolaURL, markdown: str, db: DatabaseClients):
     """Process and store document with optimized batch operations."""
     try:
@@ -545,21 +578,35 @@ async def process_and_store_document(url: PolaURL, markdown: str, db: DatabaseCl
             logger.info(f"Skipping already processed URL {normalized_url} with status: {status['status']}")
             return
         
-        # Find the title marker and process only content after it
-        title_marker = "[{title}]"
-        content_start = markdown.find(title_marker)
+        # For priesvezi.lt, use the entire markdown content
+        is_priesvezi = 'priesvezi.lt' in normalized_url
         
-        if content_start == -1:
-            logger.info(f"No title marker found in {normalized_url}, skipping document")
-            return
+        if is_priesvezi:
+            processed_markdown = markdown.strip()
+        else:
+            # Find the title marker and process only content after it for other sites
+            title_marker = "[{title}]"
+            content_start = markdown.find(title_marker)
             
-        # Extract only content after the title marker
-        processed_markdown = markdown[content_start + len(title_marker):].strip()
+            if content_start == -1:
+                logger.info(f"No title marker found in {normalized_url}, skipping document")
+                return
+                
+            # Extract only content after the title marker
+            processed_markdown = markdown[content_start + len(title_marker):].strip()
         
         if not processed_markdown:
-            logger.info(f"No content after title marker in {normalized_url}, skipping document")
+            logger.info(f"No content found in {normalized_url}, skipping document")
             return
 
+        # Save markdown to file first
+        try:
+            file_path = await save_markdown_to_file(normalized_url, processed_markdown)
+            logger.info(f"Saved markdown for {normalized_url} to {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to save markdown file for {normalized_url}: {str(e)}")
+            # Continue processing even if file save fails
+            
         content_hash = hashlib.md5(processed_markdown.encode()).hexdigest()
         
         # Check if document exists in Supabase with proper response handling
@@ -917,7 +964,10 @@ async def main():
         # Define sitemap URLs and initialize processor
         sitemap_urls = [
             "https://pola.lt/product-sitemap.xml",
-            "https://pola.lt/page-sitemap.xml"
+            "https://pola.lt/page-sitemap.xml",
+         #   "https://priesvezi.lt/page-sitemap.xml",
+         #   "https://priesvezi.lt/docs-sitemap.xml",
+           #  "https://priesvezi.lt/doc_category-sitemap.xml"
         ]
         
         print("Debug: Creating SitemapProcessor instance...")

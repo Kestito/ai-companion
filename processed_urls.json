@@ -1,434 +1,776 @@
 {
-  "https://pola.lt/prekes/wc-donation-remimas-2024": {
+  "https://priesvezi.lt": {
     "status": "success",
-    "last_processed": "2025-02-20T11:47:58.126493+00:00",
+    "last_processed": "2025-02-21T12:14:12.224621+00:00",
     "metadata": {
-      "content_hash": "5dc14c5535645344460f58a70f37ab8e",
-      "chunks_processed": 9,
-      "document_id": "8cd6afda-f60d-4293-8af3-c71bc3273b2b"
+      "content_hash": "5511fef5f314b00e17c7f380e23a5ba2",
+      "chunks_processed": 19,
+      "document_id": "9c2ac574-b62f-44f6-bf5b-78cea94a3361"
+    }
+  },
+  "https://priesvezi.lt/apie-pries-vezi": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:14:14.981254+00:00",
+    "metadata": {
+      "content_hash": "8b24f747de1022100fb1de05ec1d62a9",
+      "chunks_processed": 14,
+      "document_id": "c47071be-aa77-4621-982b-8b25f074d983"
+    }
+  },
+  "https://priesvezi.lt/zinynas": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:14:17.548256+00:00",
+    "metadata": {
+      "content_hash": "bda5de297e3fc80ccb68bfdf6bc829f8",
+      "chunks_processed": 10,
+      "document_id": "fe5a4a17-e99e-43ed-92b3-59b655ae10c5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/gydymo-budai-ir-alternatyvos/sveikatos-prieziuros-specialistai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:15:01.376824+00:00",
+    "metadata": {
+      "content_hash": "7c2f0dadf74b70f3b9de75c3fe1b96e8",
+      "chunks_processed": 18,
+      "document_id": "b0a596a0-2432-446e-a8c6-8851423e6c01"
+    }
+  },
+  "https://priesvezi.lt/zinynas/remisija-kas-manes-laukia/kas-manes-laukia-pasibaigus-aktyviam-vezio-gydymui": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:15:11.932575+00:00",
+    "metadata": {
+      "content_hash": "94fec92d503ca891392c894a20460dbc",
+      "chunks_processed": 19,
+      "document_id": "a3fe36c2-7558-4a02-8719-46a9ee941ae1"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-yra-vezys/kas-tai-yra-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:15:37.331811+00:00",
+    "metadata": {
+      "content_hash": "5b421df4c421d724f3f5bdab7a1f873b",
+      "chunks_processed": 24,
+      "document_id": "85769878-0ed1-4ecb-b876-58dc298be61b"
+    }
+  },
+  "https://priesvezi.lt/zinynas/skausmo-valdymas/skausmas-sergant-veziu": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:16:23.355308+00:00",
+    "metadata": {
+      "content_hash": "2a822dcac5a6636db3a9f908b95a049b",
+      "chunks_processed": 25,
+      "document_id": "d38979b2-468e-42fd-bbe4-8700d8e8c997"
+    }
+  },
+  "https://priesvezi.lt/zinynas/paciento-atmintine-gydymas/kaip-pasiruosti-vizitui-pas-seimos-gydytoja": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:16:36.254052+00:00",
+    "metadata": {
+      "content_hash": "52a5eb598ce86ce66471b68d797bbda8",
+      "chunks_processed": 24,
+      "document_id": "e5f99b21-73dd-400f-9d7e-dd2a9621bbb9"
+    }
+  },
+  "https://priesvezi.lt/zinynas/vizitai-pas-gydytojus/ko-klausti-gydytoju": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:16:46.098430+00:00",
+    "metadata": {
+      "content_hash": "eb68a342c2a45278a746fca6e5f4ae74",
+      "chunks_processed": 21,
+      "document_id": "d2ea580e-5bfd-49db-a3be-fdce7869dd21"
+    }
+  },
+  "https://priesvezi.lt/zinynas/reguliari-sveikatos-patikra/kaip-galeciau-geriau-pasirupinti-savo-sveikata": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:17:43.709373+00:00",
+    "metadata": {
+      "content_hash": "9ddf85ee8e191c7529607d19ed0e1944",
+      "chunks_processed": 21,
+      "document_id": "49bc11be-6c00-4fb9-9066-d915f6e01acd"
+    }
+  },
+  "https://priesvezi.lt/zinynas/reguliari-sveikatos-patikra/vizitai-pas-seimos-gydytoja": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:17:56.430368+00:00",
+    "metadata": {
+      "content_hash": "de5759abfc24569681f36e326908787e",
+      "chunks_processed": 25,
+      "document_id": "4a6d99a8-04bd-4e96-af8a-9aaca6539163"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba-kai-gydymas-neveikia/gedejimas-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:18:12.632084+00:00",
+    "metadata": {
+      "content_hash": "c08e9ddc54785027f4d97b2a1b206acc",
+      "chunks_processed": 34,
+      "document_id": "32e79753-30ef-4889-8da7-fe60f23c5485"
+    }
+  },
+  "https://priesvezi.lt/zinynas/gydymo-budai-ir-alternatyvos/vezio-gydymo-budai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:19:02.591573+00:00",
+    "metadata": {
+      "content_hash": "a95c486c0ae054c36c9d3be1abc21325",
+      "chunks_processed": 24,
+      "document_id": "b64c9581-79c7-4047-be31-bf604007969c"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ilgalaikiu-poveikiu-valdymas-remisija/sirdies-ir-kraujagysliu-sveikata": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:19:12.835604+00:00",
+    "metadata": {
+      "content_hash": "b7acd5c9aeb7c007678ac45d81ee43b1",
+      "chunks_processed": 20,
+      "document_id": "6ef3be3b-ef4e-4f22-a783-622c51be136c"
+    }
+  },
+  "https://priesvezi.lt/zinynas/uncategorized/ko-klausti-gydytoju-5": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:19:24.678854+00:00",
+    "metadata": {
+      "content_hash": "54e51f5542064176d46f70f3aad4beb1",
+      "chunks_processed": 20,
+      "document_id": "c26a8da6-8677-43fe-910b-47b9797fa260"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba/maldos": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:20:43.179011+00:00",
+    "metadata": {
+      "content_hash": "9661ea9edf2dd269ff0d98d5b1bb0f01",
+      "chunks_processed": 49,
+      "document_id": "0059b684-9560-422e-a76b-664381bfcd39"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ilgalaikiu-poveikiu-valdymas-remisija/po-kruties-vezio-iskylancios-problemos": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:20:55.791959+00:00",
+    "metadata": {
+      "content_hash": "3f222ce16aa332bff2c5d87698955c0f",
+      "chunks_processed": 26,
+      "document_id": "7b76f240-2d5b-4fa4-9b9f-e62e6a9ccb48"
+    }
+  },
+  "https://priesvezi.lt/zinynas/pirmine-prevencija/kaip-alkoholis-veikia-sveikata": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:21:06.749292+00:00",
+    "metadata": {
+      "content_hash": "afba58e3c42d32304a101c1c73bd89d9",
+      "chunks_processed": 22,
+      "document_id": "4f15f2ac-0ad4-4b81-a897-09af534dbc62"
+    }
+  },
+  "https://priesvezi.lt/zinynas/pirmine-prevencija/kokia-yra-fizinio-aktyvumo-svarba": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:22:05.898274+00:00",
+    "metadata": {
+      "content_hash": "9a288ba7139d606b5cf0a1dd0e66dff5",
+      "chunks_processed": 22,
+      "document_id": "3dab9f2f-a5f9-4ecd-85be-cfb21d15e3b1"
+    }
+  },
+  "https://priesvezi.lt/zinynas/pirmine-prevencija/kaip-tureciau-elgtis-sauleje": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:22:14.812436+00:00",
+    "metadata": {
+      "content_hash": "2b60064a6d49f539870c61251157ea13",
+      "chunks_processed": 30,
+      "document_id": "429bb3c8-707c-4c55-ad4e-0f72838ae585"
+    }
+  },
+  "https://priesvezi.lt/zinynas/tretine-prevencija/kokia-yra-miego-svarba-organizmui": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:22:26.528196+00:00",
+    "metadata": {
+      "content_hash": "3a4ea5901daa2e94a5c8759c909a8a25",
+      "chunks_processed": 21,
+      "document_id": "9d0992c4-b4d8-453a-9531-bc345ec79ebe"
+    }
+  },
+  "https://priesvezi.lt/zinynas/pirmine-prevencija/kas-sukelia-vezi-mitai-ir-faktai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:23:13.272676+00:00",
+    "metadata": {
+      "content_hash": "bfcc3d0bd1ff02c377c11d54c4878563",
+      "chunks_processed": 25,
+      "document_id": "fe0ba67a-4b18-4cac-a1f2-0c270ed8e5ab"
+    }
+  },
+  "https://priesvezi.lt/zinynas/pirmine-prevencija/kas-yra-vezio-prevencija": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:23:21.942016+00:00",
+    "metadata": {
+      "content_hash": "95d574a52ad6fa90007d750285dee1b9",
+      "chunks_processed": 18,
+      "document_id": "d195ff9b-87ce-4dbb-a6e9-68247d39f233"
+    }
+  },
+  "https://priesvezi.lt/zinynas/tretine-prevencija/psichikos-sveikatos-svarba": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:23:31.653028+00:00",
+    "metadata": {
+      "content_hash": "d398135e05d07138bda72be63f1407b1",
+      "chunks_processed": 18,
+      "document_id": "c312f0a4-7ac7-4ec4-aea3-46d8d0ba270f"
+    }
+  },
+  "https://priesvezi.lt/zinynas/remisija-kas-manes-laukia/ko-klausti-gydytoju-4": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:24:19.745267+00:00",
+    "metadata": {
+      "content_hash": "d7c863b4eac024e90846fde51215d60a",
+      "chunks_processed": 19,
+      "document_id": "f986e1f3-25ae-4134-b3b4-c601fb3a28f3"
+    }
+  },
+  "https://priesvezi.lt/zinynas/paciento-atmintine-laukiu-gydymo/ko-klausti-gydytoju-2": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:24:33.184908+00:00",
+    "metadata": {
+      "content_hash": "bbf0f5ee28fa529c62d942d80ac71c7f",
+      "chunks_processed": 24,
+      "document_id": "6e966e2a-f6f8-41c9-8d6c-48d7eee6ff6e"
+    }
+  },
+  "https://priesvezi.lt/zinynas/paciento-atmintine-gydymas/ko-klausti-gydytoju-3": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:24:44.360144+00:00",
+    "metadata": {
+      "content_hash": "f227ec5071052c0364f0b83ce1502a5a",
+      "chunks_processed": 24,
+      "document_id": "7503ef13-d9ec-4a18-9ae9-81a94083f8c2"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ilgalaikiu-poveikiu-valdymas-remisija/psichika-ir-smegenys-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:25:46.718174+00:00",
+    "metadata": {
+      "content_hash": "74efc86b5d402e606ac4df57bb3d0293",
+      "chunks_processed": 29,
+      "document_id": "538e1ed1-a320-45f8-a5d1-bff61d56a0a5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/pirmine-prevencija/kodel-verta-mesti-rukyma": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:26:01.772240+00:00",
+    "metadata": {
+      "content_hash": "b82947440fbf805cdbbd136afba9d13f",
+      "chunks_processed": 31,
+      "document_id": "541ca6ea-5852-472e-9fdf-9d371e815706"
+    }
+  },
+  "https://priesvezi.lt/zinynas/uncategorized/kaip-pasirupinti-savo-kaulu-bukle": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:26:13.263503+00:00",
+    "metadata": {
+      "content_hash": "b31dd2035bcca2000ef90df3cdb2abe1",
+      "chunks_processed": 23,
+      "document_id": "1aa2d29f-73c1-42a4-9bb4-aeb46ca1cc63"
+    }
+  },
+  "https://priesvezi.lt/zinynas/remisija-kas-manes-laukia/pasveikusiojo-pasas": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:27:04.635979+00:00",
+    "metadata": {
+      "content_hash": "7531d16394ee39693817f15f8c1254d2",
+      "chunks_processed": 22,
+      "document_id": "4b451ed3-aa98-4473-96a7-ccb428b95954"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-laukiu-gydymo/paskolos": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:27:09.662626+00:00",
+    "metadata": {
+      "content_hash": "e2d828d390f5dae559f01649a0cb5ec5",
+      "chunks_processed": 19,
+      "document_id": "335833c6-cd31-4f2a-abf1-0aad7a250ed5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/antrine-prevencija/paveldimas-kruties-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:27:19.801550+00:00",
+    "metadata": {
+      "content_hash": "4390500c3dc8b9f62809194c62d505cf",
+      "chunks_processed": 21,
+      "document_id": "13ea338d-928e-4d56-9d07-e5bacdff646d"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba-remisija/emociju-patyrimai-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:28:32.613407+00:00",
+    "metadata": {
+      "content_hash": "4e9363645bc4284e0da7d45b6c6a1726",
+      "chunks_processed": 42,
+      "document_id": "ae439fed-d59b-43b4-9dba-dc265feb5b1f"
+    }
+  },
+  "https://priesvezi.lt/zinynas/gydymo-budai-ir-alternatyvos-laukiu-gydymo/vezio-gydymas-uzsienyje": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:28:40.137722+00:00",
+    "metadata": {
+      "content_hash": "4d221ad34d648761ae4d8294c3e16eac",
+      "chunks_processed": 22,
+      "document_id": "8ad87984-db06-4944-8e64-1bd6182b00ab"
+    }
+  },
+  "https://priesvezi.lt/zinynas/gydymo-budai-ir-alternatyvos/vilties-programos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:28:52.069572+00:00",
+    "metadata": {
+      "content_hash": "fe8c2270b91d367c5e58819ed8e98f55",
+      "chunks_processed": 22,
+      "document_id": "0210e3a3-caba-4346-b0ef-87343454e68a"
+    }
+  },
+  "https://priesvezi.lt/zinynas/gydymo-budai-ir-alternatyvos/vezio-klinikiniai-tyrimai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:30:11.556985+00:00",
+    "metadata": {
+      "content_hash": "39790b3ec6aa63aa229629dd2b5788ce",
+      "chunks_processed": 28,
+      "document_id": "a4dd015d-65e8-4ba7-be5a-1518c1898231"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba/emociju-patyrimas": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:30:33.239381+00:00",
+    "metadata": {
+      "content_hash": "50b90a69728938dec5207545d23797b9",
+      "chunks_processed": 44,
+      "document_id": "cb763e53-71d7-4d13-ae50-0a2f3b15c4ff"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba-kai-gydymas-neveikia/fiziniai-psichologiniai-ir-emociniai-pokyciai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:30:58.894840+00:00",
+    "metadata": {
+      "content_hash": "e12f45f0063d0ddbe7b8303031e666b8",
+      "chunks_processed": 49,
+      "document_id": "d51ffa47-bb25-40ab-bb47-d26be25be181"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-laukiu-gydymo/paciento-informacija": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:31:52.831310+00:00",
+    "metadata": {
+      "content_hash": "ec9cf7a83aa1494ea6cf8ad8e6148b01",
+      "chunks_processed": 23,
+      "document_id": "48d9f224-ea48-4d2b-9159-ee9baee0c23e"
+    }
+  },
+  "https://priesvezi.lt/zinynas/socialine-pagalba/reabilitacija": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:32:11.645969+00:00",
+    "metadata": {
+      "content_hash": "f82adf9b7eb1211cfc16be6b225b3106",
+      "chunks_processed": 26,
+      "document_id": "0a08376a-0a61-4dc6-a336-7e90c7208248"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-kai-gydymas-neveikia/pacientu-teises": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:32:18.719787+00:00",
+    "metadata": {
+      "content_hash": "e7e49eb0e1f0191f1c2473d7522b81a0",
+      "chunks_processed": 26,
+      "document_id": "83284751-ccab-4af3-9265-3ec5595712ff"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-laukiu-gydymo/savivaldybiu-skiriamos-vienkartines-ismokos": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:33:08.992788+00:00",
+    "metadata": {
+      "content_hash": "e6f2ba32d821e2c7f1f1630f9cf49392",
+      "chunks_processed": 24,
+      "document_id": "8ac4ca43-384c-4b2d-b600-37c64df79aec"
+    }
+  },
+  "https://priesvezi.lt/zinynas/slauga-ir-paliatyvioji-pagalba-kai-gydymas-neveikia/individualios-pagalbos-teikimo-islaidu-kompensacijos-poreikiai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:33:23.261546+00:00",
+    "metadata": {
+      "content_hash": "96293b64ec7020537ff201b18e4642c6",
+      "chunks_processed": 20,
+      "document_id": "154872ab-cc67-44e9-b75d-dbd450864e3a"
+    }
+  },
+  "https://priesvezi.lt/zinynas/tretine-prevencija/burnos-sveikata": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:33:34.406667+00:00",
+    "metadata": {
+      "content_hash": "702b34b843f94178bb55faa886290205",
+      "chunks_processed": 22,
+      "document_id": "e5b6bd26-c033-48ba-83ee-e2ba8688cd4e"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ar-man-vezys/simptomu-pastebejimas-laiku": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:34:24.160315+00:00",
+    "metadata": {
+      "content_hash": "94aa79bbdd261fc7b9d873f4b2f8b4de",
+      "chunks_processed": 21,
+      "document_id": "a357e95f-ac32-41aa-be9f-3eb5660b8436"
+    }
+  },
+  "https://priesvezi.lt/zinynas/papildomos-pagalbines-priemones-gydymo-metu-gydymo-budai-ir-alternatyvos-laukiu-gydymo-laukiu-gydymo/saldantis-salmas": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:34:36.220473+00:00",
+    "metadata": {
+      "content_hash": "87baf06e5c1995d67b0b8e91932bc8c5",
+      "chunks_processed": 22,
+      "document_id": "f0aec375-417d-4e45-bb07-b65864d5a4d1"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba-remisija/dvasine-saviugda": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:34:51.488712+00:00",
+    "metadata": {
+      "content_hash": "5f275278a9463bb13cfde40fa5f16280",
+      "chunks_processed": 30,
+      "document_id": "cc7bd7bb-f1d1-49a5-8bae-e76bd6b7e566"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-gydymas/pacientu-nemokamas-pavezejimas-i-is-gydymo-istaigas": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:35:49.565639+00:00",
+    "metadata": {
+      "content_hash": "0e4be6f4b096317e7696aeecac0dc98f",
+      "chunks_processed": 32,
+      "document_id": "bc48f953-63f5-4060-8816-eec5474e8f84"
+    }
+  },
+  "https://priesvezi.lt/zinynas/remisija-kas-manes-laukia/tyrimu-atmintine-esantiems-onkologines-ligos-stebesenoje": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:35:59.059767+00:00",
+    "metadata": {
+      "content_hash": "ef4ced84f7a142628ea64be2b6b14902",
+      "chunks_processed": 18,
+      "document_id": "ba8a0f81-22ed-47af-8ff8-091723614e7d"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/gerklu-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:36:12.796779+00:00",
+    "metadata": {
+      "content_hash": "610d12d0645023f61c09d6842dfa46de",
+      "chunks_processed": 25,
+      "document_id": "1adcd554-e7d9-4d33-b6f6-67967fdf05d5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/gimdos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:37:12.855954+00:00",
+    "metadata": {
+      "content_hash": "d33bb0bc315205e3ddb1d74a84abda23",
+      "chunks_processed": 28,
+      "document_id": "e5c64141-45a8-45e5-b21b-f1ba4570a1f5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/inkstu-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:37:30.730475+00:00",
+    "metadata": {
+      "content_hash": "33096cdb8bd9bef2dd85c2b6fecc5930",
+      "chunks_processed": 30,
+      "document_id": "445faba9-918c-4ff1-85c8-12f4878399fc"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos-laukiu-gydymo/kasos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:37:41.639828+00:00",
+    "metadata": {
+      "content_hash": "416c9a4d2c5a07a74c066a46b37cecb9",
+      "chunks_processed": 26,
+      "document_id": "4a0e8b55-7c53-43f6-8a7a-24bea64a68b5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/melanoma": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:38:42.429060+00:00",
+    "metadata": {
+      "content_hash": "43fbd34cc021062fe7d8629b1e35b444",
+      "chunks_processed": 27,
+      "document_id": "c8bc4e23-504b-42a4-943a-a9f981d8beab"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos-laukiu-gydymo/minkstuju-audiniu-sarkomos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:38:58.664223+00:00",
+    "metadata": {
+      "content_hash": "565795a5c817b3d31400486c8ac7e2bb",
+      "chunks_processed": 31,
+      "document_id": "a50482e9-97a3-4785-9ed8-8db52a094a49"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/neuroendokrininiai-navikai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:39:12.124620+00:00",
+    "metadata": {
+      "content_hash": "89fedeb4f0438218397a8cc4fd5efc26",
+      "chunks_processed": 27,
+      "document_id": "5097c8fb-b5f7-40ca-b089-a05aae574c4e"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/seklides-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:40:15.840700+00:00",
+    "metadata": {
+      "content_hash": "02167a4830df3d87e4bc94eed156faef",
+      "chunks_processed": 28,
+      "document_id": "0397da7f-5db4-49c3-82d1-0b17dcb49ee4"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/skydliaukes-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:40:27.287238+00:00",
+    "metadata": {
+      "content_hash": "28fbb08b68669f99a28a9646810ae57e",
+      "chunks_processed": 26,
+      "document_id": "46073ed1-62e3-48ae-b680-a5ab5112bb60"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos-laukiu-gydymo/slapimo-pusles-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:40:43.854852+00:00",
+    "metadata": {
+      "content_hash": "39ae9973ae1b1c719c53e5e617d29c89",
+      "chunks_processed": 32,
+      "document_id": "cd5727f9-eaf5-4ee1-8bed-ca415f735911"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/smegenu-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:41:49.408292+00:00",
+    "metadata": {
+      "content_hash": "d2cbca3cb10c30599a3d811e4e379724",
+      "chunks_processed": 25,
+      "document_id": "49c0aa9c-8608-4e0e-864b-6fd9bcb9c584"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/tulzies-pusles-ir-lataku-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:42:02.154297+00:00",
+    "metadata": {
+      "content_hash": "59ed76c7d2629d919e895b170c0db441",
+      "chunks_processed": 26,
+      "document_id": "afdb1f0f-b058-40f3-9f4d-031ebac7664b"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ilgalaikiu-poveikiu-valdymas-remisija/pilvas-ir-virskinimas-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:42:25.089377+00:00",
+    "metadata": {
+      "content_hash": "aa0899ea2e2fc1ac692394f07394a7aa",
+      "chunks_processed": 45,
+      "document_id": "4336c7c1-f019-43bc-a7bd-18eb10ddce42"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-laukiu-gydymo/sveikatos-prieziuros-paslaugu-teikimas": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:43:26.960307+00:00",
+    "metadata": {
+      "content_hash": "b95068aa30e9423b2549b447d615de00",
+      "chunks_processed": 29,
+      "document_id": "82b0138f-b92f-40c0-8bf4-6a8a7ba169f8"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/odos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:43:43.340632+00:00",
+    "metadata": {
+      "content_hash": "c27193fdbee29190284316e1a6ac1b45",
+      "chunks_processed": 27,
+      "document_id": "237ea7f6-9f13-4e81-9884-be2430ccb900"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/gimdos-kaklelio-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:43:55.664444+00:00",
+    "metadata": {
+      "content_hash": "44d934d8ab48745ed7d1812826733063",
+      "chunks_processed": 29,
+      "document_id": "4cc173ea-bdf2-4bff-8693-497ad17c1739"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/skrandzio-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:44:57.580619+00:00",
+    "metadata": {
+      "content_hash": "06dc9f40dc7f295480bdc92a3aee9ba8",
+      "chunks_processed": 32,
+      "document_id": "d8c61e3a-5814-4897-98cf-c38e485e62b5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos-laukiu-gydymo/kiausidziu-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:45:12.094548+00:00",
+    "metadata": {
+      "content_hash": "f6789067338e070b3c91be8486d2e921",
+      "chunks_processed": 27,
+      "document_id": "98990e2b-d5fc-4931-bdbe-b4f6c3e9de7c"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/kepenu-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:45:25.084264+00:00",
+    "metadata": {
+      "content_hash": "4d88c4f2d4fc199fb3c6081b67ee93a3",
+      "chunks_processed": 25,
+      "document_id": "9e3e52c6-4a2d-429d-826c-8e726c6d15f2"
+    }
+  },
+  "https://priesvezi.lt/zinynas/mitybos-ir-gyvensenos-rekomendacijos/miego-svarba": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:46:10.289519+00:00",
+    "metadata": {
+      "content_hash": "f898b47617bda8f0f48e9a7329c96ba5",
+      "chunks_processed": 23,
+      "document_id": "2607b303-44c6-4be9-a11f-b71515d25dca"
+    }
+  },
+  "https://priesvezi.lt/zinynas/diagnostikos-tyrimu-metodai/citologiniai-tyrimai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:46:20.774449+00:00",
+    "metadata": {
+      "content_hash": "53a57fedd44c1bbc406fc2adb8289f72",
+      "chunks_processed": 18,
+      "document_id": "d5b297ed-4589-4319-acbe-73e4039f10d6"
+    }
+  },
+  "https://priesvezi.lt/zinynas/diagnostikos-tyrimu-metodai/kraujo-tyrimai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:46:42.746785+00:00",
+    "metadata": {
+      "content_hash": "a9033f7d92ba1c335ee233642a9a8a97",
+      "chunks_processed": 18,
+      "document_id": "be696b4c-3629-48fe-afca-2fd45b45536a"
+    }
+  },
+  "https://priesvezi.lt/zinynas/diagnostikos-tyrimu-metodai/genetiniai-tyrimai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:47:26.940657+00:00",
+    "metadata": {
+      "content_hash": "4ff8f7cc1945d3d4483f69a6e379d133",
+      "chunks_processed": 20,
+      "document_id": "9ad94b2e-1374-4475-b038-1b5218cd022f"
+    }
+  },
+  "https://priesvezi.lt/zinynas/diagnostikos-tyrimu-metodai/biomarkeriai-ir-vezio-zymenys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:47:35.968915+00:00",
+    "metadata": {
+      "content_hash": "6050c8be407a452078fc555dd8007e97",
+      "chunks_processed": 19,
+      "document_id": "c6885ffd-a285-4036-8080-710feb066a58"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/prostatos-priesines-liaukos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:47:50.559289+00:00",
+    "metadata": {
+      "content_hash": "02cc6ca71c8eb0f3a10e99392ee2ff1c",
+      "chunks_processed": 31,
+      "document_id": "7d587683-75eb-4ae4-b9a2-fefeff4dc930"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ilgalaikiu-poveikiu-valdymas-remisija/oda-nagai-plaukai-nervu-pazeidimai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:49:09.594017+00:00",
+    "metadata": {
+      "content_hash": "07e914c4a3316caaebc0b86ab459b776",
+      "chunks_processed": 34,
+      "document_id": "0bd82f72-d84d-4572-a681-9a9d8cca01e5"
+    }
+  },
+  "https://priesvezi.lt/zinynas/ilgalaikiu-poveikiu-valdymas-remisija/lytine-ir-dubens-srities-sveikata": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:49:24.364448+00:00",
+    "metadata": {
+      "content_hash": "e829f1a32cc8e7ac59ad44cce043b315",
+      "chunks_processed": 33,
+      "document_id": "0293fbd6-887a-493b-a30d-f2a4b6398279"
+    }
+  },
+  "https://priesvezi.lt/zinynas/emocine-ir-psichologine-pagalba-gydymas/kaip-apie-vezi-kalbeti-su-seima-ir-draugais": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:49:45.056014+00:00",
+    "metadata": {
+      "content_hash": "518864aad887915426a9d941803733cb",
+      "chunks_processed": 40,
+      "document_id": "382e16c3-b0df-44fd-b378-80ab5d8bc9cc"
+    }
+  },
+  "https://priesvezi.lt/zinynas/mitybos-ir-gyvensenos-rekomendacijos/skiepai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:50:16.272842+00:00",
+    "metadata": {
+      "content_hash": "7c6725e180e20bb113791a828c7d7c9f",
+      "chunks_processed": 25,
+      "document_id": "23d76fe7-1171-4aaa-a642-5103c6ca6bfe"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-kai-gydymas-neveikia/pola-teikiama-pagalba": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:50:44.050637+00:00",
+    "metadata": {
+      "content_hash": "41855ee03b70e3e4b53b470acef85e45",
+      "chunks_processed": 24,
+      "document_id": "7494589b-56f5-48d6-8ffd-e07e477f51fd"
+    }
+  },
+  "https://priesvezi.lt/zinynas/skausmo-valdymas-kai-gydymas-neveikia/kiti-skausmo-malsinimo-budai": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:51:13.562785+00:00",
+    "metadata": {
+      "content_hash": "7b74744ff1ad43e3efb5fc0119c507d8",
+      "chunks_processed": 24,
+      "document_id": "5f861643-ecce-46b7-94f7-5df57c0d8a4e"
+    }
+  },
+  "https://priesvezi.lt/zinynas/paciento-atmintine-laukiu-gydymo/ka-pasiimti-gulantis-i-ligonine": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:51:50.681788+00:00",
+    "metadata": {
+      "content_hash": "3656a3d2527109b0b40e4151fc5359b6",
+      "chunks_processed": 22,
+      "document_id": "36f6b1ab-6414-4a26-aacd-e2cf33c4560a"
+    }
+  },
+  "https://priesvezi.lt/zinynas/paciento-atmintine-gydymas/vezio-gydymas-butu-kuo-sekmingesnis": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:52:30.934654+00:00",
+    "metadata": {
+      "content_hash": "bb119ccf409c53a2f1d845127e2b4eec",
+      "chunks_processed": 35,
+      "document_id": "fa584221-9a42-459f-82d1-b26ff23acfd9"
+    }
+  },
+  "https://priesvezi.lt/zinynas/onkologines-ligos/burnos-vezys": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:53:04.658472+00:00",
+    "metadata": {
+      "content_hash": "8dfd5d516a49180075c9f835eae04f7b",
+      "chunks_processed": 26,
+      "document_id": "662c68fe-7f1d-4ca5-be22-1e32f5d897d2"
+    }
+  },
+  "https://priesvezi.lt/zinynas/kas-priklauso-pacientui-kai-gydymas-neveikia/ismokos-ir-pasalpos": {
+    "status": "success",
+    "last_processed": "2025-02-21T12:53:44.095853+00:00",
+    "metadata": {
+      "content_hash": "2bce681aee7225c0cef706a8876da65f",
+      "chunks_processed": 32,
+      "document_id": "88d6e4ac-e6de-4aba-b130-2a79d251411d"
     }
   },
   "https://pola.lt": {
     "status": "success",
-    "last_processed": "2025-02-20T11:48:03.898735+00:00",
+    "last_processed": "2025-02-21T13:04:10.596693+00:00",
     "metadata": {
-      "content_hash": "568fabbf3d14edfa188fbabee6d921fe",
+      "content_hash": "3c512bfcf486f0a2f4a6b4d9a8fdd61f",
       "chunks_processed": 31,
-      "document_id": "bfeb05ad-c449-4c63-ae0b-e914688b7267"
-    }
-  },
-  "https://pola.lt/apie-pola": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:48:30.338912+00:00",
-    "metadata": {
-      "content_hash": "55ff1e7a430293d12bb9660cb594bd51",
-      "chunks_processed": 50,
-      "document_id": "563a43ba-12e0-4bec-90e8-9c9fe0981c0c"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2013-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:48:59.012040+00:00",
-    "metadata": {
-      "content_hash": "832be15a45600eb9b2cef053837ca04d",
-      "chunks_processed": 11,
-      "document_id": "043ba995-bb3f-4e29-b779-39ba4f06be28"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2012-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:49:01.201656+00:00",
-    "metadata": {
-      "content_hash": "cbf8d8cc3a345838c5e082128e4867b0",
-      "chunks_processed": 9,
-      "document_id": "f700c60a-ffc5-4087-9f43-2a5033530a07"
-    }
-  },
-  "https://pola.lt/pola-kortele": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:49:08.531195+00:00",
-    "metadata": {
-      "content_hash": "485eace07360788ac9c50ee927fe9a49",
-      "chunks_processed": 13,
-      "document_id": "c7faf315-2d37-4a12-9677-368e80fedb28"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2014-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:49:40.173887+00:00",
-    "metadata": {
-      "content_hash": "9ff7bcc46f92f04f0f7510fb55e38ba6",
-      "chunks_processed": 14,
-      "document_id": "dd2242d5-dd63-41d7-a7ca-e48bb7b38271"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2016-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:49:47.370891+00:00",
-    "metadata": {
-      "content_hash": "13fdc527236835355a506005169399ef",
-      "chunks_processed": 13,
-      "document_id": "cb78d23e-65fe-4f72-95d9-0105fc306179"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2015-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:49:52.141798+00:00",
-    "metadata": {
-      "content_hash": "1f235f84f34d07363d9dde536b696593",
-      "chunks_processed": 12,
-      "document_id": "76b2ef59-a7fd-4217-8b5f-23f3e3ddd320"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:50:06.968549+00:00",
-    "metadata": {
-      "content_hash": "fe71fa4712839d6f7a998a067365ef51",
-      "chunks_processed": 8,
-      "document_id": "50b8ab4c-28f6-4f05-88d1-b38d3912309b"
-    }
-  },
-  "https://pola.lt/prekes/psichologine-konsultacija": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:53:06.667076+00:00",
-    "metadata": {
-      "content_hash": "05346b524a4c99cd1ce0d44204fdae1b",
-      "chunks_processed": 9,
-      "document_id": "91b6a008-fb60-4446-899a-de509f23d736"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2018-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:56:24.835834+00:00",
-    "metadata": {
-      "content_hash": "5010c7983f1f72ce930e13c0e0e39ae4",
-      "chunks_processed": 14,
-      "document_id": "c6c07a22-b499-438d-9b2e-5324cc0112e2"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2017-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:56:25.289865+00:00",
-    "metadata": {
-      "content_hash": "6770fd10358ca3d6541fe12263aac8ad",
-      "chunks_processed": 14,
-      "document_id": "45e2e98a-8ca4-4f9b-90ad-17cb6b0aab95"
-    }
-  },
-  "https://pola.lt/apie-pola/veiklos-ataskaitos": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:56:50.713351+00:00",
-    "metadata": {
-      "content_hash": "d63b71627a28076b1cd1e4e4b4331483",
-      "chunks_processed": 50,
-      "document_id": "8e11b4b5-259b-41cb-9412-268b5775717e"
-    }
-  },
-  "https://pola.lt/mano-paskyra": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:57:15.425887+00:00",
-    "metadata": {
-      "content_hash": "aacca54bed95e4086ac2d11d42a9c041",
-      "chunks_processed": 9,
-      "document_id": "6116f7cc-e161-4415-96b6-dfd5b5cb1694"
-    }
-  },
-  "https://pola.lt/parduotuve": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:57:17.327606+00:00",
-    "metadata": {
-      "content_hash": "e53fd4826ddc6c98bbe7650c682225c1",
-      "chunks_processed": 8,
-      "document_id": "37c3dfc6-34f6-413d-9dfa-1024a1ebbef0"
-    }
-  },
-  "https://pola.lt/apmokejimas": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:57:20.503800+00:00",
-    "metadata": {
-      "content_hash": "00c6f11c0702eb18378869b333a4bb03",
-      "chunks_processed": 7,
-      "document_id": "979dd317-e010-4872-bf95-651de8cdf5e7"
-    }
-  },
-  "https://pola.lt/prekiu-pristatymas-ir-grazinimas": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:58:10.878590+00:00",
-    "metadata": {
-      "content_hash": "4eb45b7d2dbfc3c4625cb22cfd7f19b5",
-      "chunks_processed": 10,
-      "document_id": "e6ad3184-6083-453a-8cee-bd832440ef4d"
-    }
-  },
-  "https://pola.lt/privatumo-politika": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:58:12.393296+00:00",
-    "metadata": {
-      "content_hash": "bd89ad3305877bd600dea3597981fd05",
-      "chunks_processed": 11,
-      "document_id": "98e3e3e9-304f-4b36-b206-79e6eaa829ae"
-    }
-  },
-  "https://pola.lt/savanoryste": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:58:38.749560+00:00",
-    "metadata": {
-      "content_hash": "57eec56389db6af4a3f1b44e9c6a21dd",
-      "chunks_processed": 50,
-      "document_id": "c1529407-131d-4542-9592-756c6316a088"
-    }
-  },
-  "https://pola.lt/krepselis": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:59:25.113486+00:00",
-    "metadata": {
-      "content_hash": "8cbbcc503c7c922ff012ea4855e85e5f",
-      "chunks_processed": 7,
-      "document_id": "694b084d-873e-433f-95f6-5871dbc5c43d"
-    }
-  },
-  "https://pola.lt/pola-kortele/pola-korteles-suteikiamos-nemokamos-konsultacijos": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:59:29.544377+00:00",
-    "metadata": {
-      "content_hash": "72730597aa0f6fc659d8f85e7d6a28b4",
-      "chunks_processed": 13,
-      "document_id": "24cdae39-b6b6-4c91-825f-02bc99062781"
-    }
-  },
-  "https://pola.lt/apie-pola/konsultuojantys-specialistai": {
-    "status": "success",
-    "last_processed": "2025-02-20T11:59:55.638077+00:00",
-    "metadata": {
-      "content_hash": "197ec57fcddf6d27b5a1e0c354f74b87",
-      "chunks_processed": 50,
-      "document_id": "b63d6a8a-7c4e-40f9-b65e-1991ed9e9a42"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2019-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:00:39.172888+00:00",
-    "metadata": {
-      "content_hash": "ee3d3f9b0bfdefbb9601426b29f91a92",
-      "chunks_processed": 16,
-      "document_id": "7a0a555b-1af7-4b03-8a6a-3b9fcb48e501"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2020-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:00:49.135543+00:00",
-    "metadata": {
-      "content_hash": "e3d8ca32b6a7fab981a789b837dbc5f2",
-      "chunks_processed": 20,
-      "document_id": "51b21e0b-546e-42f7-8736-9f0c1f482fb8"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2022-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:00:58.346104+00:00",
-    "metadata": {
-      "content_hash": "dab2c835fa9fbb166b15b270443d9c8b",
-      "chunks_processed": 17,
-      "document_id": "7b363f27-cb9f-4665-9331-1f9939cf7158"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2021-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:01:48.463256+00:00",
-    "metadata": {
-      "content_hash": "ff9591e034f40d9e5699b732dc0d73f3",
-      "chunks_processed": 14,
-      "document_id": "191596d7-7edc-4dee-b223-e64eb3635226"
-    }
-  },
-  "https://pola.lt/parama": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:01:53.980836+00:00",
-    "metadata": {
-      "content_hash": "3e187331490d553613f2ce7090adbac4",
-      "chunks_processed": 10,
-      "document_id": "8b485e68-a51a-4104-acef-41a11e74cf86"
-    }
-  },
-  "https://pola.lt/konsultacijos": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:02:21.037790+00:00",
-    "metadata": {
-      "content_hash": "5902c5503e4e48562c2201b1af303b6e",
-      "chunks_processed": 50,
-      "document_id": "389bec0d-2aab-4918-9710-fa203498952b"
-    }
-  },
-  "https://pola.lt/kontaktai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:03:24.164299+00:00",
-    "metadata": {
-      "content_hash": "1c23f49f4f1c472c1056976663e2f3ad",
-      "chunks_processed": 21,
-      "document_id": "c3f75199-2e8c-454a-b7b6-b3ba6caf0971"
-    }
-  },
-  "https://pola.lt/veiklos-ataskaitos/2023-m-ataskaita": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:03:33.684892+00:00",
-    "metadata": {
-      "content_hash": "770a0525d9fe4dd77cef2a6b962b5341",
-      "chunks_processed": 21,
-      "document_id": "b1122c69-5ca8-47e4-98b9-0b42bf1436a5"
-    }
-  },
-  "https://pola.lt/apie-pola/komanda": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:04:02.386123+00:00",
-    "metadata": {
-      "content_hash": "cb6aa9d73680957fd66c479e6bcee8f4",
-      "chunks_processed": 50,
-      "document_id": "f1dbb0c7-3be0-4bbd-b0a9-47acb4fe715f"
-    }
-  },
-  "https://pola.lt/pola-kortele/kaip-gauti": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:05:12.313300+00:00",
-    "metadata": {
-      "content_hash": "dd322de44caba6608d164d86d0027e34",
-      "chunks_processed": 13,
-      "document_id": "7e247e94-8c25-47d2-a208-0eb731ffa1e2"
-    }
-  },
-  "https://pola.lt/apie-pola/aktyviausi-pola-savanoriai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:05:42.008457+00:00",
-    "metadata": {
-      "content_hash": "41427773980b9167fa98635378c6ec8f",
-      "chunks_processed": 50,
-      "document_id": "ab317ab6-ae47-4fd5-ae5c-4f510173e4b8"
-    }
-  },
-  "https://pola.lt/apie-pola/naryste": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:06:04.789056+00:00",
-    "metadata": {
-      "content_hash": "80bc501aaf1c7eb87892b1766653891e",
-      "chunks_processed": 50,
-      "document_id": "5a05f34b-5b2b-4136-93f9-114275f732ee"
-    }
-  },
-  "https://pola.lt/renginiai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:06:32.877493+00:00",
-    "metadata": {
-      "content_hash": "09ceb2be3d5010e751df7da281c2421c",
-      "chunks_processed": 11,
-      "document_id": "fd469cb7-83f6-4a2f-bc01-d0ecee11e6af"
-    }
-  },
-  "https://pola.lt/verslo-parama": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:06:40.396296+00:00",
-    "metadata": {
-      "content_hash": "ac2e027b358caff355a00f66443f344e",
-      "chunks_processed": 8,
-      "document_id": "da350a95-c71d-472d-bf9b-cc2e7613ec8b"
-    }
-  },
-  "https://pola.lt/pola-kortele/apie-pola-kortele": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:06:44.015118+00:00",
-    "metadata": {
-      "content_hash": "580cf2fa7cadb8c493f5d7ab49808b49",
-      "chunks_processed": 13,
-      "document_id": "c51765fb-6f81-467f-8336-cc2e6f3a6459"
-    }
-  },
-  "https://pola.lt/apie-pola/kiti-apie-mus": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:08:38.007531+00:00",
-    "metadata": {
-      "content_hash": "4105d77aefce78f2e9738029421a95be",
-      "chunks_processed": 50,
-      "document_id": "9cb59dd9-1430-4c26-ac22-62942b3dab75"
-    }
-  },
-  "https://pola.lt/apie-pola/pola-draugai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:08:59.310755+00:00",
-    "metadata": {
-      "content_hash": "394e941aff3bf5a3ca56f65aa03e8519",
-      "chunks_processed": 50,
-      "document_id": "374c36dc-8ec2-4e42-82fd-d20ab9473e2f"
-    }
-  },
-  "https://pola.lt/apie-pola/apie-pola": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:09:23.242798+00:00",
-    "metadata": {
-      "content_hash": "171d5490d5f74b79ce420192aa9c1053",
-      "chunks_processed": 50,
-      "document_id": "4fee2560-280e-4313-afcd-45a26459d103"
-    }
-  },
-  "https://pola.lt/pola-kortele/pola-ambasadoriai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:10:22.479172+00:00",
-    "metadata": {
-      "content_hash": "70607feafc3feb99215cc426ce02fc92",
-      "chunks_processed": 13,
-      "document_id": "b5a3b031-edc0-40d0-a109-03375c6a085e"
-    }
-  },
-  "https://pola.lt/apie-pola/pola-dokumentai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:10:41.588841+00:00",
-    "metadata": {
-      "content_hash": "63f0ea54edfae0c3d71d3cb77827a565",
-      "chunks_processed": 50,
-      "document_id": "e36a01d6-d0ea-47d5-9f07-1919bd84d018"
-    }
-  },
-  "https://pola.lt/pola-kortele/atsiimk-susitikus-su-pola-atstovais": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:10:47.345808+00:00",
-    "metadata": {
-      "content_hash": "a73af28264d18e935725fba15f3b5bd6",
-      "chunks_processed": 13,
-      "document_id": "2a9a253f-6021-4c11-aaea-790e53f3e09d"
-    }
-  },
-  "https://pola.lt/pola-kortele/pola-nuolaidos": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:11:40.945665+00:00",
-    "metadata": {
-      "content_hash": "fad0c03324c5a1b83cc02eb82ca78582",
-      "chunks_processed": 13,
-      "document_id": "e038927c-83a7-4e89-9770-9e3f4e7ac871"
-    }
-  },
-  "https://pola.lt/apie-pola/projektai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:12:06.509749+00:00",
-    "metadata": {
-      "content_hash": "9ed0ab15a0accc0f9af6c1ce7b42bc14",
-      "chunks_processed": 50,
-      "document_id": "2406aeeb-2a31-4193-80e7-2d059f7c3d82"
-    }
-  },
-  "https://pola.lt/pola-kortele/pola-kvietimai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:12:13.585503+00:00",
-    "metadata": {
-      "content_hash": "97f55e258b9caac57434fd08cc935df8",
-      "chunks_processed": 13,
-      "document_id": "6160cb07-f022-4cc2-960b-50904ff4c648"
-    }
-  },
-  "https://pola.lt/pacientu-gidai": {
-    "status": "success",
-    "last_processed": "2025-02-20T12:12:29.971439+00:00",
-    "metadata": {
-      "content_hash": "af08f9da906f51d376662b60790b552e",
-      "chunks_processed": 10,
-      "document_id": "8c8ab4c7-4cf5-4cb7-89c5-187aced1ccf1"
+      "document_id": "d18a7392-94e4-43e1-9dea-06611d1a3171"
     }
   }
 }

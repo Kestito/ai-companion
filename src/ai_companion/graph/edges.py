@@ -3,6 +3,7 @@ from ai_companion.settings import settings
 
 from langgraph.graph import END
 from typing_extensions import Literal
+from typing import Dict
 
 
 def should_summarize_conversation(
@@ -87,3 +88,38 @@ def merge_parallel_results(state: AICompanionState, result: dict) -> dict:
         return combined_update
     
     return {}
+
+
+def should_retry_rag(state: Dict) -> str:
+    """Determine if RAG query should be retried based on response quality and retry count.
+    
+    Args:
+        state: The current state dictionary
+        
+    Returns:
+        str: The next node to route to ("rag_retry_node" or "memory_injection_node")
+    """
+    rag_response = state.get("rag_response", {})
+    metrics = rag_response.get("metrics", {})
+    retry_count = state.get("rag_retry_count", 0)
+    MAX_RAG_RETRIES = 3
+    # Check if we should retry based on various conditions
+    should_retry = (
+        # Don't exceed max retries
+        retry_count < MAX_RAG_RETRIES and
+        (
+            # No relevant info found
+            not rag_response.get("has_relevant_info") or
+            # Low preprocessing success rate
+            metrics.get("preprocessing_success_rate", 1.0) < 0.7 or
+            # Low average confidence in sources
+            (
+                len(rag_response.get("sources", [])) > 0 and
+                sum(s.get("confidence", 0) for s in rag_response["sources"]) / len(rag_response["sources"]) < 0.6
+            )
+        )
+    )
+    
+    if should_retry:
+        return "rag_retry_node"
+    return "memory_injection_node"

@@ -1,9 +1,21 @@
-from .core.document_processor import DocumentProcessor
-from .core.vector_store import VectorStoreManager
-from .core.rag_chain import RAGChain
+"""RAG module initialization."""
+
+from .core import (
+    LithuanianRAGChain,
+    EnhancedRetrieval,
+    LithuanianQueryPreprocessor,
+    LithuanianResponseGenerator,
+    VectorStoreRetriever,
+    RAGMonitor,
+    initialize_rag
+)
 
 __all__ = [
-    'DocumentProcessor',
-    'VectorStoreManager',
-    'RAGChain'
+    'LithuanianRAGChain',
+    'EnhancedRetrieval',
+    'LithuanianQueryPreprocessor',
+    'LithuanianResponseGenerator',
+    'VectorStoreRetriever',
+    'RAGMonitor',
+    'initialize_rag'
 ] 

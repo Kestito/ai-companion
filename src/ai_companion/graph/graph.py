@@ -7,6 +7,7 @@ from ai_companion.graph.edges import (
     select_workflow,
     should_summarize_conversation,
     merge_parallel_results,
+    should_retry_rag,
 )
 from ai_companion.graph.nodes import (
     audio_node,
@@ -20,9 +21,12 @@ from ai_companion.graph.nodes import (
     hallucination_grader_node,
     web_search_node,
     rag_node,
+    rag_retry_node,
 )
 from ai_companion.graph.state import AICompanionState
 
+# Maximum number of RAG retries
+MAX_RAG_RETRIES = 2
 
 def create_merge_edge(node: str) -> Callable[[Dict], Dict]:
     """Create a merge edge function for a specific node.
@@ -46,7 +50,7 @@ def create_workflow_graph() -> StateGraph:
     """Create the main workflow graph for the AI companion.
     
     Returns:
-        StateGraph: The compiled workflow graph
+        StateGraph: The compiled workflow graph with enhanced RAG support
     """
     # Initialize graph with state type
     graph_builder = StateGraph(AICompanionState)
@@ -55,11 +59,13 @@ def create_workflow_graph() -> StateGraph:
     graph_builder.add_node("memory_extraction_node", memory_extraction_node)
     graph_builder.add_node("router_node", router_node)
     graph_builder.add_node("rag_node", rag_node)
+    graph_builder.add_node("rag_retry_node", rag_retry_node)
     graph_builder.add_node("memory_injection_node", memory_injection_node)
     graph_builder.add_node("conversation_node", conversation_node)
     graph_builder.add_node("image_node", image_node)
     graph_builder.add_node("audio_node", audio_node)
     graph_builder.add_node("summarize_conversation_node", summarize_conversation_node)
+    graph_builder.add_node("hallucination_grader_node", hallucination_grader_node)
 
     # Set up the graph flow
     # 1. Start with memory extraction
@@ -68,13 +74,23 @@ def create_workflow_graph() -> StateGraph:
     # 2. Route to router node
     graph_builder.add_edge("memory_extraction_node", "router_node")
 
-    # 3. Always use RAG for knowledge gathering before any response
+    # 3. Enhanced RAG flow with retry logic
     graph_builder.add_edge("router_node", "rag_node")
     
-    # 4. Inject memory after RAG
-    graph_builder.add_edge("rag_node", "memory_injection_node")
-
-    # 5. Route to appropriate response node based on workflow
+    # Add conditional edge for RAG retry
+    graph_builder.add_conditional_edges(
+        "rag_node",
+        should_retry_rag,
+        {
+            "rag_retry_node": "rag_retry_node",
+            "memory_injection_node": "memory_injection_node"
+        }
+    )
+    
+    # Add edge from retry node back to memory injection
+    graph_builder.add_edge("rag_retry_node", "memory_injection_node")
+    
+    # 4. Route to appropriate response node based on workflow
     graph_builder.add_conditional_edges(
         "memory_injection_node",
         select_workflow,
@@ -85,16 +101,19 @@ def create_workflow_graph() -> StateGraph:
         }
     )
 
-    # 6. Check for summarization from each response node
+    # 5. Add hallucination grading for responses
     for node in ["conversation_node", "image_node", "audio_node"]:
-        graph_builder.add_conditional_edges(
-            node,
-            should_summarize_conversation,
-            {
-                "summarize_conversation_node": "summarize_conversation_node",
-                END: END
-            }
-        )
+        graph_builder.add_edge(node, "hallucination_grader_node")
+        
+    # 6. Check for summarization after hallucination grading
+    graph_builder.add_conditional_edges(
+        "hallucination_grader_node",
+        should_summarize_conversation,
+        {
+            "summarize_conversation_node": "summarize_conversation_node",
+            END: END
+        }
+    )
 
     graph_builder.add_edge("summarize_conversation_node", END)
 

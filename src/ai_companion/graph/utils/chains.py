@@ -15,33 +15,40 @@ class RouterResponse(BaseModel):
     )
 
 
-def get_rag_chain() -> LLMChain:
+def get_rag_chain():
     """Get the RAG chain for knowledge retrieval and response generation."""
-    template = """You are Evelina, a knowledgeable AI assistant. Use the provided context to answer questions accurately.
-    Always base your responses on the retrieved information from the knowledge base.
+    from ai_companion.modules.rag.core.rag_chain import get_rag_chain as get_lithuanian_rag_chain
     
-    Context: {context}
-    Question: {question}
+    # Return the LithuanianRAGChain instance instead of creating a new LLMChain
+    return get_lithuanian_rag_chain()
     
-    Instructions:
-    1. Base your response ONLY on the provided context
-    2. If the context doesn't contain relevant information, acknowledge that and suggest seeking more information
-    3. Maintain a friendly and helpful tone while staying factual
-    4. Respond in Lithuanian language
-    5. Never make up information - only use what's in the context
-    
-    Response:"""
-
-    prompt = PromptTemplate(
-        template=template,
-        input_variables=["context", "question"]
-    )
-
-    return LLMChain(
-        llm=get_chat_model(),
-        prompt=prompt,
-        verbose=True
-    )
+    # The code below is commented out as we're now using the proper RAG chain
+    # Original implementation:
+    # template = """You are Evelina, a knowledgeable AI assistant. Use the provided context to answer questions accurately.
+    # Always base your responses on the retrieved information from the knowledge base.
+    # 
+    # Context: {context}
+    # Question: {question}
+    # 
+    # Instructions:
+    # 1. Base your response ONLY on the provided context
+    # 2. If the context doesn't contain relevant information, acknowledge that and suggest seeking more information
+    # 3. Maintain a friendly and helpful tone while staying factual
+    # 4. Respond in Lithuanian language
+    # 5. Never make up information - only use what's in the context
+    # 
+    # Response:"""
+    #
+    # prompt = PromptTemplate(
+    #     template=template,
+    #     input_variables=["context", "question"]
+    # )
+    #
+    # return LLMChain(
+    #     llm=get_chat_model(),
+    #     prompt=prompt,
+    #     verbose=True
+    # )
 
 
 def get_router_chain() -> LLMChain:

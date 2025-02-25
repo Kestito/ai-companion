@@ -1,0 +1,10 @@
+---
+description:  Best practices for using LangChain in AI applications globs: **/*.py
+globs: **/*.py
+---
+
+# Your rule content
+- Use LangChain's built-in tools for managing prompts and chains
+- Implement custom tools and agents when necessary for specific tasks
+- Leverage LangChain's memory management for maintaining context in conversations
+- Optimize chain performance by caching intermediate results

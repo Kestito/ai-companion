@@ -1,177 +1,163 @@
-from typing import List, Optional, Dict, Any
-from langchain_qdrant import QdrantVectorStore
+"""Vector store retrieval module."""
+
+from typing import List, Optional, Dict, Any, Tuple
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
-from qdrant_client import QdrantClient, models
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Filter, Condition
 import os
-import uuid
-import hashlib
+import logging
 
-# Add at the top of the file, after imports
-_vector_store_instance = None
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def get_vector_store_instance(
-    collection_name: str = None,
-    embedding_deployment: str = None,
-    embedding_model: str = None
-) -> 'VectorStoreManager':
-    """Get or create a singleton instance of VectorStoreManager.
-    
-    Args:
-        collection_name: Optional collection name
-        embedding_deployment: Optional embedding deployment name
-        embedding_model: Optional embedding model name
-        
-    Returns:
-        VectorStoreManager instance
-    """
-    global _vector_store_instance
-    if _vector_store_instance is None:
-        _vector_store_instance = VectorStoreManager(
-            collection_name=collection_name or os.getenv("COLLECTION_NAME", "Pola_docs"),
-            embedding_deployment=embedding_deployment or os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
-            embedding_model=embedding_model or os.getenv("EMBEDDING_MODEL")
-        )
-    return _vector_store_instance
-
-class VectorStoreManager:
-    """Manages vector store operations using Qdrant."""
+class VectorStoreRetriever:
+    """Manages vector store retrieval operations."""
     
     def __init__(
         self,
-        collection_name: str = "documents",
+        collection_name: str = "Information",
         embedding_deployment: Optional[str] = None,
         embedding_model: Optional[str] = None
     ):
-        """Initialize the vector store manager.
-        
-        Args:
-            collection_name: Name of the Qdrant collection
-            embedding_deployment: Optional Azure embedding deployment name
-            embedding_model: Optional embedding model name
-        """
-        self.collection_name = collection_name
-        
-        # Initialize embeddings
-        self.embeddings = AzureOpenAIEmbeddings(
-            deployment=embedding_deployment or os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
-            model=embedding_model or os.getenv("EMBEDDING_MODEL"),
-            api_version=os.getenv("AZURE_EMBEDDING_API_VERSION"),
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            chunk_size=1000
-        )
-        
-        # Initialize Qdrant client
-        self.client = QdrantClient(
-            url=os.getenv("QDRANT_URL"),
-            api_key=os.getenv("QDRANT_API_KEY")
-        )
-        
-        # Ensure collection exists
-        self._ensure_collection()
-        
-        # Initialize vector store with custom id generator
-        self.vector_store = QdrantVectorStore(
-            client=self.client,
-            collection_name=collection_name,
-            embedding=self.embeddings,
-            content_payload_key="content",
-            metadata_payload_key="metadata"
-        )
-    
-    def _generate_document_id(self, document: Document) -> str:
-        """Generate a deterministic UUID for a document.
-        
-        Args:
-            document: Document to generate ID for
-            
-        Returns:
-            UUID string
-        """
-        # Create a unique string from document content and metadata
-        unique_str = f"{document.page_content}_{str(document.metadata)}"
-        return str(uuid.UUID(hashlib.md5(unique_str.encode()).hexdigest()))
-        
-    def _ensure_collection(self) -> None:
-        """Ensure the collection exists, create it if it doesn't."""
+        """Initialize vector store retriever."""
         try:
-            self.client.get_collection(self.collection_name)
-        except Exception:
-            # Get sample embedding to determine dimensions
-            sample_text = "sample text"
-            sample_embedding = self.embeddings.embed_query(sample_text)
+            self.collection_name = collection_name
             
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=len(sample_embedding),  # Use actual embedding dimensions
-                    distance=models.Distance.COSINE
-                )
+            # Initialize embeddings
+            self.embeddings = AzureOpenAIEmbeddings(
+                azure_deployment=embedding_deployment or os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
+                model=embedding_model or os.getenv("EMBEDDING_MODEL"),
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                api_version="2023-05-15"
             )
-        
-    def add_documents(self, documents: List[Document]) -> None:
-        """Add documents to the vector store with proper ID generation.
-        
-        Args:
-            documents: List of Document objects to add
-        """
-        try:
-            # Add documents with generated IDs
-            for doc in documents:
-                doc_id = self._generate_document_id(doc)
-                self.vector_store.add_documents([doc], ids=[doc_id])
-            print(f"Successfully added {len(documents)} documents to collection {self.collection_name}")
+            
+            # Initialize Qdrant client
+            self.client = QdrantClient(
+                url=os.getenv("QDRANT_URL"),
+                api_key=os.getenv("QDRANT_API_KEY"),
+                timeout=60
+            )
+            
+            logger.info(f"VectorStoreRetriever initialized with collection: {collection_name}")
+            
         except Exception as e:
-            print(f"Error adding documents to collection: {str(e)}")
+            logger.error(f"Error initializing VectorStoreRetriever: {str(e)}")
             raise
-        
-    def similarity_search(
+
+    async def similarity_search(
         self,
         query: str,
-        k: int = 3,
-        filter: Optional[dict] = None
-    ) -> List[Document]:
-        """Perform similarity search.
-        
-        Args:
-            query: Search query
-            k: Number of results to return
-            filter: Optional filter conditions
-            
-        Returns:
-            List of similar documents
-        """
-        return self.vector_store.similarity_search(
-            query,
-            k=k,
-            filter=filter
-        )
-        
-    def delete_collection(self) -> None:
-        """Delete the entire collection."""
-        self.client.delete_collection(self.collection_name)
-        
-    def get_collection_info(self) -> dict:
-        """Get information about the collection.
-        
-        Returns:
-            Collection information
-        """
-        return self.client.get_collection(self.collection_name)
-
-    def delete(self, filter: Dict[str, Any]) -> None:
-        """Delete points from the collection based on filter.
-        
-        Args:
-            filter: Filter conditions for points to delete
-        """
+        k: int = 4,
+        score_threshold: float = 0.7,
+        filter_conditions: Optional[Dict] = None
+    ) -> List[Tuple[Document, float]]:
+        """Search for similar documents with advanced filtering."""
         try:
-            self.client.delete(
+            # Get query embedding
+            query_embedding = await self.embeddings.aembed_query(query)
+            
+            # Prepare filter
+            search_filter = None
+            if filter_conditions:
+                must_conditions = []
+                for key, value in filter_conditions.items():
+                    if isinstance(value, dict):
+                        # Handle nested conditions
+                        for nested_key, nested_value in value.items():
+                            must_conditions.append(
+                                {
+                                    "key": f"{key}.{nested_key}",
+                                    "match": {"value": nested_value}
+                                }
+                            )
+                    else:
+                        must_conditions.append(
+                            {
+                                "key": key,
+                                "match": {"value": value}
+                            }
+                        )
+                search_filter = {"must": must_conditions}
+            
+            # Execute search
+            search_results = self.client.search(
                 collection_name=self.collection_name,
-                points_selector=filter
+                query_vector=query_embedding,
+                limit=k,
+                score_threshold=score_threshold,
+                query_filter=search_filter
             )
-            print(f"Successfully deleted points matching filter from collection {self.collection_name}")
+            
+            if not search_results:
+                logger.warning("No search results found")
+                return []
+            
+            # Convert results to documents
+            results = []
+            for result in search_results:
+                if not result.payload:
+                    continue
+                
+                # Extract document content and metadata
+                content = result.payload.get("content", "")
+                metadata = {
+                    "score": result.score,
+                    "id": result.id,
+                    **{k: v for k, v in result.payload.items() if k != "content"}
+                }
+                
+                doc = Document(
+                    page_content=content,
+                    metadata=metadata
+                )
+                results.append((doc, result.score))
+            
+            logger.info(f"Found {len(results)} relevant documents")
+            return sorted(results, key=lambda x: x[1], reverse=True)
+            
         except Exception as e:
-            print(f"Error deleting points from collection: {str(e)}")
-            raise 
+            logger.error(f"Error in similarity search: {str(e)}")
+            return []
+
+    async def get_collection_info(self) -> Dict[str, Any]:
+        """Get information about the collection."""
+        try:
+            collection = self.client.get_collection(self.collection_name)
+            return {
+                "name": self.collection_name,
+                "vectors_count": collection.vectors_count,
+                "status": collection.status,
+                "vector_size": collection.config.params.vectors.size,
+                "distance": collection.config.params.vectors.distance.name if collection.config.params.vectors.distance else None
+            }
+        except Exception as e:
+            logger.error(f"Error getting collection info: {str(e)}")
+            return {}
+
+def get_vector_store_instance(
+    collection_name: str = "Information",
+    embedding_deployment: Optional[str] = None,
+    embedding_model: Optional[str] = None
+) -> VectorStoreRetriever:
+    """Factory function to create and return a VectorStoreRetriever instance.
+    
+    Args:
+        collection_name (str): Name of the collection to use
+        embedding_deployment (Optional[str]): Azure deployment name for embeddings
+        embedding_model (Optional[str]): Model name for embeddings
+        
+    Returns:
+        VectorStoreRetriever: Configured instance of the vector store retriever
+    """
+    try:
+        return VectorStoreRetriever(
+            collection_name=collection_name,
+            embedding_deployment=embedding_deployment,
+            embedding_model=embedding_model
+        )
+    except Exception as e:
+        logger.error(f"Failed to create vector store instance: {str(e)}")
+        raise

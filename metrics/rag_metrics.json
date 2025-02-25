@@ -1,0 +1,45 @@
+{
+  "total_queries": 29,
+  "successful_queries": 7,
+  "failed_queries": 22,
+  "verified_responses": 0,
+  "insufficient_info": 0,
+  "validation_failures": 0,
+  "error_types": {
+    "insufficient_info": 0,
+    "query_processing": 0,
+    "retrieval": 0,
+    "response_generation": 8,
+    "system": 14
+  },
+  "performance": {
+    "avg_query_time": 0.3590686004877091,
+    "avg_retrieval_time": 0.6523763088072301,
+    "avg_response_time": 5.222239035344125
+  },
+  "hourly_stats": {
+    "2025-02-25-14": {
+      "queries": 6,
+      "successful": 0,
+      "failed": 6
+    },
+    "2025-02-25-15": {
+      "queries": 17,
+      "successful": 1,
+      "failed": 16
+    },
+    "2025-02-25-16": {
+      "queries": 6,
+      "successful": 6,
+      "failed": 0
+    }
+  },
+  "daily_stats": {
+    "2025-02-25": {
+      "queries": 29,
+      "successful": 7,
+      "failed": 22
+    }
+  },
+  "last_updated": "2025-02-25T16:50:12.064165"
+}

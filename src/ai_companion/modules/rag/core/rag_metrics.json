@@ -1,0 +1,39 @@
+{
+  "total_queries": 0,
+  "verified_responses": 0,
+  "insufficient_info": 0,
+  "validation_failures": 0,
+  "average_response_time": 0.0,
+  "source_freshness": 0.0,
+  "hourly_stats": {},
+  "daily_stats": {},
+  "error_types": {
+    "insufficient_info": 4
+  },
+  "top_failed_queries": [
+    {
+      "query": "Kaip gauti pol\u0105 kortel\u0119?",
+      "error_type": "insufficient_info",
+      "details": "No relevant documents found",
+      "timestamp": "2025-02-20T17:38:52.183381"
+    },
+    {
+      "query": "K\u0105 daryti, jei sergu smegen\u0173 v\u0117\u017eiu?",
+      "error_type": "insufficient_info",
+      "details": "No relevant documents found",
+      "timestamp": "2025-02-20T17:38:55.414680"
+    },
+    {
+      "query": "Ar turiu kr\u016bties v\u0117\u017e\u012f?",
+      "error_type": "insufficient_info",
+      "details": "No relevant documents found",
+      "timestamp": "2025-02-20T17:38:57.967662"
+    },
+    {
+      "query": "Kaip gauti pol\u0105 kortel\u0119?",
+      "error_type": "insufficient_info",
+      "details": "No relevant documents found",
+      "timestamp": "2025-02-20T17:39:00.683942"
+    }
+  ]
+}

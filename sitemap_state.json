@@ -1,20 +1,35 @@
 {
   "sitemaps": {
+    "https://priesvezi.lt/page-sitemap.xml": {
+      "last_processed": "2025-02-21T12:13:43.294738+00:00",
+      "urls_found": 2,
+      "status": "success"
+    },
+    "https://priesvezi.lt/docs-sitemap.xml": {
+      "last_processed": "2025-02-21T12:13:43.640047+00:00",
+      "urls_found": 112,
+      "status": "success"
+    },
+    "https://priesvezi.lt/doc_category-sitemap.xml": {
+      "last_processed": "2025-02-21T12:13:43.831970+00:00",
+      "urls_found": 48,
+      "status": "success"
+    },
     "https://pola.lt/product-sitemap.xml": {
-      "last_processed": "2025-02-20T11:52:55.969632+00:00",
+      "last_processed": "2025-02-21T13:03:37.165028+00:00",
       "urls_found": 4,
       "status": "success"
     },
     "https://pola.lt/page-sitemap.xml": {
-      "last_processed": "2025-02-20T11:52:56.980986+00:00",
+      "last_processed": "2025-02-21T13:03:38.123614+00:00",
       "urls_found": 49,
       "status": "success"
     }
   },
-  "last_run": "2025-02-20T11:52:56.980986+00:00",
+  "last_run": "2025-02-21T13:03:38.123614+00:00",
   "stats": {
-    "total_urls_found": 106,
-    "successful_crawls": 4,
+    "total_urls_found": 215,
+    "successful_crawls": 5,
     "failed_crawls": 0
   }
 }

@@ -1,0 +1,11 @@
+---
+description: Best practices for data validation and settings management with Pydantic globs: **/*.py
+globs: **/*.py
+---
+
+# Your rule content
+
+- Use Pydantic models for all data structures and API payloads
+- Implement custom validators for complex data validation logic
+- Use Pydantic's settings management for configuration
+- Leverage Pydantic's ORM mode for database integration
