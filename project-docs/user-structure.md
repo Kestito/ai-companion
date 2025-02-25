@@ -13,10 +13,14 @@ The AI Companion provides a conversational interface where users can interact th
 - User asks a knowledge-based question
 - System processes the query through the RAG pipeline:
   1. Query is preprocessed and enhanced
-  2. Relevant documents are retrieved from the vector store
+  2. The system performs parallel searches:
+     - Vector search retrieves semantically similar documents from Qdrant
+     - Keyword search finds exact matches in Supabase
+     - Results are combined, deduplicated, and ranked
   3. Response is generated based on retrieved information
-  4. Sources are provided for transparency
+  4. Sources are provided for transparency with search type attribution
 - If initial retrieval is insufficient, the system may retry with adjusted parameters
+- If specific components fail, the system gracefully falls back to alternative methods
 
 ### 3. Conversation Flow
 - User continues the conversation
@@ -55,8 +59,55 @@ Memory Storage ←→ Memory Retrieval
     ↑                      ↓
     |                      |
     ↑                      ↓
-Vector Database ←→ Document Retrieval
+    Vector Database   ←→   Document Retrieval
+           ↑               ↓  ↑
+           |               |  |
+           ↑               ↓  ↑
+    Relational Database ←→ Keyword Search
 ```
+
+### Parallel Search Implementation
+
+The RAG system implements a parallel search strategy that combines the strengths of both vector and keyword search methods:
+
+1. **Parallel Execution**
+   ```
+   Query → Query Preprocessing
+        ↙               ↘
+   Vector Search    Keyword Search
+   (Qdrant)         (Supabase)
+        ↘               ↙
+       Result Combination
+        ↓
+     Deduplication
+        ↓
+    Ranking & Scoring
+        ↓
+   Final Results
+   ```
+
+2. **Query Analysis**
+   - Analyzes query characteristics to determine optimal search strategy
+   - Allocates resources based on query type (keyword-like or semantic)
+   - Adapts parameter settings for each search type accordingly
+
+3. **Result Processing**
+   - Deduplicates results based on content hash
+   - Adds search source metadata for tracking
+   - Applies weighted scoring based on document quality indicators
+   - Sorts by final relevance score
+   - Limits to the requested number of documents
+
+4. **Fallback Mechanisms**
+   - Falls back to vector-only search if keyword search fails
+   - Dynamically adjusts confidence thresholds if no results are found
+   - Provides detailed error information for troubleshooting
+
+5. **Performance Metrics**
+   - Tracks execution time for each search component
+   - Logs result counts by search type
+   - Monitors success/failure rates for each search method
+   - Calculates performance improvements compared to sequential search
 
 ## Project Structure
 

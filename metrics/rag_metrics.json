@@ -1,6 +1,6 @@
 {
-  "total_queries": 29,
-  "successful_queries": 7,
+  "total_queries": 35,
+  "successful_queries": 13,
   "failed_queries": 22,
   "verified_responses": 0,
   "insufficient_info": 0,
@@ -13,9 +13,11 @@
     "system": 14
   },
   "performance": {
-    "avg_query_time": 0.3590686004877091,
-    "avg_retrieval_time": 0.6523763088072301,
-    "avg_response_time": 5.222239035344125
+    "avg_query_time": 0.19082377611178863,
+    "avg_retrieval_time": 0.34669951792882325,
+    "avg_response_time": 2.7753119351823177,
+    "avg_generation_time": 1.4295084511229994,
+    "avg_total_time": 0.0
   },
   "hourly_stats": {
     "2025-02-25-14": {
@@ -32,14 +34,32 @@
       "queries": 6,
       "successful": 6,
       "failed": 0
+    },
+    "2025-02-25-18": {
+      "queries": 4,
+      "successful": 4,
+      "failed": 0
+    },
+    "2025-02-25-19": {
+      "queries": 2,
+      "successful": 2,
+      "failed": 0
     }
   },
   "daily_stats": {
     "2025-02-25": {
-      "queries": 29,
-      "successful": 7,
+      "queries": 35,
+      "successful": 13,
       "failed": 22
     }
   },
-  "last_updated": "2025-02-25T16:50:12.064165"
+  "last_updated": "2025-02-25T19:16:15.058335",
+  "search_sources": {
+    "vector_only": 2,
+    "keyword_only": 0,
+    "hybrid": 0,
+    "total_vector_docs": 20,
+    "total_keyword_docs": 0
+  },
+  "avg_document_count": 17.200000000000003
 }

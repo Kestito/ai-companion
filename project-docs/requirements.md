@@ -4,32 +4,32 @@
 
 ### Functional Requirements
 
-1. **Conversation Management**
+1. **Conversation Management** ✅
    - The system must maintain conversation context across multiple turns
    - The system must route user messages to appropriate processing nodes
    - The system must generate coherent and contextually relevant responses
    - The system must handle conversation summarization for long interactions
 
-2. **Knowledge Retrieval**
+2. **Knowledge Retrieval** ✅
    - The system must retrieve relevant information from a vector database
    - The system must provide source attribution for retrieved information
    - The system must handle queries in Lithuanian language
    - The system must retry with different parameters if initial retrieval fails
    - The system must validate information before presenting it to users
 
-3. **Memory Management**
+3. **Memory Management** 🔄
    - The system must extract important information from conversations
    - The system must store and retrieve memories based on relevance
    - The system must inject relevant memories into ongoing conversations
    - The system must maintain user-specific long-term memory
 
-4. **Multimodal Processing**
+4. **Multimodal Processing** ⬜
    - The system must generate images based on text prompts
    - The system must convert text responses to speech
    - The system must handle different input and output modalities
    - The system must maintain context across modality switches
 
-5. **Monitoring and Analytics**
+5. **Monitoring and Analytics** ✅
    - The system must track usage metrics and performance indicators
    - The system must log errors and exceptional conditions
    - The system must provide diagnostics for troubleshooting
@@ -187,21 +187,32 @@ The monitoring system tracks performance, errors, and usage patterns for continu
    - Responses must acknowledge when information is unavailable
    - Responses must maintain a consistent tone and personality
    - Responses must be in Lithuanian unless otherwise specified
+   - Responses must include source attribution with search type information
+   - Responses must adjust level of detail based on available information quality
 
 2. **Information Handling**
    - User data must be handled according to privacy regulations
    - Source attribution must be provided for factual information
    - Confidence scores must be used to filter low-quality information
    - Sensitive information must be handled securely
+   - Documents must be tagged with search method metadata for tracking
+   - Results must be deduplicated based on content hash
+   - Document ranking must consider source quality and content relevance
 
 3. **Error Handling**
    - User-facing error messages must be helpful and non-technical
    - Critical errors must trigger alerts for immediate attention
    - Retry mechanisms must implement exponential backoff
    - System must degrade gracefully when components fail
+   - Fallback mechanisms must be used when primary retrieval methods fail
+   - Error logs must include detailed contextual information
+   - Different error types must be categorized for analytics
 
 4. **Resource Management**
    - Resource-intensive operations must be optimized for cost
    - Caching must be implemented for frequently accessed data
    - Batch processing must be used where appropriate
-   - Resource limits must be enforced to prevent abuse 
+   - Resource limits must be enforced to prevent abuse
+   - Parallel execution must be used for independent operations
+   - Time-based metrics must be tracked for performance optimization
+   - Monitoring data must be cleaned up periodically to save storage 

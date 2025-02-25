@@ -14,7 +14,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class LithuanianResponseGenerator:
-    """Advanced response generation with Lithuanian language support."""
+    """
+    Response generator optimized for Lithuanian language responses.
+    """
     
     def __init__(
         self,
@@ -22,8 +24,18 @@ class LithuanianResponseGenerator:
         model_name: Optional[str] = None,
         temperature: float = 0.0
     ):
-        """Initialize response generator."""
+        """
+        Initialize the Lithuanian response generator.
+        
+        Args:
+            model_deployment: The deployment name for Azure OpenAI
+            model_name: Name of the model being used
+            temperature: Temperature setting for the LLM (lower = more deterministic)
+        """
         try:
+            # Initialize logger
+            self.logger = logging.getLogger(__name__)
+            
             # Initialize LLM for response generation
             self.llm = AzureChatOpenAI(
                 deployment_name=model_deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT"),
@@ -34,10 +46,12 @@ class LithuanianResponseGenerator:
                 temperature=temperature
             )
             
-            logger.info("Lithuanian response generator initialized")
+            self.logger.info("Lithuanian response generator initialized")
             
         except Exception as e:
-            logger.error(f"Error initializing response generator: {str(e)}")
+            # Create logger if not already initialized
+            self.logger = logging.getLogger(__name__)
+            self.logger.error(f"Error initializing response generator: {str(e)}")
             raise
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
@@ -51,14 +65,14 @@ class LithuanianResponseGenerator:
         """Generate validated Lithuanian response with fact-checking."""
         try:
             if not docs:
-                logger.warning("No documents provided for response generation")
+                self.logger.warning("No documents provided for response generation")
                 return self._create_no_context_response()
             
             try:
                 # Extract key information
                 key_info = await self._extract_key_info(query, docs)
             except Exception as e:
-                logger.error(f"Error in key info extraction: {str(e)}")
+                self.logger.error(f"Error in key info extraction: {str(e)}")
                 key_info = {
                     'facts': [],
                     'concepts': [],
@@ -74,7 +88,7 @@ class LithuanianResponseGenerator:
                     query_intent
                 )
             except Exception as e:
-                logger.error(f"Error generating initial response: {str(e)}")
+                self.logger.error(f"Error generating initial response: {str(e)}")
                 return self._create_error_response(str(e))
             
             try:
@@ -86,7 +100,7 @@ class LithuanianResponseGenerator:
                     confidence_threshold
                 )
             except Exception as e:
-                logger.error(f"Error in validation: {str(e)}")
+                self.logger.error(f"Error in validation: {str(e)}")
                 validation_result = {
                     'is_valid': True,
                     'confidence': 0.4,
@@ -95,7 +109,7 @@ class LithuanianResponseGenerator:
                 }
             
             if not validation_result['is_valid']:
-                logger.warning(f"Response validation failed: {validation_result['reason']}")
+                self.logger.warning(f"Response validation failed: {validation_result['reason']}")
                 return self._create_fallback_response(validation_result['reason'])
             
             try:
@@ -105,7 +119,7 @@ class LithuanianResponseGenerator:
                     docs
                 )
             except Exception as e:
-                logger.error(f"Error in fact checking: {str(e)}")
+                self.logger.error(f"Error in fact checking: {str(e)}")
                 fact_check_result = {
                     'is_accurate': True,
                     'corrections': [],
@@ -114,7 +128,7 @@ class LithuanianResponseGenerator:
                 }
             
             if not fact_check_result['is_accurate']:
-                logger.warning("Fact check failed, regenerating with corrections")
+                self.logger.warning("Fact check failed, regenerating with corrections")
                 try:
                     # Regenerate response with corrections
                     corrected_response = await self._regenerate_with_corrections(
@@ -125,7 +139,7 @@ class LithuanianResponseGenerator:
                     )
                     return corrected_response
                 except Exception as e:
-                    logger.error(f"Error regenerating response: {str(e)}")
+                    self.logger.error(f"Error regenerating response: {str(e)}")
                     # Fall back to initial response if regeneration fails
                     return {
                         'response': initial_response,
@@ -146,7 +160,7 @@ class LithuanianResponseGenerator:
             }
             
         except Exception as e:
-            logger.error(f"Error in response generation: {str(e)}")
+            self.logger.error(f"Error in response generation: {str(e)}")
             return self._create_error_response(str(e))
     
     async def _extract_key_info(
@@ -180,12 +194,12 @@ Context:
             response = await self.llm.ainvoke(messages)
             
             # Add debug logging
-            logger.debug(f"Raw response before JSON parsing: {response.content}")
+            self.logger.debug(f"Raw response before JSON parsing: {response.content}")
             
             # Clean the response content
             content = response.content.strip()
             if not content:
-                logger.error("Received empty response from LLM")
+                self.logger.error("Received empty response from LLM")
                 return {
                     'facts': [],
                     'concepts': [],
@@ -200,7 +214,7 @@ Context:
                 key_info = json.loads(content)
                 return key_info
             except json.JSONDecodeError as e:
-                logger.error(f"JSON parsing error: {str(e)}, Content: {content[:200]}...")
+                self.logger.error(f"JSON parsing error: {str(e)}, Content: {content[:200]}...")
                 return {
                     'facts': [],
                     'concepts': [],
@@ -208,7 +222,7 @@ Context:
                 }
             
         except Exception as e:
-            logger.error(f"Error extracting key info: {str(e)}")
+            self.logger.error(f"Error extracting key info: {str(e)}")
             return {
                 'facts': [],
                 'concepts': [],
@@ -266,7 +280,7 @@ Context:
             return response.content.strip()
             
         except Exception as e:
-            logger.error(f"Error generating initial response: {str(e)}")
+            self.logger.error(f"Error generating initial response: {str(e)}")
             raise
     
     async def _validate_response(
@@ -306,12 +320,12 @@ Source documents:
             validation_response = await self.llm.ainvoke(messages)
             
             # Add debug logging
-            logger.debug(f"Raw validation response: {validation_response.content}")
+            self.logger.debug(f"Raw validation response: {validation_response.content}")
             
             # Clean the response content
             content = validation_response.content.strip()
             if not content:
-                logger.error("Received empty validation response from LLM")
+                self.logger.error("Received empty validation response from LLM")
                 return {
                     'is_valid': False,
                     'confidence': 0.0,
@@ -341,7 +355,7 @@ Source documents:
                 }
                 
             except json.JSONDecodeError as e:
-                logger.error(f"JSON parsing error in validation: {str(e)}, Content: {content[:200]}...")
+                self.logger.error(f"JSON parsing error in validation: {str(e)}, Content: {content[:200]}...")
                 return {
                     'is_valid': False,
                     'confidence': 0.0,
@@ -349,7 +363,7 @@ Source documents:
                 }
             
         except Exception as e:
-            logger.error(f"Error validating response: {str(e)}")
+            self.logger.error(f"Error validating response: {str(e)}")
             return {
                 'is_valid': False,
                 'confidence': 0.0,
@@ -389,12 +403,12 @@ Source documents:
             check_response = await self.llm.ainvoke(messages)
             
             # Add debug logging
-            logger.debug(f"Raw fact check response: {check_response.content}")
+            self.logger.debug(f"Raw fact check response: {check_response.content}")
             
             # Clean the response content
             content = check_response.content.strip()
             if not content:
-                logger.error("Received empty fact check response from LLM")
+                self.logger.error("Received empty fact check response from LLM")
                 return {
                     'is_accurate': True,  # Default to true if check fails
                     'corrections': [],
@@ -415,7 +429,7 @@ Source documents:
                     'confidence': fact_check.get('pasitikėjimas', 0.8)  # Reasonable default
                 }
             except json.JSONDecodeError as e:
-                logger.error(f"JSON parsing error in fact check: {str(e)}, Content: {content[:200]}...")
+                self.logger.error(f"JSON parsing error in fact check: {str(e)}, Content: {content[:200]}...")
                 return {
                     'is_accurate': True,  # Default to true if parsing fails
                     'corrections': [],
@@ -424,7 +438,7 @@ Source documents:
                 }
             
         except Exception as e:
-            logger.error(f"Error fact checking response: {str(e)}")
+            self.logger.error(f"Error fact checking response: {str(e)}")
             return {
                 'is_accurate': True,  # Default to true if check fails
                 'corrections': [],
@@ -474,7 +488,7 @@ Source documents:
             }
             
         except Exception as e:
-            logger.error(f"Error regenerating response: {str(e)}")
+            self.logger.error(f"Error regenerating response: {str(e)}")
             return self._create_error_response(str(e))
     
     def _extract_sources(self, docs: List[Document]) -> List[Dict[str, Any]]:
@@ -489,7 +503,7 @@ Source documents:
                 sources.append(source)
             return sources
         except Exception as e:
-            logger.error(f"Error extracting sources: {str(e)}")
+            self.logger.error(f"Error extracting sources: {str(e)}")
             return []
     
     def _create_no_context_response(self) -> Dict[str, Any]:
@@ -517,4 +531,113 @@ Source documents:
             'error': error,
             'confidence': 0.0,
             'timestamp': datetime.now().isoformat()
-        } 
+        }
+
+    async def _generate_response(
+        self,
+        query: str,
+        documents: List[Document],
+        memory_context: Optional[str] = None
+    ) -> str:
+        """
+        Generate a response based on the provided user query and relevant documents.
+
+        Args:
+            query: The user's query string
+            documents: A list of Document objects containing relevant information
+            memory_context: Optional conversation memory context
+
+        Returns:
+            str: The generated response text
+        """
+        try:
+            # Log the number of documents passed to response generation
+            self.logger.info(f"Generating response from {len(documents)} documents")
+
+            # Format documents for the response
+            formatted_documents = []
+            vector_count = 0
+            keyword_count = 0
+            # Track URLs for source attribution
+            source_urls = []
+
+            for i, doc in enumerate(documents):
+                # Get source type with fallback to 'vector' if not specified
+                metadata = doc.metadata or {}
+                search_type = metadata.get('search_type', 'vector')
+                
+                # Count by search type
+                if search_type == 'vector':
+                    vector_count += 1
+                elif search_type == 'keyword':
+                    keyword_count += 1
+                
+                # Collect URL and score for source attribution
+                if 'url' in metadata and metadata['url']:
+                    source_urls.append({
+                        'url': metadata['url'],
+                        'title': metadata.get('title', 'Unknown Source'),
+                        'score': metadata.get('score', 0.0)
+                    })
+                    
+                # Format document with page content and metadata
+                formatted_doc = f"Document {i+1} [Source: {search_type}]:\n{doc.page_content}\n"
+                formatted_documents.append(formatted_doc)
+
+            formatted_docs_text = "\n".join(formatted_documents)
+
+            # Construct prompt with Lithuanian language guidance
+            system_message = """You are an AI assistant that provides helpful, accurate, and friendly responses to user questions.
+You work for an organization helping Lithuanian cancer patients, so respond in Lithuanian language.
+Make your response helpful, concise, accurate, and in a warm, empathetic tone appropriate for medical information.
+
+Base your response ONLY on the provided documents. If you don't know or the documents don't contain relevant information, say so clearly.
+DO NOT make up information or draw from knowledge outside the provided documents."""
+
+            user_message = f"""Answer the following query: "{query}"
+
+Based on these documents:
+{formatted_docs_text}"""
+
+            # Add memory context if provided
+            if memory_context:
+                user_message += f"\n\nConsider this conversation context when answering:\n{memory_context}"
+
+            # Generate response with LLM
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+            
+            response = await self.llm.ainvoke(messages)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+
+            # Format final response
+            response_text = response_text.replace("\n\n", "\n")
+            
+            # Add source attribution
+            source_summary = f"\n\nInformation retrieved from {len(documents)} documents"
+            if vector_count > 0 and keyword_count > 0:
+                source_summary += f" using semantic search (Qdrant) ({vector_count} results) and keyword search (Supabase) ({keyword_count} results)"
+            elif vector_count > 0:
+                source_summary += f" using semantic search (Qdrant) (Collection: Information)"
+            elif keyword_count > 0:
+                source_summary += f" using keyword search (Supabase) ({keyword_count} results)"
+            
+            # Add top 2 sources with URLs
+            if source_urls:
+                # Sort sources by score in descending order
+                sorted_sources = sorted(source_urls, key=lambda x: x['score'], reverse=True)
+                # Get top 2 sources
+                top_sources = sorted_sources[:2]
+                source_summary += "\n\nŠaltiniai:"
+                for idx, source in enumerate(top_sources, 1):
+                    source_summary += f"\n{idx}. {source['title']}: {source['url']}"
+            
+            response_text += source_summary
+            
+            return response_text
+            
+        except Exception as e:
+            self.logger.error(f"Error in response generation: {e}", exc_info=True)
+            return f"Nepavyko sugeneruoti detalaus atsakymo. Bandykite dar kartą arba užduokite kitą klausimą.\n\nInformation retrieved from {len(documents)} documents using semantic search (Qdrant) (Collection: Information)." 

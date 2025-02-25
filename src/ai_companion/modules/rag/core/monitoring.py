@@ -93,16 +93,62 @@ class RAGMonitor:
     ) -> None:
         """Log successful query information."""
         try:
-            # Update performance metrics
-            self.metrics['performance'].update({
-                'avg_query_time': response_metadata.get('query_time', 0.0),
-                'avg_retrieval_time': response_metadata.get('retrieval_time', 0.0),
-                'avg_response_time': response_metadata.get('response_time', 0.0)
-            })
+            # Extract and update performance metrics
+            query_time = response_metadata.get('query_time', 0.0)
+            retrieval_time = response_metadata.get('retrieval_time', 0.0)
+            response_time = response_metadata.get('response_time', 0.0)
+            generation_time = response_metadata.get('generation_time', 0.0)
+            
+            # Extract search source information
+            source_distribution = response_metadata.get('source_distribution', {})
+            vector_count = source_distribution.get('vector_count', 0)
+            keyword_count = source_distribution.get('keyword_count', 0)
+            
+            # Update search source metrics
+            if 'search_sources' not in self.metrics:
+                self.metrics['search_sources'] = {
+                    'vector_only': 0,
+                    'keyword_only': 0,
+                    'hybrid': 0,
+                    'total_vector_docs': 0,
+                    'total_keyword_docs': 0
+                }
+            
+            # Update search source counts
+            if vector_count > 0 and keyword_count > 0:
+                self.metrics['search_sources']['hybrid'] += 1
+            elif vector_count > 0:
+                self.metrics['search_sources']['vector_only'] += 1
+            elif keyword_count > 0:
+                self.metrics['search_sources']['keyword_only'] += 1
+            
+            # Update total document counts
+            self.metrics['search_sources']['total_vector_docs'] += vector_count
+            self.metrics['search_sources']['total_keyword_docs'] += keyword_count
+            
+            # Update performance metrics with exponential moving average
+            current_values = self.metrics['performance']
+            
+            # Update with 10% weight for new values (exponential moving average)
+            self.metrics['performance'] = {
+                'avg_query_time': current_values['avg_query_time'] * 0.9 + query_time * 0.1,
+                'avg_retrieval_time': current_values['avg_retrieval_time'] * 0.9 + retrieval_time * 0.1,
+                'avg_response_time': current_values['avg_response_time'] * 0.9 + response_time * 0.1,
+                'avg_generation_time': current_values.get('avg_generation_time', 0) * 0.9 + generation_time * 0.1,
+                'avg_total_time': current_values.get('avg_total_time', 0) * 0.9 + (query_time + retrieval_time + response_time) * 0.1
+            }
             
             # Update general metrics
             self.metrics['successful_queries'] += 1
             self.metrics['total_queries'] += 1
+            
+            # Update average document count
+            if 'avg_document_count' not in self.metrics:
+                self.metrics['avg_document_count'] = num_docs
+            else:
+                self.metrics['avg_document_count'] = (
+                    self.metrics['avg_document_count'] * 0.9 + num_docs * 0.1
+                )
             
             # Update verified responses if applicable
             if response_metadata.get('verified', False):
@@ -115,7 +161,7 @@ class RAGMonitor:
             self._update_time_stats(success=True)
             
         except Exception as e:
-            logger.error(f"Error logging success: {str(e)}")
+            logger.error(f"Error logging success: {str(e)}", exc_info=True)
             
     def _update_time_stats(self, success: bool = True) -> None:
         """Update time-based statistics."""

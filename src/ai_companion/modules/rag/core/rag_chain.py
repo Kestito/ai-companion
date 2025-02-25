@@ -133,78 +133,58 @@ class LithuanianRAGChain:
             self.cache_size = cache_size
             self.cache_lock = asyncio.Lock()
             
+            self.collection_name = collection_name
+            
             logger.info("Lithuanian RAG chain initialized successfully")
             
         except Exception as e:
             logger.error(f"Error initializing RAG chain: {str(e)}")
             raise
     
-    async def _get_cache_key(self, query: str, **kwargs) -> str:
-        """Generate a cache key for the query and parameters.
+    def _generate_cache_key(self, query: str, min_confidence: float, kwargs: Dict[str, Any]) -> str:
+        """Generate a cache key from the query and parameters."""
+        # Create a stable representation of kwargs
+        sorted_kwargs = {k: kwargs.get(k) for k in sorted(kwargs.keys()) 
+                         if k not in ['memory_context', 'query_variations']}
         
-        Args:
-            query: The user query
-            **kwargs: Additional parameters that affect the result
-            
-        Returns:
-            A string hash representing the cache key
-        """
-        # Create a string representation of the query and relevant parameters
-        cache_str = f"{query.lower().strip()}"
-        
-        # Add relevant parameters that would affect the result
-        if kwargs.get('min_confidence'):
-            cache_str += f"|conf:{kwargs['min_confidence']}"
-        if kwargs.get('collection_name'):
-            cache_str += f"|coll:{kwargs['collection_name']}"
-        
-        # Generate a hash of the string
-        return hashlib.md5(cache_str.encode()).hexdigest()
+        # Hash the combined parameters
+        key_str = f"{query}:{min_confidence}:{str(sorted_kwargs)}"
+        return hashlib.md5(key_str.encode()).hexdigest()
     
     async def _get_from_cache(self, key: str) -> Optional[Tuple[str, List[Document]]]:
-        """Get a result from the cache if it exists and is not expired.
-        
-        Args:
-            key: The cache key
-            
-        Returns:
-            The cached result or None if not found
-        """
+        """Get a result from the cache if it exists."""
         async with self.cache_lock:
             if key in self.cache:
                 entry = self.cache[key]
-                # Check if the entry is expired (older than 1 hour)
-                if datetime.now() - entry['timestamp'] < timedelta(hours=1):
-                    self.metrics['cache_hits'] += 1
-                    logger.debug(f"Cache hit for key: {key}")
-                    return entry['result']
+                # Check if the entry is still valid (not expired)
+                if entry['expiry'] > time.time():
+                    logger.info(f"Cache hit for key: {key[:8]}...")
+                    return entry['value']
                 else:
                     # Remove expired entry
                     del self.cache[key]
-        
-        self.metrics['cache_misses'] += 1
-        logger.debug(f"Cache miss for key: {key}")
+                    logger.info(f"Cache entry expired for key: {key[:8]}...")
         return None
     
-    async def _add_to_cache(self, key: str, result: Tuple[str, List[Document]]) -> None:
-        """Add a result to the cache.
-        
-        Args:
-            key: The cache key
-            result: The result to cache
-        """
+    async def _add_to_cache(self, key: str, value: Tuple[str, List[Document]]) -> None:
+        """Add a result to the cache with expiry."""
         async with self.cache_lock:
-            # If cache is full, remove the oldest entry
-            if len(self.cache) >= self.cache_size:
-                oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k]['timestamp'])
-                del self.cache[oldest_key]
+            # Set expiry to current time + 1 hour
+            expiry = time.time() + 3600  # 1 hour cache lifetime
             
-            # Add new entry
+            # Add to cache, with LRU eviction if needed
+            if len(self.cache) >= self.cache_size:
+                # Find the oldest entry
+                oldest_key = min(self.cache, key=lambda k: self.cache[k]['last_access'])
+                del self.cache[oldest_key]
+                logger.info(f"Evicted oldest cache entry: {oldest_key[:8]}...")
+            
             self.cache[key] = {
-                'result': result,
-                'timestamp': datetime.now()
+                'value': value,
+                'expiry': expiry,
+                'last_access': time.time()
             }
-            logger.debug(f"Added result to cache with key: {key}")
+            logger.info(f"Added result to cache with key: {key[:8]}...")
     
     @retry(
         retry=retry_if_exception_type((QueryError, RetrievalError, ResponseGenerationError)),
@@ -275,23 +255,26 @@ class LithuanianRAGChain:
             start_time = time.time()
             docs = []
             
+            # Process query variations
             for query_variation in query_variations:
                 try:
                     # Remove 'k' from kwargs if it's present to avoid parameter duplication
                     search_kwargs = kwargs.copy()
                     if 'k' in search_kwargs:
                         del search_kwargs['k']
-                        
-                    results = await self.store.similarity_search(
+                    
+                    # Use parallel search for each query variation
+                    results = await self.store.parallel_search(
                         query=query_variation,
                         k=10,
                         score_threshold=min_confidence,
-                        **search_kwargs
+                        filter_conditions=search_kwargs.get('filter_conditions')
                     )
+                    
                     if results:
                         docs.extend([doc for doc, _ in results])
                 except Exception as e:
-                    logger.warning(f"Error in similarity search for variation {query_variation}: {str(e)}")
+                    logger.warning(f"Error in parallel search for variation {query_variation}: {str(e)}")
                     continue
             
             # Remove duplicates while preserving order
@@ -310,6 +293,9 @@ class LithuanianRAGChain:
                 self.metrics['retrieval_time'] * 0.9 + retrieval_time * 0.1
             )
             
+            # Log the performance improvement
+            logger.info(f"Parallel search completed in {retrieval_time:.2f} seconds")
+            
             if not unique_docs:
                 logger.warning("No relevant documents found with current threshold. Consider lowering min_confidence.")
                 return []
@@ -327,45 +313,58 @@ class LithuanianRAGChain:
     async def _generate_response(
         self,
         query: str,
-        docs: List[Document],
-        memory_context: Optional[str] = None,
+        documents: List[Document],
         **kwargs: Any
-    ) -> str:
-        """Generate a response based on retrieved documents with error handling.
+    ) -> Dict[str, Any]:
+        """Generate a response to the query using the retrieved documents.
         
         Args:
-            query: The user query
-            docs: Retrieved documents
-            memory_context: Additional context from memory
+            query: Original user query
+            documents: Retrieved documents
             **kwargs: Additional parameters for response generation
             
         Returns:
-            Generated response
-            
-        Raises:
-            ResponseGenerationError: If response generation fails
+            Dictionary with response text and metadata
         """
         try:
             start_time = time.time()
             
-            # Handle empty document list
-            if not docs:
-                logger.warning("No documents provided for response generation")
-                return "Atsiprašau, bet neturiu pakankamai informacijos apie šią temą. Galbūt galėtumėte užduoti klausimą kitaip arba pasiteirauti apie kitą temą?"
+            # Get source info and track search sources
+            source_info = []
+            vector_count = 0
+            keyword_count = 0
             
-            # Create a default query_intent if not provided
-            if 'query_intent' not in kwargs:
-                kwargs['query_intent'] = {
-                    'type': 'general',
-                    'intent': 'information'
-                }
+            for doc in documents:
+                metadata = doc.metadata
+                search_type = metadata.get('search_type', 'vector')  # Default to 'vector' if not specified
+                
+                if search_type == 'vector':
+                    vector_count += 1
+                elif search_type == 'keyword':
+                    keyword_count += 1
+                
+                if 'title' in metadata and 'url' in metadata:
+                    source_info.append({
+                        'title': metadata.get('title', 'Unknown'),
+                        'url': metadata.get('url', '#'),
+                        'score': metadata.get('score', 0.0),
+                        'search_type': search_type
+                    })
             
-            response = await self.response_generator.generate_response(
-                query=query,
-                docs=docs,
-                query_intent=kwargs.get('query_intent'),
-                confidence_threshold=kwargs.get('min_confidence', 0.7)
-            )
+            # Generate response
+            try:
+                # Extract memory_context from kwargs if provided
+                memory_context = kwargs.get('memory_context', None)
+                
+                # Call the response generator's _generate_response method directly
+                response = await self.response_generator._generate_response(
+                    query=query,
+                    documents=documents,
+                    memory_context=memory_context
+                )
+            except Exception as e:
+                logger.error(f"Error in response generation: {str(e)}")
+                response = f"Nepavyko sugeneruoti detalaus atsakymo. Bandykite dar kartą arba užduokite kitą klausimą."
             
             generation_time = time.time() - start_time
             
@@ -374,135 +373,152 @@ class LithuanianRAGChain:
                 self.metrics['response_generation_time'] * 0.9 + generation_time * 0.1
             )
             
-            # Extract the response text from the response dict
-            if isinstance(response, dict) and 'response' in response:
-                response_text = response['response']
-                # Add database source information
-                response_text += f"\n\n(Informacija gauta iš Qdrant duomenų bazės, kolekcija: {self.store.collection_name})"
-                return response_text
+            # Track different source types in the final response metadata
+            source_distribution = {
+                'vector_count': vector_count,
+                'keyword_count': keyword_count,
+                'total_count': len(documents)
+            }
             
-            # Add database source information to string response
-            response_str = str(response)
-            response_str += f"\n\n(Informacija gauta iš Qdrant duomenų bazės, kolekcija: {self.store.collection_name})"
-            return response_str
+            # Log response metrics for monitoring
+            await self.monitor.log_success(
+                question=query,
+                num_docs=len(documents),
+                response_metadata={
+                    'source_distribution': source_distribution,
+                    'generation_time': generation_time,
+                    'search_types': ['vector' if vector_count > 0 else None, 'keyword' if keyword_count > 0 else None]
+                }
+            )
+            
+            return {
+                'response': response,
+                'sources': source_info,
+                'document_count': len(documents),
+                'vector_sources': vector_count,
+                'keyword_sources': keyword_count,
+                'confidence': 1.0 if len(documents) > 0 else 0.5,  # Adjust confidence based on document count
+                'generation_time': generation_time,
+                'search_types_used': ['vector' if vector_count > 0 else None, 'keyword' if keyword_count > 0 else None]
+            }
+            
         except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
+            logger.error(f"Error generating response: {str(e)}", exc_info=True)
+            
+            # Log the error for monitoring
             await self.monitor.log_error('response_generation', query, str(e))
-            raise ResponseGenerationError(f"Response generation failed: {str(e)}")
+            
+            # Create a detailed error response
+            error_response = {
+                'response': f"Atsiprašau, įvyko klaida apdorojant duomenis. Bandykite dar kartą. (Collection: {self.collection_name})",
+                'sources': [],
+                'document_count': 0,
+                'confidence': 0.0,
+                'generation_time': 0.0,
+                'error': str(e),
+                'error_type': type(e).__name__
+            }
+            
+            return error_response
     
     async def query(
         self,
         query: str,
+        min_confidence: float = 0.7,
+        query_variations: Optional[List[str]] = None,
         memory_context: Optional[str] = None,
-        max_retries: int = 3,
-        min_confidence: float = 0.5,
-        use_cache: bool = True,
         **kwargs: Any
     ) -> Tuple[str, List[Document]]:
-        """Process Lithuanian query through the enhanced RAG pipeline.
+        """Query the RAG chain with a user query.
         
         Args:
             query: The user query
+            min_confidence: Minimum confidence threshold for retrieval
+            query_variations: Optional predefined query variations to use instead of generating them
             memory_context: Additional context from memory
-            max_retries: Maximum number of retries for failed operations
-            min_confidence: Minimum confidence score for retrieval results
-            use_cache: Whether to use the cache for this query
-            **kwargs: Additional parameters for processing
+            **kwargs: Additional parameters for the chain
             
         Returns:
-            Tuple of (response, documents)
+            A tuple of (response text, retrieved documents)
         """
-        start_time = time.time()
-        
         try:
-            # Check cache first if enabled
-            if use_cache:
-                cache_key = await self._get_cache_key(query, min_confidence=min_confidence, **kwargs)
-                cached_result = await self._get_from_cache(cache_key)
-                if cached_result:
-                    logger.info(f"Returning cached result for query: {query}")
-                    return cached_result
+            self.metrics['total_queries'] += 1
             
-            # Process query
-            query_info = await self._process_query(query)
+            # Check cache first
+            cache_key = self._generate_cache_key(query, min_confidence, kwargs)
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                response, docs = cached_result
+                self.metrics['cache_hits'] += 1
+                self.metrics['successful_queries'] += 1
+                return response, docs
+            
+            # Process query to generate variations if not provided
+            if query_variations is None:
+                query_variations = await self.process_query(query)
             
             # Retrieve documents
             docs = await self._retrieve_documents(
-                query_variations=query_info['variations'],
+                query_variations=query_variations,
                 min_confidence=min_confidence,
                 **kwargs
             )
             
-            # If no documents found with current threshold, try with a lower threshold
-            if not docs and min_confidence > 0.3:
-                logger.info(f"No documents found with threshold {min_confidence}, trying with lower threshold 0.3")
-                docs = await self._retrieve_documents(
-                    query_variations=query_info['variations'],
-                    min_confidence=0.3,
+            if not docs:
+                # No documents found with current threshold, try with a lower one
+                if min_confidence > 0.3:
+                    logger.info(f"No documents found with threshold {min_confidence}, trying with 0.3")
+                    docs = await self._retrieve_documents(
+                        query_variations=query_variations,
+                        min_confidence=0.3,
+                        **kwargs
+                    )
+            
+            if docs:
+                # Generate response
+                response = await self._generate_response(
+                    query=query,
+                    documents=docs,
                     **kwargs
                 )
+                
+                # Add to cache
+                await self._add_to_cache(cache_key, (response['response'], docs))
+                
+                self.metrics['successful_queries'] += 1
+                return response['response'], docs
             
-            # Generate response
-            response = await self._generate_response(
-                query=query,
-                docs=docs,
-                memory_context=memory_context,
-                **kwargs
-            )
-            
-            # Update metrics
-            total_time = time.time() - start_time
-            self.metrics['total_processing_time'] = (
-                self.metrics['total_processing_time'] * 0.9 + total_time * 0.1
-            )
-            self.metrics['successful_queries'] += 1
-            self.metrics['total_queries'] += 1
-            
-            # Log success
-            await self.monitor.log_success(
-                question=query,
-                num_docs=len(docs),
-                response_metadata={
-                    'query_time': self.metrics['query_processing_time'],
-                    'retrieval_time': self.metrics['retrieval_time'],
-                    'response_time': self.metrics['response_generation_time'],
-                    'total_time': total_time
-                }
-            )
-            
-            # Cache result if enabled
-            if use_cache:
-                await self._add_to_cache(cache_key, (response, docs))
-            
-            return response, docs
+            # No documents found even with lower threshold
+            self.metrics['failed_queries'] += 1
+            return f"Atsiprašau, bet neturiu pakankamai informacijos atsakyti į šį klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})", []
             
         except QueryError as e:
             logger.error(f"Query processing error: {str(e)}")
             await self.monitor.log_error('query_processing', query, str(e))
             self.metrics['failed_queries'] += 1
             self.metrics['total_queries'] += 1
-            return f"Atsiprašau, bet nepavyko apdoroti jūsų klausimo. {str(e)} (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})", []
+            return f"Atsiprašau, bet nepavyko apdoroti jūsų klausimo. {str(e)} (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})", []
             
         except RetrievalError as e:
             logger.error(f"Retrieval error: {str(e)}")
             await self.monitor.log_error('insufficient_info', query, str(e))
             self.metrics['failed_queries'] += 1
             self.metrics['total_queries'] += 1
-            return f"Atsiprašau, bet neturiu pakankamai informacijos atsakyti į šį klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})", []
+            return f"Atsiprašau, bet neturiu pakankamai informacijos atsakyti į šį klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})", []
             
         except ResponseGenerationError as e:
             logger.error(f"Response generation error: {str(e)}")
             await self.monitor.log_error('response_generation', query, str(e))
             self.metrics['failed_queries'] += 1
             self.metrics['total_queries'] += 1
-            return f"Atsiprašau, bet nepavyko sugeneruoti atsakymo. Prašome bandyti dar kartą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})", []
+            return f"Atsiprašau, bet nepavyko sugeneruoti atsakymo. Prašome bandyti dar kartą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})", []
             
         except Exception as e:
             logger.error(f"Unexpected error in RAG chain: {str(e)}")
             await self.monitor.log_error('system', query, str(e))
             self.metrics['failed_queries'] += 1
             self.metrics['total_queries'] += 1
-            return f"Atsiprašau, bet įvyko sistemos klaida. Prašome bandyti vėliau. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})", []
+            return f"Atsiprašau, bet įvyko sistemos klaida. Prašome bandyti vėliau. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})", []
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics."""
@@ -550,7 +566,7 @@ class LithuanianRAGChain:
         """Create Lithuanian response for no documents case."""
         return {
             'query_info': query_info,
-            'response': f"Atsiprašau, bet nepavyko rasti jokių dokumentų, susijusių su jūsų klausimu. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})",
+            'response': f"Atsiprašau, bet nepavyko rasti jokių dokumentų, susijusių su jūsų klausimu. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})",
             'confidence': 0.0,
             'sources': [],
             'success': False,
@@ -561,7 +577,7 @@ class LithuanianRAGChain:
         """Create Lithuanian response for no search results case."""
         return {
             'query_info': query_info,
-            'response': f"Atsiprašau, bet nepavyko rasti pakankamai aktualios informacijos tiksliai atsakyti į jūsų klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})",
+            'response': f"Atsiprašau, bet nepavyko rasti pakankamai aktualios informacijos tiksliai atsakyti į jūsų klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})",
             'confidence': 0.0,
             'sources': [],
             'success': False,
@@ -572,7 +588,7 @@ class LithuanianRAGChain:
         """Create Lithuanian response for no relevant documents case."""
         return {
             'query_info': query_info,
-            'response': f"Atsiprašau, bet turima informacija nėra pakankamai aktuali pateikti tikslų atsakymą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})",
+            'response': f"Atsiprašau, bet turima informacija nėra pakankamai aktuali pateikti tikslų atsakymą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})",
             'confidence': 0.0,
             'sources': [],
             'success': False,
@@ -582,6 +598,18 @@ class LithuanianRAGChain:
     def _create_error_response(self, error_msg: str) -> Tuple[str, List[Document]]:
         """Create error response."""
         return (
-            f"Atsiprašau, įvyko klaida: {error_msg}. Prašome bandyti vėliau. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.store.collection_name})",
+            f"Atsiprašau, įvyko klaida: {error_msg}. Prašome bandyti vėliau. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})",
             []
         )
+
+    async def process_query(self, query: str) -> List[str]:
+        """Process a query and get variations.
+        
+        Args:
+            query: The original user query
+            
+        Returns:
+            List of query variations
+        """
+        result = await self.query_processor.process_query(query)
+        return result['variations']

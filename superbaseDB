@@ -159,3 +159,78 @@ SELECT
 FROM search_queries sq
 LEFT JOIN search_results sr ON sq.id = sr.query_id
 GROUP BY sq.id, sq.query_text, sq.search_type, sq.similarity_metric, sq.execution_time_ms;
+
+-- First, let's drop the existing functions to start fresh
+DROP FUNCTION IF EXISTS public.search_documents(TEXT, INTEGER, BOOLEAN, FLOAT);
+DROP FUNCTION IF EXISTS public.search_documents(TEXT, INTEGER);
+DROP FUNCTION IF EXISTS public.search_documents(TEXT);
+DROP FUNCTION IF EXISTS public.test_search_function(TEXT);
+DROP FUNCTION IF EXISTS public.test_search_function();
+
+-- Create a very simple search function that we KNOW will work
+CREATE OR REPLACE FUNCTION public.search_documents(
+    query_text TEXT,
+    limit_val INTEGER DEFAULT 10
+) 
+RETURNS TABLE (
+    id UUID,
+    document_id UUID,
+    title TEXT,
+    chunk_content TEXT,
+    rank REAL,
+    url TEXT,
+    source_type TEXT
+)
+LANGUAGE SQL
+SECURITY DEFINER
+AS $$
+    -- Super simple implementation - just use ILIKE
+    SELECT 
+        dc.id,
+        dc.document_id,
+        dc.title,
+        dc.chunk_content,
+        1.0 as rank,
+        d.url,
+        d.source_type
+    FROM 
+        public.document_chunks dc
+    JOIN 
+        public.documents d ON dc.document_id = d.id
+    WHERE 
+        dc.chunk_content ILIKE '%' || query_text || '%'
+        OR dc.title ILIKE '%' || query_text || '%'
+    LIMIT limit_val;
+$$;
+
+-- Grant execute permissions
+GRANT EXECUTE ON FUNCTION public.search_documents(TEXT, INTEGER) TO public;
+
+-- Create a very simple test function
+CREATE OR REPLACE FUNCTION public.test_search_function(
+    test_query TEXT DEFAULT 'POLA'
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    result_count INTEGER;
+BEGIN
+    -- Count the results directly
+    SELECT COUNT(*) INTO result_count
+    FROM public.search_documents(test_query, 10);
+    
+    -- Return simple result message
+    IF result_count > 0 THEN
+        RETURN 'SUCCESS - Found ' || result_count || ' results for query "' || test_query || '"';
+    ELSE
+        RETURN 'WARNING - No results found for query "' || test_query || '"';
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    RETURN 'ERROR - ' || SQLERRM;
+END;
+$$;
+
+-- Grant execute permissions
+GRANT EXECUTE ON FUNCTION public.test_search_function(TEXT) TO public;
