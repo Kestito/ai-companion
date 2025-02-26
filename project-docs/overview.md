@@ -12,6 +12,7 @@ Our vision is to create an AI companion that:
 - Adapts to user needs and preferences
 - Handles multiple modalities (text, images, audio)
 - Respects privacy and maintains data security
+- Offers empathetic support for cancer patients and their families
 
 ## Main Objectives
 
@@ -43,6 +44,7 @@ The AI Companion addresses several key challenges:
    - Provides quick access to accurate information
    - Reduces search time and cognitive load
    - Presents information in a conversational format
+   - Delivers specialized oncology and psychological support information
 
 2. **Language Barriers**
    - Specializes in Lithuanian language processing
@@ -58,6 +60,12 @@ The AI Companion addresses several key challenges:
    - Bridges text, image, and audio modalities
    - Adapts to user communication preferences
    - Provides richer information through multiple channels
+
+5. **Emotional Support**
+   - Offers empathetic responses to cancer patients and caregivers
+   - Provides psychological support alongside medical information
+   - Never leaves users feeling alone with their concerns
+   - Creates a safe space for discussing difficult topics
 
 ## Recent Fixes and Improvements
 
@@ -125,16 +133,19 @@ These fixes ensure that the RAG system can now successfully retrieve documents f
    - Advanced retrieval mechanisms for accurate information
    - Hybrid search strategies for optimal results
    - Source attribution and confidence scoring
+   - Specialized knowledge in oncology and psychological support
 
 2. **Conversation Graph**
    - Flexible conversation flow management
    - Context-aware routing to specialized nodes
    - Stateful conversation handling
+   - Empathetic response generation for vulnerable users
 
 3. **Memory Management**
    - Short-term conversation memory
    - Long-term user preference storage
    - Contextual memory retrieval
+   - Tracking of patient concerns and questions
 
 4. **Multimodal Processing**
    - Text-to-image generation
@@ -145,6 +156,13 @@ These fixes ensure that the RAG system can now successfully retrieve documents f
    - Comprehensive usage metrics
    - Error tracking and reporting
    - Performance optimization data
+   - User satisfaction monitoring
+
+6. **Medical Support**
+   - Oncology information retrieval
+   - Psychological support responses
+   - Empathetic communication
+   - Continuous follow-up and care
 
 ## Technology Stack
 

@@ -232,7 +232,8 @@ class VectorStoreRetriever:
         query: str,
         k: int = 10,
         score_threshold: float = 0.7,
-        filter_conditions: Optional[Dict] = None
+        filter_conditions: Optional[Dict] = None,
+        prioritized_urls: Optional[List[str]] = None
     ) -> List[Tuple[Document, float]]:
         """Search for documents using parallel vector and keyword search.
         
@@ -243,6 +244,7 @@ class VectorStoreRetriever:
             k: Maximum number of results to return
             score_threshold: Minimum score threshold for results
             filter_conditions: Optional filter conditions for vector search
+            prioritized_urls: Optional list of URLs to prioritize in results
             
         Returns:
             List of documents with their scores, sorted by relevance
@@ -299,7 +301,7 @@ class VectorStoreRetriever:
             # Process and combine results from both searches
             all_results = []
             content_hash_set = set()  # For deduplication
-            content_to_score = {}     # Track best score for each content
+            content_to_score = {}
             
             # Process vector results first (typically higher quality)
             for doc, score in vector_results:
@@ -353,8 +355,19 @@ class VectorStoreRetriever:
                 # Apply title presence weighting
                 title_boost = 1.05 if doc.metadata.get("title", "") else 1.0
                 
+                # Apply prioritized URL boosting
+                url_boost = 1.0
+                if prioritized_urls and doc.metadata.get("url"):
+                    doc_url = doc.metadata.get("url", "")
+                    for priority_url in prioritized_urls:
+                        if priority_url.lower() in doc_url.lower():
+                            # Apply significant boost (50%) to the prioritized URL
+                            url_boost = 1.5
+                            logger.info(f"Boosting document from prioritized URL: {doc_url}")
+                            break
+                
                 # Calculate final weighted score
-                weighted_score = score * source_boost * length_boost * title_boost
+                weighted_score = score * source_boost * length_boost * title_boost * url_boost
                 all_results[i] = (doc, weighted_score)
             
             # Sort by score and limit to k results

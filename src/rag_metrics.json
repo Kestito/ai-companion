@@ -1,0 +1,14 @@
+{
+  "total_queries": 1,
+  "successful_queries": 1,
+  "failed_queries": 0,
+  "average_confidence": 1.0,
+  "query_processing_time": 1.137896428929881,
+  "retrieval_time": 3.5739561689760144,
+  "response_generation_time": 0.7002097129821778,
+  "total_processing_time": 0.0,
+  "cache_hits": 0,
+  "cache_misses": 0,
+  "error_details": {},
+  "last_updated": "2025-02-26T10:37:37.512245"
+}

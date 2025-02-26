@@ -237,8 +237,18 @@ for i, (doc, score) in enumerate(all_results):
     # Apply title presence weighting
     title_boost = 1.05 if doc.metadata.get("title", "") else 1.0
     
+    # Apply prioritized URL boosting
+    url_boost = 1.0
+    if prioritized_urls and doc.metadata.get("url"):
+        doc_url = doc.metadata.get("url", "")
+        for priority_url in prioritized_urls:
+            if priority_url.lower() in doc_url.lower():
+                # Apply significant boost (50%) to the prioritized URL
+                url_boost = 1.5
+                break
+    
     # Calculate final weighted score
-    weighted_score = score * source_boost * length_boost * title_boost
+    weighted_score = score * source_boost * length_boost * title_boost * url_boost
     all_results[i] = (doc, weighted_score)
 
 # Sort by score and limit to k results
@@ -327,6 +337,92 @@ if isinstance(results[1], Exception):
     logger.error(f"Keyword search failed: {str(results[1])}")
 else:
     keyword_results = results[1]
+```
+
+## Caching System
+
+The RAG system implements an efficient caching mechanism to improve performance for repeated queries:
+
+### 1. Cache Implementation
+
+```python
+# Initialize cache
+self.cache = {}
+self.cache_size = cache_size
+self.cache_lock = asyncio.Lock()
+self.cache_enabled = True  # Enable caching by default
+```
+
+### 2. Cache Key Generation
+
+```python
+def _generate_cache_key(self, query: str, min_confidence: float, kwargs: Dict[str, Any]) -> str:
+    """Generate a cache key from the query and parameters."""
+    # Create a stable representation of kwargs
+    sorted_kwargs = {k: kwargs.get(k) for k in sorted(kwargs.keys()) 
+                     if k not in ['memory_context', 'query_variations']}
+    
+    # Hash the combined parameters
+    key_str = f"{query}:{min_confidence}:{str(sorted_kwargs)}"
+    return hashlib.md5(key_str.encode()).hexdigest()
+```
+
+### 3. Cache Retrieval
+
+```python
+async def _get_from_cache(self, key: str) -> Optional[Tuple[str, List[Document]]]:
+    """Get a result from the cache if it exists."""
+    async with self.cache_lock:
+        if key in self.cache:
+            entry = self.cache[key]
+            # Check if the entry is still valid (not expired)
+            if entry['expiry'] > time.time():
+                logger.info(f"Cache hit for key: {key[:8]}...")
+                return entry['value']
+            else:
+                # Remove expired entry
+                del self.cache[key]
+                logger.info(f"Cache entry expired for key: {key[:8]}...")
+    return None
+```
+
+### 4. Cache Storage with LRU Eviction
+
+```python
+async def _add_to_cache(self, key: str, value: Tuple[str, List[Document]]) -> None:
+    """Add a result to the cache with expiry."""
+    async with self.cache_lock:
+        # Set expiry to current time + 1 hour
+        expiry = time.time() + 3600  # 1 hour cache lifetime
+        
+        # Add to cache, with LRU eviction if needed
+        if len(self.cache) >= self.cache_size:
+            # Find the oldest entry
+            oldest_key = min(self.cache, key=lambda k: self.cache[k]['last_access'])
+            del self.cache[oldest_key]
+            logger.info(f"Evicted oldest cache entry: {oldest_key[:8]}...")
+        
+        self.cache[key] = {
+            'value': value,
+            'expiry': expiry,
+            'last_access': time.time()
+        }
+        logger.info(f"Added result to cache with key: {key[:8]}...")
+```
+
+### 5. Disabling the Cache
+
+If you need to disable caching for specific use cases, you can do so by:
+
+```python
+# Get the RAG chain
+rag_chain = get_rag_chain()
+
+# Disable caching
+rag_chain.cache_enabled = False
+
+# Run query without caching
+response, docs = await rag_chain.query(query)
 ```
 
 ## SQL Function for Keyword Search
@@ -695,6 +791,47 @@ To deploy the SQL function for keyword search:
    ```sql
    SELECT public.test_search_function('POLA');
    ```
+
+## URL Prioritization
+
+The RAG system supports prioritizing specific URLs in search results. This feature is useful when you want to ensure that content from trusted or preferred sources is given higher ranking in the results.
+
+### Usage
+
+To prioritize a specific URL in your RAG query:
+
+```python
+from src.ai_companion.modules.rag.core import query_with_url_priority
+
+# Query with a prioritized URL
+response, docs = await query_with_url_priority(
+    query="Kas yra plaučių vėžys?",
+    priority_url="https://priesvezi.lt/zinynas/onkologines-ligos/plauciu-vezys/"
+)
+```
+
+### Implementation Details
+
+URL prioritization works by applying a boosting factor (1.5x by default) to the relevance scores of documents that match the prioritized URL. This occurs during the ranking phase of the parallel search process:
+
+```python
+# Apply prioritized URL boosting
+url_boost = 1.0
+if prioritized_urls and doc.metadata.get("url"):
+    doc_url = doc.metadata.get("url", "")
+    for priority_url in prioritized_urls:
+        if priority_url.lower() in doc_url.lower():
+            # Apply significant boost (50%) to the prioritized URL
+            url_boost = 1.5
+            break
+
+# Calculate final weighted score
+weighted_score = score * source_boost * length_boost * title_boost * url_boost
+```
+
+### Example
+
+A complete example is available in `examples/priority_url_rag.py`. It demonstrates using URL prioritization with multiple queries related to lung cancer, ensuring that content from the specific webpage is boosted in the results.
 
 ## Conclusion
 

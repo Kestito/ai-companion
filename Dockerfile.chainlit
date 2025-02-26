@@ -21,10 +21,14 @@ RUN uv sync --frozen --no-cache
 
 # Copy your application code into the container
 COPY src/ /app/
+COPY README.md /app/
 
 # Set the virtual environment environment variables
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
+
+# Create setup.py to explicitly define packages
+RUN echo 'from setuptools import setup, find_packages\nsetup(packages=["ai_companion", "metrics"])' > setup.py
 
 # Install the package in editable mode
 RUN uv pip install -e .

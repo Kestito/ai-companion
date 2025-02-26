@@ -27,12 +27,28 @@ from ai_companion.modules.rag.core.vector_store import get_vector_store_instance
 logger = logging.getLogger(__name__)
 
 
+def get_message_content(message) -> str:
+    """Extract content from a message, handling both dict and object formats.
+    
+    Args:
+        message: A message object or dictionary
+        
+    Returns:
+        The content as a string
+    """
+    if hasattr(message, "content"):
+        return message.content
+    elif isinstance(message, dict) and "content" in message:
+        return message["content"]
+    return ""
+
+
 async def router_node(state: AICompanionState) -> Dict[str, str]:
     """Route the conversation to the appropriate workflow."""
     logger.debug("Starting router node processing")
     try:
         # Get the message content, normalize the case for pattern matching
-        last_message = state["messages"][-1].content.lower() if state["messages"] else ""
+        last_message = get_message_content(state["messages"][-1]).lower() if state["messages"] else ""
         
         # Enhanced detection of POLA card related questions - handling misspellings
         pola_patterns = [
@@ -85,7 +101,7 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
     try:
         chain = get_character_response_chain()
         chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
-        current_input = state["messages"][-1].content if state["messages"] else ""
+        current_input = get_message_content(state["messages"][-1]) if state["messages"] else ""
         
         # Get RAG and memory context
         rag_response = state.get("rag_response", {})
@@ -147,7 +163,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
             model_name=os.getenv("LLM_MODEL"),
         )
         
-        last_message = state["messages"][-1].content if state["messages"] else ""
+        last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
         memory_context = state.get("memory_context", "")
         start_time = datetime.now()
         
@@ -268,7 +284,7 @@ async def web_search_node(state: AICompanionState, config: RunnableConfig):
     chain = get_character_response_chain(state.get("summary", ""))
     
     # Extract last message from the state
-    last_message = state["messages"][-1].content if state["messages"] else ""
+    last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
     # Get previous messages for chat history
     chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
 
@@ -336,7 +352,7 @@ async def hallucination_grader_node(state: AICompanionState, config: RunnableCon
     chain = get_character_response_chain(state.get("summary", ""))
     
     # Extract last message from the state
-    last_message = state["messages"][-1].content if state["messages"] else ""
+    last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
     # Get previous messages for chat history
     chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
 
@@ -365,7 +381,7 @@ async def audio_node(state: AICompanionState, config: RunnableConfig):
     text_to_speech_module = get_text_to_speech_module()
 
     # Extract last message from the state
-    last_message = state["messages"][-1].content if state["messages"] else ""
+    last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
     # Get previous messages for chat history
     chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
 
@@ -406,11 +422,25 @@ async def summarize_conversation_node(state: AICompanionState):
             "but that captures all the relevant information shared between Evelina and the user:"
         )
 
-    messages = state["messages"] + [HumanMessage(content=summary_message)]
+    # Convert messages to the proper format if they're dictionaries
+    processed_messages = []
+    for msg in state["messages"]:
+        if isinstance(msg, dict):
+            if msg.get("role") == "user":
+                processed_messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                processed_messages.append(AIMessage(content=msg.get("content", "")))
+            else:
+                # For any other role, use the appropriate message type or default to HumanMessage
+                processed_messages.append(HumanMessage(content=msg.get("content", "")))
+        else:
+            processed_messages.append(msg)
+
+    messages = processed_messages + [HumanMessage(content=summary_message)]
     response = await model.ainvoke(messages)
 
     delete_messages = [
-        RemoveMessage(id=m.id)
+        RemoveMessage(id=m.id) if hasattr(m, "id") else m
         for m in state["messages"][: -settings.TOTAL_MESSAGES_AFTER_SUMMARY]
     ]
     return {"summary": response.content, "messages": delete_messages}
@@ -421,7 +451,7 @@ def memory_injection_node(state: AICompanionState) -> Dict[str, str]:
     logger.debug("Starting memory injection node processing")
     try:
         memory_manager = get_memory_manager()
-        last_message = state["messages"][-1].content if state["messages"] else ""
+        last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
         memory_context = memory_manager.get_relevant_memories(last_message)
         return {"memory_context": memory_manager.format_memories_for_prompt(memory_context)}
     except Exception as e:
@@ -436,7 +466,7 @@ async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
         memory_manager = get_memory_manager()
         
         # Get the current message
-        current_message = state["messages"][-1].content if state["messages"] else ""
+        current_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
         
         # Get relevant memories
         relevant_memories = memory_manager.get_relevant_memories(current_message)
@@ -450,7 +480,12 @@ async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
             logger.debug("No relevant memories found")
             
         # Store the current message as a potential memory
-        await memory_manager.extract_and_store_memories(state["messages"][-1])
+        message_obj = state["messages"][-1]
+        message_content = get_message_content(message_obj)
+        # Create a proper message object if we got a dict
+        if isinstance(message_obj, dict):
+            message_obj = HumanMessage(content=message_content)
+        await memory_manager.extract_and_store_memories(message_obj)
         
         return {"memory_context": formatted_memories}
     except Exception as e:
@@ -470,7 +505,7 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
         from ai_companion.modules.rag.core.rag_chain import get_rag_chain
         rag_chain = get_rag_chain()
         
-        last_message = state["messages"][-1].content if state["messages"] else ""
+        last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
         memory_context = state.get("memory_context", "")
         retry_count = state.get("rag_retry_count", 0) + 1
         
