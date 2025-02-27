@@ -1,0 +1,75 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Install the project into `/app`
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    INTERFACE=unified \
+    PORT=8000
+
+# Install system dependencies for building libraries
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the dependency management files first
+COPY uv.lock ./
+COPY pyproject.toml ./
+
+# Install the application dependencies - this can be cached if uv.lock doesn't change
+RUN uv sync --frozen --no-cache
+
+# Set the virtual environment environment variables
+ENV VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
+
+# Copy your application code into the container
+# (This is done after installing dependencies to leverage Docker layer caching)
+COPY src/ ./
+COPY README.md ./
+
+# Fix import issue - create a logging.py file with the get_logger function
+RUN echo 'import logging\n\
+\n\
+def get_logger(name):\n\
+    """Get a logger with the given name."""\n\
+    logger = logging.getLogger(name)\n\
+    if not logger.handlers:\n\
+        handler = logging.StreamHandler()\n\
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")\n\
+        handler.setFormatter(formatter)\n\
+        logger.addHandler(handler)\n\
+        logger.setLevel(logging.INFO)\n\
+    return logger\n' > /app/ai_companion/utils/logging.py
+
+# Note: .env file should be mounted as a volume or environment variables passed directly
+
+# Define volumes for persistent data
+VOLUME ["/app/data"]
+
+# Create healthcheck script
+RUN echo '#!/bin/sh\n\
+curl -f http://localhost:$PORT/health 2>/dev/null || exit 1\n\
+exit 0' > /app/healthcheck.sh && chmod +x /app/healthcheck.sh
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 CMD ["/app/healthcheck.sh"]
+
+# Expose port
+EXPOSE 8000
+
+# Create startup script to run the unified application
+RUN echo '#!/bin/sh\n\
+# Create .env file if mounted as volume but not found\n\
+touch /app/.env 2>/dev/null || true\n\
+\n\
+echo "Starting unified interface on port $PORT..."\n\
+/app/.venv/bin/uvicorn ai_companion.main:app --host 0.0.0.0 --port $PORT\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Set the default command to run the startup script
+CMD ["/app/start.sh"] 

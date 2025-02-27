@@ -26,8 +26,8 @@ speech_to_text = SpeechToText()
 text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
 
-# Router for WhatsApp respo
-whatsapp_router = APIRouter()
+# Router for WhatsApp responses with path-based routing
+whatsapp_router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 # WhatsApp API credentials from settings
 WHATSAPP_TOKEN = "EAAOp6lp8Xt4BO2BVhmHXMuAvwI1gXhi53y9OUDJs412MSnKtAo5FtVhyMqqMrU2y9ZBeZCtN9zSFhJ1WHN65wCX2jUcN3aBTpk4bVS2dAHjY5EJKxkWXGaMIuvTkZBJB4FKwpidRcy61d9GCOni3ZB8mXP6qr9HXx7poi75Wc00KbY2KfdbY2uIzoWIUXsVZBCgZDZD"
@@ -39,7 +39,7 @@ logger.debug(f"WHATSAPP_TOKEN: {'Set' if WHATSAPP_TOKEN else 'Not Set'}")
 logger.debug(f"WHATSAPP_PHONE_NUMBER_ID: {'Set' if WHATSAPP_PHONE_NUMBER_ID else 'Not Set'}")
 logger.debug(f"WHATSAPP_VERIFY_TOKEN: {'Set' if WHATSAPP_VERIFY_TOKEN else 'Not Set'}")
 
-@whatsapp_router.api_route("/whatsapp_response", methods=["GET", "POST"])
+@whatsapp_router.api_route("/webhook", methods=["GET", "POST"])
 async def whatsapp_handler(request: Request) -> Response:
     logger.debug("Received WhatsApp request")
     logger.debug(f"Method: {request.method}")
@@ -150,6 +150,10 @@ async def whatsapp_handler(request: Request) -> Response:
         logger.error(f"Error processing message: {e}", exc_info=True)
         return Response(content="Internal server error", status_code=500)
 
+@whatsapp_router.get("/health")
+async def health_check():
+    """Health check endpoint for WhatsApp webhook."""
+    return {"status": "healthy", "service": "whatsapp"}
 
 async def download_media(media_id: str) -> bytes:
     logger.debug(f"Downloading media with ID: {media_id}")

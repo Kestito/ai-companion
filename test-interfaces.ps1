@@ -1,41 +1,45 @@
-# Get the Container App FQDN
+# Get the FQDN of the Container App
 $FQDN = (az containerapp show --name evelina-vnet-app --resource-group evelina-ai-rg --query "properties.configuration.ingress.fqdn" -o tsv).Trim()
 
-Write-Host "Testing URLs for Container App: $FQDN"
-Write-Host "--------------------------------"
+Write-Host "`nTesting interfaces for $FQDN..."
 
-# Test the Chainlit interface
-Write-Host "Testing Chainlit Interface (Port 8000)..."
+# Test Chainlit interface
+Write-Host "`nTesting Chainlit interface..."
+$chainlitUrl = "https://$FQDN"
 try {
-    $response = Invoke-WebRequest -Uri "https://$FQDN" -Method GET -UseBasicParsing -TimeoutSec 10
-    Write-Host "✅ Chainlit is accessible at: https://$FQDN"
-    Write-Host "   Status: $($response.StatusCode) $($response.StatusDescription)"
+    $response = Invoke-WebRequest -Uri $chainlitUrl -Method GET
+    Write-Host "✅ Chainlit interface is accessible at: $chainlitUrl"
+    Write-Host "Status: $($response.StatusCode) $($response.StatusDescription)"
 } catch {
-    Write-Host "❌ Failed to access Chainlit: $_"
+    Write-Host "❌ Failed to access Chainlit interface at: $chainlitUrl"
+    Write-Host "Error: $($_.Exception.Message)"
 }
 
-# Test the WhatsApp webhook interface
-Write-Host "`nTesting WhatsApp Interface (Port 8080)..."
+# Test WhatsApp webhook
+Write-Host "`nTesting WhatsApp webhook..."
+$whatsappUrl = "https://$FQDN/whatsapp/health"
 try {
-    $response = Invoke-WebRequest -Uri "https://$FQDN:8080/health" -Method GET -UseBasicParsing -TimeoutSec 10
-    Write-Host "✅ WhatsApp webhook is accessible at: https://$FQDN:8080"
-    Write-Host "   Status: $($response.StatusCode) $($response.StatusDescription)"
+    $response = Invoke-WebRequest -Uri $whatsappUrl -Method GET
+    Write-Host "✅ WhatsApp webhook is accessible at: $whatsappUrl"
+    Write-Host "Status: $($response.StatusCode) $($response.StatusDescription)"
 } catch {
-    Write-Host "❌ Failed to access WhatsApp webhook: $_"
+    Write-Host "❌ Failed to access WhatsApp webhook at: $whatsappUrl"
+    Write-Host "Error: $($_.Exception.Message)"
 }
 
-# Test the Monitoring interface
-Write-Host "`nTesting Monitoring Interface (Port 8090)..."
+# Test Monitoring interface
+Write-Host "`nTesting Monitoring interface..."
+$monitorUrl = "https://$FQDN/monitor/health"
 try {
-    $response = Invoke-WebRequest -Uri "https://$FQDN:8090/monitor/health" -Method GET -UseBasicParsing -TimeoutSec 10
-    Write-Host "✅ Monitoring interface is accessible at: https://$FQDN:8090"
-    Write-Host "   Status: $($response.StatusCode) $($response.StatusDescription)"
+    $response = Invoke-WebRequest -Uri $monitorUrl -Method GET
+    Write-Host "✅ Monitoring interface is accessible at: $monitorUrl"
+    Write-Host "Status: $($response.StatusCode) $($response.StatusDescription)"
 } catch {
-    Write-Host "❌ Failed to access Monitoring interface: $_"
+    Write-Host "❌ Failed to access Monitoring interface at: $monitorUrl"
+    Write-Host "Error: $($_.Exception.Message)"
 }
 
 Write-Host "`nSummary of URLs:"
-Write-Host "--------------------------------"
-Write-Host "Chainlit Interface: https://$FQDN"
-Write-Host "WhatsApp Webhook:   https://$FQDN:8080"
-Write-Host "Monitoring API:     https://$FQDN:8090" 
+Write-Host "Chainlit: $chainlitUrl"
+Write-Host "WhatsApp: $whatsappUrl"
+Write-Host "Monitor:  $monitorUrl" 
