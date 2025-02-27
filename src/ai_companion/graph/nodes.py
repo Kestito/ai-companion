@@ -346,6 +346,17 @@ async def image_node(state: AICompanionState, config: RunnableConfig):
 
 
 async def hallucination_grader_node(state: AICompanionState, config: RunnableConfig):
+    """Process responses to check for and reduce hallucinations.
+    
+    Note: This node is currently not used in the graph structure but is kept for potential future use.
+    
+    Args:
+        state: Current conversation state
+        config: Runtime configuration
+        
+    Returns:
+        Updated state with processed messages
+    """
     current_activity = ScheduleContextGenerator.get_current_activity()
     memory_context = state.get("memory_context", "")
 

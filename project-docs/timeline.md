@@ -63,6 +63,12 @@
 
 ### Recent Changes
 
+#### 2025-02-26: Graph Structure Optimization
+- Removed hallucination_grader_node from the conversation graph
+- Simplified the graph flow by connecting response nodes directly to summarization check
+- Improved response processing efficiency by eliminating an unnecessary processing step
+- Updated documentation to reflect the new graph structure
+
 #### 2025-02-25: RAG System Comprehensive Upgrade
 - Implemented parallel search combining vector and keyword approaches
 - Enhanced the monitoring system with detailed metrics tracking

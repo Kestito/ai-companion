@@ -18,7 +18,6 @@ from ai_companion.graph.nodes import (
     context_injection_node,
     memory_extraction_node,
     memory_injection_node,
-    hallucination_grader_node,
     web_search_node,
     rag_node,
     rag_retry_node,
@@ -65,7 +64,6 @@ def create_workflow_graph() -> StateGraph:
     graph_builder.add_node("image_node", image_node)
     graph_builder.add_node("audio_node", audio_node)
     graph_builder.add_node("summarize_conversation_node", summarize_conversation_node)
-    graph_builder.add_node("hallucination_grader_node", hallucination_grader_node)
 
     # Set up the graph flow
     # 1. Start with memory extraction
@@ -101,19 +99,16 @@ def create_workflow_graph() -> StateGraph:
         }
     )
 
-    # 5. Add hallucination grading for responses
+    # 5. Check for summarization directly after response nodes
     for node in ["conversation_node", "image_node", "audio_node"]:
-        graph_builder.add_edge(node, "hallucination_grader_node")
-        
-    # 6. Check for summarization after hallucination grading
-    graph_builder.add_conditional_edges(
-        "hallucination_grader_node",
-        should_summarize_conversation,
-        {
-            "summarize_conversation_node": "summarize_conversation_node",
-            END: END
-        }
-    )
+        graph_builder.add_conditional_edges(
+            node,
+            should_summarize_conversation,
+            {
+                "summarize_conversation_node": "summarize_conversation_node",
+                END: END
+            }
+        )
 
     graph_builder.add_edge("summarize_conversation_node", END)
 

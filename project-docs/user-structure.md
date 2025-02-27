@@ -29,6 +29,7 @@ The AI Companion provides a conversational interface where users can interact th
   2. Long-term memory (important information)
   3. Activity context (current user activity)
 - Responses are generated considering all available context
+- Long conversations are summarized for context preservation when needed
 
 ### 4. Multimodal Interactions
 - **Image Generation**:
@@ -160,9 +161,16 @@ src/
 ### 1. Conversation Graph
 
 The conversation flow is managed through a directed graph where:
-- **Nodes**: Represent processing steps (e.g., routing, RAG, conversation)
+- **Nodes**: Represent processing steps (e.g., routing, RAG, conversation, image, audio)
 - **Edges**: Define the flow between nodes based on conditions
 - **State**: Maintains conversation context across nodes
+- **Flow**: 
+  1. Memory extraction
+  2. Message routing
+  3. RAG processing (with retry capability)
+  4. Memory injection
+  5. Response generation (conversation, image, or audio)
+  6. Conversation summarization (when needed)
 
 ### 2. RAG System
 

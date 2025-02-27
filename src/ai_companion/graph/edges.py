@@ -1,14 +1,16 @@
 from ai_companion.graph.state import AICompanionState
 from ai_companion.settings import settings
+from ai_companion.utils.logging import get_logger
 
 from langgraph.graph import END
 from typing_extensions import Literal
-from typing import Dict
+from typing import Dict, Union
 
+logger = get_logger(__name__)
 
 def should_summarize_conversation(
     state: AICompanionState,
-) -> Literal["summarize_conversation_node", "__end__"]:
+) -> Union[Literal["summarize_conversation_node"], str]:
     """Determine if conversation should be summarized based on message count.
     
     Args:
@@ -21,8 +23,10 @@ def should_summarize_conversation(
     
     # Check if messages is a list and has enough messages
     if isinstance(messages, list) and len(messages) > settings.TOTAL_MESSAGES_SUMMARY_TRIGGER:
+        logger.debug("Returning 'summarize_conversation_node'")
         return "summarize_conversation_node"
     
+    logger.debug(f"Returning END constant: {END}")
     return END
 
 

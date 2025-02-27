@@ -1,6 +1,6 @@
 {
-  "total_queries": 51,
-  "successful_queries": 27,
+  "total_queries": 52,
+  "successful_queries": 28,
   "failed_queries": 24,
   "verified_responses": 0,
   "insufficient_info": 0,
@@ -13,10 +13,10 @@
     "system": 16
   },
   "performance": {
-    "avg_query_time": 0.04365435921581335,
-    "avg_retrieval_time": 0.07931372915892723,
-    "avg_response_time": 0.6349023513894206,
-    "avg_generation_time": 4.455837298625881,
+    "avg_query_time": 0.03928892329423202,
+    "avg_retrieval_time": 0.07138235624303452,
+    "avg_response_time": 0.5714121162504786,
+    "avg_generation_time": 4.315774365539111,
     "avg_total_time": 0.0
   },
   "hourly_stats": {
@@ -64,6 +64,11 @@
       "queries": 1,
       "successful": 1,
       "failed": 0
+    },
+    "2025-02-26-14": {
+      "queries": 1,
+      "successful": 1,
+      "failed": 0
     }
   },
   "daily_stats": {
@@ -73,18 +78,18 @@
       "failed": 24
     },
     "2025-02-26": {
-      "queries": 2,
-      "successful": 2,
+      "queries": 3,
+      "successful": 3,
       "failed": 0
     }
   },
-  "last_updated": "2025-02-26T11:15:39.870401",
+  "last_updated": "2025-02-26T14:49:34.478413",
   "search_sources": {
     "vector_only": 0,
-    "keyword_only": 0,
-    "hybrid": 1,
-    "total_vector_docs": 1,
-    "total_keyword_docs": 24
+    "keyword_only": 1,
+    "hybrid": 0,
+    "total_vector_docs": 0,
+    "total_keyword_docs": 20
   },
-  "avg_document_count": 25
+  "avg_document_count": 20
 }
