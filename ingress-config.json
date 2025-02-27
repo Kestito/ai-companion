@@ -1,0 +1,14 @@
+{
+  "external": true,
+  "targetPort": 8000,
+  "additionalPortMappings": [
+    {
+      "targetPort": 8080,
+      "exposedPort": 8080
+    },
+    {
+      "targetPort": 8090,
+      "exposedPort": 8090
+    }
+  ]
+} 

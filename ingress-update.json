@@ -1,0 +1,20 @@
+{
+  "properties": {
+    "configuration": {
+      "ingress": {
+        "additionalPortMappings": [
+          {
+            "targetPort": 8080,
+            "exposedPort": 8080,
+            "external": true
+          },
+          {
+            "targetPort": 8090,
+            "exposedPort": 8090,
+            "external": true
+          }
+        ]
+      }
+    }
+  }
+} 
