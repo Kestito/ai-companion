@@ -55,6 +55,9 @@ COPY .chainlit/ /app/.chainlit/
 COPY chainlit.md /app/chainlit.md
 COPY public/ /app/public/
 
+# Create a symbolic link to fix the Chainlit path issue
+RUN ln -sf /app/src/ai_companion /app/ai_companion
+
 # Create a startup script
 RUN echo '#!/bin/bash\n\
 \n\

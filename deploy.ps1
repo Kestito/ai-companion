@@ -1,6 +1,6 @@
 # Set variables
 $IMAGE_NAME = "ai-companion"
-$TAG = "latest"
+$TAG = "v1.0.2"
 $ACR_NAME = "evelinaai247acr"
 $RESOURCE_GROUP = "evelina-ai-rg"
 $CONTAINER_APP_NAME = "evelina-vnet-app"

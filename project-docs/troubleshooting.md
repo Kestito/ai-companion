@@ -170,4 +170,71 @@ If you continue to experience issues after trying these solutions, please:
 
 1. Check the application logs for detailed error messages
 2. Review the project documentation for any configuration requirements
-3. Open an issue in the project repository with detailed information about the problem 
+3. Open an issue in the project repository with detailed information about the problem
+
+## Chainlit Interface Not Working
+
+### Symptoms
+- The `/chat/` endpoint returns a 307 Temporary Redirect to `/chat/error`
+- The error page shows "The Chainlit service is currently unavailable"
+- Logs show: `Error checking service at localhost:8080: All connection attempts failed`
+
+### Cause
+The issue is related to the file path in the Docker container. The Chainlit service is trying to run the file at `ai_companion/interfaces/chainlit/app.py`, but in the container, the file structure is different. The file should be at `/app/src/ai_companion/interfaces/chainlit/app.py` instead.
+
+### Solution
+There are two ways to fix this issue:
+
+#### Option 1: Update the Dockerfile
+Modify the Dockerfile to use the correct path for the Chainlit app:
+
+```dockerfile
+# Change this line in the Dockerfile
+/app/.venv/bin/chainlit run ai_companion/interfaces/chainlit/app.py --host 0.0.0.0 --port 8080 & \
+```
+
+to:
+
+```dockerfile
+/app/.venv/bin/chainlit run src/ai_companion/interfaces/chainlit/app.py --host 0.0.0.0 --port 8080 & \
+```
+
+#### Option 2: Create a Symbolic Link
+Add a command to the Dockerfile to create a symbolic link:
+
+```dockerfile
+# Add this before the startup script
+RUN ln -sf /app/src/ai_companion /app/ai_companion
+```
+
+### Implementation Steps
+1. Update the Dockerfile with one of the solutions above
+2. Rebuild the Docker image
+3. Push the new image to the Azure Container Registry
+4. Update the Azure Container App to use the new image
+
+```powershell
+# Rebuild and push the image
+docker build -t evelinaai247acr.azurecr.io/ai-companion:v1.0.2 .
+az acr login --name evelinaai247acr
+docker push evelinaai247acr.azurecr.io/ai-companion:v1.0.2
+
+# Update the container app
+az containerapp update --name evelina-vnet-app --resource-group evelina-ai-rg --image evelinaai247acr.azurecr.io/ai-companion:v1.0.2
+```
+
+## Monitoring Endpoints Working but Chainlit Not Working
+
+If the monitoring endpoints (`/health/metrics`, `/health/report`, etc.) are working but the Chainlit interface is not, it indicates that the main application and monitoring service are running correctly, but there's an issue with the Chainlit service specifically.
+
+This is expected behavior with the current implementation, as the main application is designed to handle the absence of the Chainlit service gracefully by redirecting to an error page.
+
+## Checking Service Status
+
+You can check the status of all services using the health endpoint:
+
+```
+curl https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/health
+```
+
+This will show the status of all services, including Chainlit. 
