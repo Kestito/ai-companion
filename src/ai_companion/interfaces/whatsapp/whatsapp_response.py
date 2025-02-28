@@ -70,10 +70,12 @@ async def whatsapp_handler(request: Request) -> Response:
 
             # Get user message and handle different message types
             content = ""
+            is_voice_message = False
             if message["type"] == "audio":
                 logger.info("Processing audio message")
                 content = await process_audio_message(message)
                 logger.debug(f"Transcribed content: {content}")
+                is_voice_message = True
             elif message["type"] == "image":
                 logger.info("Processing image message")
                 # Get image caption if any
@@ -136,6 +138,21 @@ async def whatsapp_handler(request: Request) -> Response:
                 success = await send_response(
                     from_number, response_message, "image", image_data
                 )
+            elif is_voice_message:
+                # For voice input messages, also generate and send a voice response
+                try:
+                    audio_buffer = await text_to_speech.synthesize(response_message)
+                    # First send the voice response
+                    voice_success = await send_response(
+                        from_number, response_message, "audio", audio_buffer
+                    )
+                    # Then send the text response
+                    text_success = await send_response(from_number, response_message, "text")
+                    success = voice_success and text_success
+                except Exception as e:
+                    logger.error(f"Error generating voice response: {e}", exc_info=True)
+                    # Fall back to text-only response
+                    success = await send_response(from_number, response_message, "text")
             else:
                 success = await send_response(from_number, response_message, "text")
 

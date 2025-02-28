@@ -158,10 +158,12 @@ class TelegramBot:
         session_id = str(chat_id)
         
         try:
-            content = await self._extract_message_content(message)
-            if not content:
+            content_result = await self._extract_message_content(message)
+            if not content_result or not content_result[0]:
                 return
 
+            content, message_type = content_result
+            
             # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(
                 settings.SHORT_TERM_MEMORY_DB_PATH
@@ -255,21 +257,25 @@ class TelegramBot:
                 
                 # Send the response
                 logger.debug(f"Sending response with workflow: {workflow}")
-                await self._send_response(chat_id, response_message, workflow, safe_result)
+                await self._send_response(chat_id, response_message, workflow, safe_result, message_type)
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
             await self._send_message(chat_id, "Sorry, I encountered an error processing your message.")
 
-    async def _extract_message_content(self, message: Dict) -> Optional[str]:
+    async def _extract_message_content(self, message: Dict) -> Optional[tuple]:
         """Extract content from different types of messages."""
+        message_type = None
+        
         if "text" in message:
-            return message["text"]
+            return message["text"], None
         
         elif "voice" in message:
             file_id = message["voice"]["file_id"]
             audio_data = await self._download_file(file_id)
-            return await speech_to_text.transcribe(audio_data)
+            transcript = await speech_to_text.transcribe(audio_data)
+            # Return both the transcript and mark this as a voice message
+            return transcript, "voice"
             
         elif "photo" in message:
             # Get the largest photo (last in array)
@@ -283,19 +289,20 @@ class TelegramBot:
                     image_data,
                     "Please describe what you see in this image in the context of our conversation.",
                 )
-                return f"{caption}\n[Image Analysis: {description}]"
+                return f"{caption}\n[Image Analysis: {description}]", None
             except Exception as e:
                 logger.warning(f"Failed to analyze image: {e}")
-                return caption or "Image received but could not be analyzed"
+                return caption or "Image received but could not be analyzed", None
                 
-        return None
+        return None, None
 
     async def _send_response(
         self,
         chat_id: int,
         response_text: str,
         workflow: str,
-        result: Union[Dict, Any]
+        result: Union[Dict, Any],
+        message_type: Optional[str] = None
     ):
         """Send response based on workflow type."""
         try:
@@ -308,7 +315,17 @@ class TelegramBot:
             
             # Handle the case where result is not a dictionary
             if not isinstance(result, dict):
-                await self._send_message(chat_id, response_text)
+                if message_type == "voice":
+                    # For voice messages, also generate and send a voice response
+                    try:
+                        audio_data = await text_to_speech.synthesize(response_text)
+                        await self._send_voice(chat_id, audio_data)
+                        await self._send_message(chat_id, response_text)
+                    except Exception as e:
+                        logger.error(f"Error generating voice response: {e}", exc_info=True)
+                        await self._send_message(chat_id, response_text)
+                else:
+                    await self._send_message(chat_id, response_text)
                 return
 
             # Handle different workflow types with appropriate response formats
@@ -330,6 +347,16 @@ class TelegramBot:
                         logger.error(f"Image file not found: {image_path}")
                         await self._send_message(chat_id, response_text)
                 else:
+                    await self._send_message(chat_id, response_text)
+            
+            elif message_type == "voice":
+                # For voice input messages, also generate and send a voice response
+                try:
+                    audio_data = await text_to_speech.synthesize(response_text)
+                    await self._send_voice(chat_id, audio_data)
+                    await self._send_message(chat_id, response_text)
+                except Exception as e:
+                    logger.error(f"Error generating voice response: {e}", exc_info=True)
                     await self._send_message(chat_id, response_text)
             
             else:  # Default to conversation workflow
@@ -516,7 +543,7 @@ class TelegramBot:
         voice_result = await self._make_request("sendVoice", data=data, files=files)
         
         # Send caption as a separate message if provided
-        if caption:
+        if caption and isinstance(caption, str) and caption.strip():
             await self._send_message(chat_id, caption)
             
         return voice_result

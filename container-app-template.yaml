@@ -1,0 +1,77 @@
+# Azure Container App Template
+# This template can be used with the 'az containerapp update' command
+# Save as container-app-template.yaml and use with:
+# az containerapp update -n evelina-vnet-app -g evelina-ai-rg --yaml container-app-template.yaml
+
+location: eastus
+properties:
+  environmentId: /subscriptions/7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e/resourceGroups/evelina-ai-rg/providers/Microsoft.App/managedEnvironments/evelina-env-vnet
+  configuration:
+    ingress:
+      external: true
+      targetPort: 8000
+      additionalPortMappings:
+        - targetPort: 8080
+          exposedPort: 8080
+          external: true
+        - targetPort: 8090
+          exposedPort: 8090
+          external: true
+      traffic:
+        - latestRevision: true
+          weight: 100
+    registries:
+      - server: evelinaai247acr.azurecr.io
+        username: evelinaai247acr
+  template:
+    containers:
+      - image: evelinaai247acr.azurecr.io/ai-companion:latest
+        name: evelinaacrcontainerapp
+        env:
+          - name: QDRANT_URL
+            value: https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io
+          - name: QDRANT_API_KEY
+            value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw
+          - name: AZURE_OPENAI_API_KEY
+            value: Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl
+          - name: AZURE_OPENAI_ENDPOINT
+            value: https://ai-kestutis9429ai265477517797.openai.azure.com
+          - name: AZURE_EMBEDDING_DEPLOYMENT
+            value: text-embedding-3-small
+          - name: INTERFACE
+            value: all
+          - name: OPENAI_API_TYPE
+            value: azure
+          - name: OPENAI_API_VERSION
+            value: 2024-08-01-preview
+          - name: AZURE_OPENAI_API_VERSION
+            value: 2024-08-01-preview
+          - name: AZURE_OPENAI_DEPLOYMENT
+            value: gpt-4o
+          - name: EMBEDDING_MODEL
+            value: text-embedding-3-small
+          - name: LLM_MODEL
+            value: gpt-4o
+          - name: SUPABASE_URL
+            value: https://aubulhjfeszmsheonmpy.supabase.co
+          - name: SUPABASE_KEY
+            value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+          - name: COLLECTION_NAME
+            value: Information
+          - name: PORT
+            value: "8000"
+          - name: PYTHONUNBUFFERED
+            value: "1"
+          - name: PYTHONPATH
+            value: /app
+          - name: ELEVENLABS_API_KEY
+            value: sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d
+          - name: ELEVENLABS_VOICE_ID
+            value: qSfcmCS9tPikUrDxO8jt
+          - name: STT_MODEL_NAME
+            value: whisper
+          - name: TTS_MODEL_NAME
+            value: eleven_flash_v2_5
+    scale:
+      minReplicas: 1
+      maxReplicas: 10 
