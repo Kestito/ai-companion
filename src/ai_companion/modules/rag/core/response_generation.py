@@ -8,54 +8,97 @@ import os
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 import json
+from ai_companion.settings import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class LithuanianResponseGenerator:
-    """
-    Response generator optimized for Lithuanian language responses.
-    """
+    """Generate responses in Lithuanian with enhanced context awareness."""
     
-    def __init__(
+    def __init__(self, model_deployment=None, model_name=None, temperature=0.0):
+        self.llm = AzureChatOpenAI(
+            deployment_name=model_deployment or settings.AZURE_OPENAI_DEPLOYMENT,
+            model_name=model_name or settings.LLM_MODEL,
+            temperature=temperature,
+            api_version=settings.AZURE_OPENAI_API_VERSION
+        )
+        self.logger = logging.getLogger(__name__)
+
+    async def generate_response(
         self,
-        model_deployment: Optional[str] = None,
-        model_name: Optional[str] = None,
-        temperature: float = 0.0
-    ):
-        """
-        Initialize the Lithuanian response generator.
+        query: str,
+        documents: List[Document],
+        context: str = "",
+        **kwargs
+    ) -> str:
+        """Generate a response considering conversation history and context.
         
         Args:
-            model_deployment: The deployment name for Azure OpenAI
-            model_name: Name of the model being used
-            temperature: Temperature setting for the LLM (lower = more deterministic)
+            query: The user's query
+            documents: Retrieved relevant documents
+            context: Combined conversation history and memory context
+            **kwargs: Additional parameters
+            
+        Returns:
+            Generated response text
         """
         try:
-            # Initialize logger
-            self.logger = logging.getLogger(__name__)
+            # Extract chat history and memory context
+            chat_history = ""
+            memory_info = ""
+            if context:
+                parts = context.split("\nMemory Context:\n")
+                if len(parts) > 1:
+                    chat_history = parts[0].replace("Chat History:\n", "").strip()
+                    memory_info = parts[1].strip()
+
+            # Format documents
+            doc_texts = []
+            for doc in documents:
+                text = doc.page_content if hasattr(doc, 'page_content') else doc.text
+                metadata = doc.metadata or {}
+                source = metadata.get('source', 'Unknown')
+                doc_texts.append(f"Source ({source}): {text}")
             
-            # Initialize LLM for response generation
-            self.llm = AzureChatOpenAI(
-                deployment_name=model_deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-                model_name=model_name or os.getenv("LLM_MODEL"),
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-                temperature=temperature
-            )
-            
-            self.logger.info("Lithuanian response generator initialized")
-            
+            documents_text = "\n\n".join(doc_texts)
+
+            # Create prompt with enhanced context
+            prompt = f"""As a Lithuanian-speaking AI assistant, generate a response to the user's query.
+            Consider the conversation history and memory context to maintain continuity.
+
+            Chat History:
+            {chat_history}
+
+            Memory Context:
+            {memory_info}
+
+            Retrieved Information:
+            {documents_text}
+
+            User Query: {query}
+
+            Instructions:
+            1. Use the retrieved information to answer the query
+            2. Maintain conversation context from chat history
+            3. Consider memory context for personalization
+            4. Respond in Lithuanian language
+            5. Be concise but informative
+            6. If information is unclear or missing, acknowledge it
+
+            Response:"""
+
+            # Generate response
+            response = await self.llm.ainvoke(prompt)
+            return response.content if hasattr(response, 'content') else str(response)
+
         except Exception as e:
-            # Create logger if not already initialized
-            self.logger = logging.getLogger(__name__)
-            self.logger.error(f"Error initializing response generator: {str(e)}")
-            raise
+            self.logger.error(f"Error generating response: {e}", exc_info=True)
+            return "Atsiprašau, bet įvyko klaida generuojant atsakymą. Ar galėtumėte perfrazuoti klausimą?"
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def generate_response(
+    async def generate_response_old(
         self,
         query: str,
         docs: List[Document],

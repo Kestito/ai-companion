@@ -121,16 +121,20 @@ class LithuanianQueryPreprocessor:
     async def process_query(
         self,
         query: str,
-        context_type: Optional[str] = None
+        context_type: Optional[str] = None,
+        context: Optional[str] = None,
+        **kwargs  # Add kwargs to handle additional parameters
     ) -> Dict[str, Any]:
         """Process and enhance Lithuanian query.
         
         Args:
-            query: The query text
-            context_type: Optional context type
+            query: The query to process
+            context_type: Optional type of context
+            context: Optional context string
+            **kwargs: Additional parameters (ignored)
             
         Returns:
-            Dict containing processed query info
+            Dictionary containing processed query information
         """
         try:
             # Basic validation

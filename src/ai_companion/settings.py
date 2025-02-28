@@ -30,10 +30,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     # Memory Configuration
-    MEMORY_TOP_K: int = 3
-    ROUTER_MESSAGES_TO_ANALYZE: int = 3
+    MEMORY_TOP_K: int = 10
+    ROUTER_MESSAGES_TO_ANALYZE: int = 10
     TOTAL_MESSAGES_SUMMARY_TRIGGER: int = 20
-    TOTAL_MESSAGES_AFTER_SUMMARY: int = 5
+    TOTAL_MESSAGES_AFTER_SUMMARY: int = 20
     EMBEDDING_MAX_TOKEN_SIZE: int = 8192
     EMBEDDING_DIM: int = 384
 

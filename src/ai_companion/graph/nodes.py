@@ -165,13 +165,24 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
         
         last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
         memory_context = state.get("memory_context", "")
+        
+        # Get chat history
+        chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
+        chat_history_str = "\n".join([
+            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {get_message_content(m)}"
+            for m in chat_history[-settings.ROUTER_MESSAGES_TO_ANALYZE:]
+        ])
+        
+        # Combine chat history with memory context
+        combined_context = f"Chat History:\n{chat_history_str}\n\nMemory Context:\n{memory_context}"
+        
         start_time = datetime.now()
         
         # Query the RAG chain with enhanced features
         try:
             response, relevant_docs = await rag_chain.query(
                 query=last_message,
-                memory_context=memory_context,
+                memory_context=combined_context,  # Pass combined context
                 max_retries=3,
                 min_confidence=0.7
             )

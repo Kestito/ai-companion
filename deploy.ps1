@@ -52,8 +52,22 @@ az containerapp update `
   --min-replicas 1 `
   --max-replicas 10
 
+Write-Host "=== Configuring ingress for main port and removing additional port mappings ===" -ForegroundColor Green
+az containerapp ingress update `
+  --name $CONTAINER_APP_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --target-port 8000 `
+  --external true `
+  --transport auto `
+  --allow-insecure false
+
 Write-Host "=== Deployment completed ===" -ForegroundColor Green
 Write-Host "Your application is now updated at: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io" -ForegroundColor Cyan
+Write-Host "Chainlit interface is available at: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/chat/" -ForegroundColor Cyan
+Write-Host "  - Status: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/chat/status" -ForegroundColor Cyan
+Write-Host "Monitoring interface is available at: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/health/" -ForegroundColor Cyan
+Write-Host "  - Metrics: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/health/metrics" -ForegroundColor Cyan
+Write-Host "  - Report: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/health/report" -ForegroundColor Cyan
 
 Write-Host "=== Next Steps ===" -ForegroundColor Yellow
 Write-Host "1. Check container logs: az containerapp logs show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --tail 100" -ForegroundColor White

@@ -1,7 +1,7 @@
 {
-  "total_queries": 52,
-  "successful_queries": 28,
-  "failed_queries": 24,
+  "total_queries": 0,
+  "successful_queries": 0,
+  "failed_queries": 0,
   "verified_responses": 0,
   "insufficient_info": 0,
   "validation_failures": 0,
@@ -9,87 +9,15 @@
     "insufficient_info": 0,
     "query_processing": 0,
     "retrieval": 0,
-    "response_generation": 8,
-    "system": 16
+    "response_generation": 0,
+    "system": 0
   },
   "performance": {
-    "avg_query_time": 0.03928892329423202,
-    "avg_retrieval_time": 0.07138235624303452,
-    "avg_response_time": 0.5714121162504786,
-    "avg_generation_time": 4.315774365539111,
-    "avg_total_time": 0.0
+    "avg_query_time": 0.0,
+    "avg_retrieval_time": 0.0,
+    "avg_response_time": 0.0
   },
-  "hourly_stats": {
-    "2025-02-25-14": {
-      "queries": 6,
-      "successful": 0,
-      "failed": 6
-    },
-    "2025-02-25-15": {
-      "queries": 17,
-      "successful": 1,
-      "failed": 16
-    },
-    "2025-02-25-16": {
-      "queries": 6,
-      "successful": 6,
-      "failed": 0
-    },
-    "2025-02-25-18": {
-      "queries": 4,
-      "successful": 4,
-      "failed": 0
-    },
-    "2025-02-25-19": {
-      "queries": 2,
-      "successful": 2,
-      "failed": 0
-    },
-    "2025-02-25-22": {
-      "queries": 9,
-      "successful": 9,
-      "failed": 0
-    },
-    "2025-02-25-23": {
-      "queries": 5,
-      "successful": 3,
-      "failed": 2
-    },
-    "2025-02-26-09": {
-      "queries": 1,
-      "successful": 1,
-      "failed": 0
-    },
-    "2025-02-26-11": {
-      "queries": 1,
-      "successful": 1,
-      "failed": 0
-    },
-    "2025-02-26-14": {
-      "queries": 1,
-      "successful": 1,
-      "failed": 0
-    }
-  },
-  "daily_stats": {
-    "2025-02-25": {
-      "queries": 49,
-      "successful": 25,
-      "failed": 24
-    },
-    "2025-02-26": {
-      "queries": 3,
-      "successful": 3,
-      "failed": 0
-    }
-  },
-  "last_updated": "2025-02-26T14:49:34.478413",
-  "search_sources": {
-    "vector_only": 0,
-    "keyword_only": 1,
-    "hybrid": 0,
-    "total_vector_docs": 0,
-    "total_keyword_docs": 20
-  },
-  "avg_document_count": 20
+  "hourly_stats": {},
+  "daily_stats": {},
+  "last_updated": "2025-02-28T22:08:38.478544"
 }
