@@ -21,6 +21,9 @@ class SpeechToText:
         try:
             if not settings.AZURE_OPENAI_API_KEY:
                 raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
+            # Check for Whisper model name
+            if not hasattr(settings, 'STT_MODEL_NAME'):
+                raise ValueError("Missing required setting: STT_MODEL_NAME")
         except AttributeError:
             raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
 
@@ -60,6 +63,7 @@ class SpeechToText:
             try:
                 # Open the temporary file for the API request
                 with open(temp_file_path, "rb") as audio_file:
+                    # Use the STT model name from settings
                     transcription = self.client.audio.transcriptions.create(
                         file=audio_file,
                         model=settings.STT_MODEL_NAME,

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Model Names
     TEXT_MODEL_NAME: str = "gpt-4o"
     SMALL_TEXT_MODEL_NAME: str = "gpt-4o"
-    STT_MODEL_NAME: str = "whisper-large-v3-turbo"
+    STT_MODEL_NAME: str = "whisper"
     TTS_MODEL_NAME: str = "eleven_flash_v2_5"
     TTI_MODEL_NAME: str = "black-forest-labs/FLUX.1-schnell-Free"
     ITT_MODEL_NAME: str = "llama-3.2-90b-vision-preview"
@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT: str = "gpt-4o"
     AZURE_EMBEDDING_DEPLOYMENT: str = "text-embedding-3-small"
     AZURE_EMBEDDING_API_VERSION: str = "2023-05-15"
+    AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME: str = "whisper"
     LLM_MODEL: str = "gpt-4o"
     AZURE_OPENAI_DEPLOYMENT_TYPO: str = "gpt-4o"
 

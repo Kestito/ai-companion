@@ -1,3 +1,25 @@
+# AI Companion
+
+An AI companion application using LangChain and modern AI technologies.
+
+## Features
+
+- WhatsApp integration
+- Telegram integration
+- RAG capabilities
+- Speech-to-text and text-to-speech
+- Image analysis
+
+## Setup
+
+1. Clone the repository
+2. Install dependencies with `uv sync`
+3. Run the application with `fastapi run ai_companion/interfaces/whatsapp/webhook_endpoint.py`
+
+## Environment Variables
+
+See the `.env` file for required environment variables.
+
 <p align="center">
         <img alt="logo" src="img/project_overview_diagram.gif" width=600 />
     <h1 align="center">📱 Evelina 📱</h1>

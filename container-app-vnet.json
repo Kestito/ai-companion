@@ -43,7 +43,7 @@
             },
             {
               "name": "QDRANT_API_KEY",
-              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLw_DbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw"
+              "value":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw"
             },
             {
               "name": "AZURE_OPENAI_API_KEY",

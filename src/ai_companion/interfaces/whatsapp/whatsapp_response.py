@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.constants import CONF, CONFIG_KEY_CHECKPOINTER
 
 from ai_companion.graph import graph_builder
 from ai_companion.modules.image import ImageToText
@@ -97,19 +98,22 @@ async def whatsapp_handler(request: Request) -> Response:
             ) as short_term_memory:
                 logger.debug("Starting graph processing")
                 try:
-                    graph = graph_builder.compile(checkpointer=short_term_memory)
-                    logger.debug("Graph compiled successfully")
+                    # Create a new graph instance with the checkpointer
+                    config = {
+                        "configurable": {"thread_id": session_id},
+                        CONFIG_KEY_CHECKPOINTER: short_term_memory
+                    }
+                    logger.debug("Graph configuration set with checkpointer")
                     
-                    await graph.ainvoke(
+                    # Invoke the graph with the message
+                    result = await graph_builder.ainvoke(
                         {"messages": [HumanMessage(content=content)]},
-                        {"configurable": {"thread_id": session_id}},
+                        config
                     )
                     logger.debug("Graph invocation completed")
 
                     # Get the workflow type and response from the state
-                    output_state = await graph.aget_state(
-                        config={"configurable": {"thread_id": session_id}}
-                    )
+                    output_state = await graph_builder.aget_state(config)
                     logger.debug(f"Retrieved state: {output_state}")
                 except Exception as e:
                     logger.error(f"Error during graph processing: {e}", exc_info=True)

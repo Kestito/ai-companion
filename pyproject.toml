@@ -26,3 +26,11 @@ dependencies = [
     "qdrant-client>=1.12.1",
     "sentence-transformers>=3.3.1",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ai_companion"]
+package-dir = {"" = "src"}
