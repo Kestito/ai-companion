@@ -5,6 +5,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 import httpx
 
 from ai_companion.interfaces.whatsapp.whatsapp_response import whatsapp_router
@@ -46,6 +47,16 @@ CHAINLIT_PORT = 8080
 # Monitoring proxy configuration
 MONITOR_HOST = "localhost"
 MONITOR_PORT = 8090
+
+# Mount Chainlit static assets
+# This path should point to the Chainlit frontend dist directory
+CHAINLIT_ASSETS_PATH = "/app/.venv/lib/python3.12/site-packages/chainlit/frontend/dist"
+if os.path.exists(CHAINLIT_ASSETS_PATH):
+    # Mount the assets directory
+    app.mount("/assets", StaticFiles(directory=f"{CHAINLIT_ASSETS_PATH}/assets"), name="assets")
+    logger.info(f"Mounted Chainlit assets from {CHAINLIT_ASSETS_PATH}/assets")
+else:
+    logger.warning(f"Chainlit assets directory not found at {CHAINLIT_ASSETS_PATH}")
 
 # Function to check if a service is running
 async def is_service_running(host: str, port: int, path: str = "/") -> dict:
@@ -225,6 +236,136 @@ async def proxy_chainlit(request: Request, path: str):
     except Exception as e:
         logger.error(f"Error proxying to Chainlit: {e}")
         return RedirectResponse(url="/chat/error")
+    finally:
+        await client.aclose()
+
+# Add routes for additional Chainlit API endpoints
+@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+async def proxy_chainlit_auth(request: Request, path: str):
+    """Handle auth-related requests from Chainlit frontend (authentication is disabled)"""
+    # For /auth/config, always return a response indicating auth is disabled
+    # This is required by the Chainlit frontend even though we don't use authentication
+    if path == "config":
+        logger.info("Returning no-auth configuration for Chainlit frontend")
+        return Response(
+            content='{"auth_type":null,"providers":[],"session_duration_seconds":3600}',
+            status_code=200,
+            media_type="application/json"
+        )
+    
+    # For all other auth endpoints, return empty JSON
+    logger.info(f"Returning empty response for unused auth endpoint: {path}")
+    return Response(content="{}", status_code=200, media_type="application/json")
+
+@app.api_route("/project/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+async def proxy_chainlit_project(request: Request, path: str):
+    """Handle project-related requests from Chainlit frontend"""
+    # Check if Chainlit is running first
+    status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
+    
+    # If Chainlit is healthy, proxy the request
+    if status["status"] == "healthy":
+        client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
+        url = f"/project/{path}"
+        
+        # Get headers from the incoming request
+        headers = dict(request.headers)
+        headers.pop("host", None)  # Remove the host header
+        
+        # Get the request body if it exists
+        body = await request.body()
+        
+        try:
+            # Log the proxy attempt
+            logger.info(f"Proxying project request to Chainlit: {request.method} {url}")
+            
+            # Forward the request to Chainlit
+            response = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                content=body,
+                params=request.query_params,
+                follow_redirects=True,
+                timeout=5.0
+            )
+            
+            # Log the response status
+            logger.info(f"Chainlit project response: {response.status_code}")
+            
+            # Return the response from Chainlit
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+        except Exception as e:
+            logger.error(f"Error proxying project to Chainlit: {e}")
+            # Fall through to default responses below
+        finally:
+            await client.aclose()
+    
+    # If Chainlit is not healthy or there was an error, return default responses
+    # These are required by the Chainlit frontend to function properly
+    if path.startswith("translations"):
+        logger.info("Returning empty translations for Chainlit frontend")
+        return Response(
+            content='{"translations":{}}',
+            status_code=200,
+            media_type="application/json"
+        )
+    
+    # For all other project endpoints, return empty JSON
+    logger.info(f"Returning empty response for project endpoint: {path}")
+    return Response(content="{}", status_code=200, media_type="application/json")
+
+# Add WebSocket proxy route for Chainlit
+@app.api_route("/ws/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+async def proxy_chainlit_ws(request: Request, path: str):
+    """Proxy WebSocket requests to Chainlit"""
+    # Check if Chainlit is running first
+    status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
+    if status["status"] != "healthy":
+        return Response(content="{}", status_code=404, media_type="application/json")
+    
+    client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
+    url = f"/ws/{path}"
+    
+    # Get headers from the incoming request
+    headers = dict(request.headers)
+    headers.pop("host", None)  # Remove the host header
+    
+    # Get the request body if it exists
+    body = await request.body()
+
+    try:
+        # Log the proxy attempt
+        logger.info(f"Proxying WebSocket request to Chainlit: {request.method} {url}")
+
+        # Forward the request to Chainlit
+        response = await client.request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            content=body,
+            params=request.query_params,
+            follow_redirects=True,
+            timeout=5.0
+        )
+
+        # Log the response status
+        logger.info(f"Chainlit WebSocket response: {response.status_code}")
+
+        # Return the response from Chainlit
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+        )
+    except Exception as e:
+        logger.error(f"Error proxying WebSocket to Chainlit: {e}")
+        # Return 404 for WebSocket errors
+        return Response(content="{}", status_code=404, media_type="application/json")
     finally:
         await client.aclose()
 

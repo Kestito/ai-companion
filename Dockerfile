@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     g++ \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the dependency management files and README first
@@ -71,6 +72,7 @@ case "$INTERFACE" in\n\
     ;;\n\
   "chainlit")\n\
     echo "Starting Chainlit interface..."\n\
+    # Use chainlit command with our custom app\n\
     /app/.venv/bin/chainlit run ai_companion/interfaces/chainlit/app.py --host 0.0.0.0 --port 8000\n\
     ;;\n\
   "telegram")\n\
@@ -83,8 +85,10 @@ case "$INTERFACE" in\n\
     ;;\n\
   "all")\n\
     echo "Starting all interfaces..."\n\
-    # Start Chainlit on port 8080 (internal only, will be proxied through main app)\n\
+    # Start Chainlit on port 8080 first\n\
     /app/.venv/bin/chainlit run ai_companion/interfaces/chainlit/app.py --host 0.0.0.0 --port 8080 & \\\n\
+    # Wait for Chainlit to be ready\n\
+    echo "Waiting for Chainlit to start..." && sleep 10 && \\\n\
     # Start Telegram bot\n\
     /app/.venv/bin/python -m ai_companion.interfaces.telegram.telegram_bot & \\\n\
     # Start monitoring interface on port 8090\n\
@@ -102,5 +106,12 @@ esac' > /app/start.sh && chmod +x /app/start.sh
 # Note: .env file should be mounted as a volume or environment variables passed directly
 # Example: docker run -v /path/to/.env:/app/.env -p 8000:8000 -p 8080:8080 ai-companion:latest
 
-# Set the default command to run the startup script
-CMD ["/app/start.sh"]
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Create default entrypoint with environment variables
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Default command (can be overridden)
+CMD []
