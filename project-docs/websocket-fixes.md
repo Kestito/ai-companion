@@ -31,16 +31,20 @@ We fixed the issue with the following steps:
 
 2. **Created a New Revision to Apply Changes**:
    ```powershell
-   az containerapp update --name evelina-vnet-app --resource-group evelina-ai-rg --revision-suffix "websocket-fix-$(Get-Date -Format 'yyyyMMddHHmmss')"
+   $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+   az containerapp update --name evelina-vnet-app --resource-group evelina-ai-rg --revision-suffix "websocket$timestamp"
    ```
    
    This forces Azure to create a new container instance with the updated configuration, ensuring all changes take effect.
+
+   > **Important**: Azure Container App revision suffixes must consist of lowercase alphanumeric characters or '-', start with a letter or number, end with an alphanumeric character, and cannot have '--'. Avoid using complex patterns with special characters.
 
 3. **Updated Deployment Script**:
    We modified the `deploy.ps1` script to:
    - Use `--transport auto` instead of `--transport http`
    - Add a step to create a new revision after configuration changes
    - Fix the restart command (Azure doesn't have a direct restart command)
+   - Use a properly formatted revision suffix pattern
 
 ## Verifying the Fix
 
@@ -54,10 +58,11 @@ After implementing these changes, the WebSocket connections should work properly
 
 1. **Always use `--transport auto` for WebSocket applications**
 2. **Create a new revision after making configuration changes** using the revision-suffix parameter
-3. **Implement proper CORS settings** to allow WebSocket connections from necessary origins
-4. **Configure appropriate health check endpoints** that return 200 OK responses
-5. **Allocate sufficient resources** (CPU/memory) for handling concurrent WebSocket connections
-6. **Monitor WebSocket connection errors** in your application logs
+3. **Use valid revision suffix formats** (alphanumeric characters, no special characters)
+4. **Implement proper CORS settings** to allow WebSocket connections from necessary origins
+5. **Configure appropriate health check endpoints** that return 200 OK responses
+6. **Allocate sufficient resources** (CPU/memory) for handling concurrent WebSocket connections
+7. **Monitor WebSocket connection errors** in your application logs
 
 ## Troubleshooting WebSocket Issues
 
@@ -73,4 +78,5 @@ If WebSocket issues persist:
 
 - [Azure Container Apps - Configure ingress](https://docs.microsoft.com/en-us/azure/container-apps/ingress-overview)
 - [WebSocket Protocol - RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455)
-- [Chainlit WebSocket Requirements](https://docs.chainlit.io/get-started/installation) 
+- [Chainlit WebSocket Requirements](https://docs.chainlit.io/get-started/installation)
+- [Azure Container App Naming Requirements](https://learn.microsoft.com/en-us/azure/container-apps/containers) 
