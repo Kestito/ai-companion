@@ -1,0 +1,164 @@
+id: /subscriptions/7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e/resourceGroups/evelina-ai-rg/providers/Microsoft.App/containerapps/evelina-vnet-app
+identity:
+  type: None
+location: East US
+name: evelina-vnet-app
+properties:
+  configuration:
+    activeRevisionsMode: Single
+    dapr: null
+    ingress:
+      additionalPortMappings:
+      - exposedPort: 8080
+        external: true
+        targetPort: 8080
+      - exposedPort: 8090
+        external: true
+        targetPort: 8090
+      allowInsecure: false
+      clientCertificateMode: null
+      corsPolicy: null
+      customDomains: null
+      exposedPort: 0
+      external: true
+      fqdn: evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io
+      ipSecurityRestrictions: null
+      stickySessions: null
+      targetPort: 8000
+      traffic:
+      - latestRevision: true
+        weight: 100
+      transport: Auto
+    maxInactiveRevisions: 100
+    registries:
+    - identity: ''
+      passwordSecretRef: evelinaai247acrazurecrio-evelinaai247acr
+      server: evelinaai247acr.azurecr.io
+      username: evelinaai247acr
+    secrets:
+    - name: evelinaai247acrazurecrio-evelinaai247acr
+    service: null
+  customDomainVerificationId: 05716FFDC761E20F2562DBCE353190F09F23B5F71B3602DFF5F71E78F5DC1112
+  delegatedIdentities: []
+  environmentId: /subscriptions/7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e/resourceGroups/evelina-ai-rg/providers/Microsoft.App/managedEnvironments/evelina-env-vnet
+  eventStreamEndpoint: https://eastus.azurecontainerapps.dev/subscriptions/7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e/resourceGroups/evelina-ai-rg/containerApps/evelina-vnet-app/eventstream
+  latestReadyRevisionName: evelina-vnet-app--t1tejab
+  latestRevisionFqdn: evelina-vnet-app--t1tejab.ambitiousglacier-13171220.eastus.azurecontainerapps.io
+  latestRevisionName: evelina-vnet-app--t1tejab
+  managedEnvironmentId: /subscriptions/7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e/resourceGroups/evelina-ai-rg/providers/Microsoft.App/managedEnvironments/evelina-env-vnet
+  provisioningState: Succeeded
+  runningStatus: Running
+  template:
+    containers:
+    - env:
+      - name: INTERFACE
+        value: all
+      - name: QDRANT_URL
+        value: https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io
+      - name: QDRANT_API_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw
+      - name: AZURE_OPENAI_API_KEY
+        value: Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl
+      - name: AZURE_OPENAI_ENDPOINT
+        value: https://ai-kestutis9429ai265477517797.openai.azure.com
+      - name: AZURE_EMBEDDING_DEPLOYMENT
+        value: text-embedding-3-small
+      - name: OPENAI_API_TYPE
+        value: azure
+      - name: OPENAI_API_VERSION
+        value: 2024-08-01-preview
+      - name: AZURE_OPENAI_API_VERSION
+        value: 2024-08-01-preview
+      - name: AZURE_OPENAI_DEPLOYMENT
+        value: gpt-4o
+      - name: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - name: LLM_MODEL
+        value: gpt-4o
+      - name: SUPABASE_URL
+        value: https://aubulhjfeszmsheonmpy.supabase.co
+      - name: SUPABASE_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+      - name: COLLECTION_NAME
+        value: Information
+      - name: properties.configuration.ingress.targetPort
+        value: '8000'
+      - name: properties.configuration.ingress.transport
+        value: auto
+      - name: properties.configuration.ingress.additionalPortMappings
+        value: '[]'
+      - name: WHATSAPP_TOKEN
+        value: EAAOp6lp8Xt4BO2BVhmHXMuAvwI1gXhi53y9OUDJs412MSnKtAo5FtVhyMqqMrU2y9ZBeZCtN9zSFhJ1WHN65wCX2jUcN3aBTpk4bVS2dAHjY5EJKxkWXGaMIuvTkZBJB4FKwpidRcy61d9GCOni3ZB8mXP6qr9HXx7poi75Wc00KbY2KfdbY2uIzoWIUXsVZBCgZDZD
+      - name: WHATSAPP_PHONE_NUMBER_ID
+        value: '566612569868882'
+      - name: WHATSAPP_VERIFY_TOKEN
+        value: xxx
+      - name: PORT
+        value: '8000'
+      - name: AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME
+        value: whisper
+      - name: ELEVENLABS_API_KEY
+        value: sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d
+      - name: ELEVENLABS_VOICE_ID
+        value: qSfcmCS9tPikUrDxO8jt
+      - name: PYTHONUNBUFFERED
+        value: '1'
+      - name: PYTHONPATH
+        value: /app
+      - name: STT_MODEL_NAME
+        value: whisper
+      - name: TTS_MODEL_NAME
+        value: eleven_flash_v2_5
+      image: evelinaai247acr.azurecr.io/ai-companion:v1.0.10
+      name: evelina-vnet-app
+      probes:
+      - type: Liveness
+        httpGet:
+          path: /monitor/health
+          port: 8000
+        initialDelaySeconds: 10
+        periodSeconds: 30
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 3
+      - type: Readiness
+        httpGet:
+          path: /monitor/health
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 3
+      - type: Startup
+        httpGet:
+          path: /monitor/health
+          port: 8000
+        initialDelaySeconds: 5
+        periodSeconds: 5
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 30
+      resources:
+        cpu: 0.5
+        ephemeralStorage: 2Gi
+        memory: 1Gi
+    initContainers: null
+    revisionSuffix: ''
+    scale:
+      maxReplicas: 10
+      minReplicas: 1
+      rules: null
+    serviceBinds: null
+    terminationGracePeriodSeconds: null
+    volumes: null
+  workloadProfileName: Consumption
+resourceGroup: evelina-ai-rg
+systemData:
+  createdAt: '2025-02-27T10:52:13.4317611'
+  createdBy: Kestutis@EvelinaAI.onmicrosoft.com
+  createdByType: User
+  lastModifiedAt: '2025-03-01T12:57:54.4832798'
+  lastModifiedBy: Kestutis@EvelinaAI.onmicrosoft.com
+  lastModifiedByType: User
+type: Microsoft.App/containerApps 

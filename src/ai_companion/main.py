@@ -2,7 +2,7 @@
 
 import logging
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -175,13 +175,14 @@ async def chainlit_error():
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_redirect():
-    """Redirect root /chat to /chat/ to ensure relative paths work correctly"""
+    """Redirect /chat to root to ensure all Chainlit access goes through root URL"""
     # Check if Chainlit is running first
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
     if status["status"] != "healthy":
         return RedirectResponse(url="/chat/error")
     
-    return RedirectResponse(url="/chat/")
+    # Redirect to root instead of /chat/
+    return RedirectResponse(url="/")
 
 @app.api_route("/chat/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
 async def proxy_chainlit(request: Request, path: str):
@@ -350,21 +351,86 @@ async def proxy_chainlit_ws(request: Request, path: str):
             content=body,
             params=request.query_params,
             follow_redirects=True,
-            timeout=5.0
+            timeout=60.0  # Increase timeout for WebSocket connections
         )
 
         # Log the response status
         logger.info(f"Chainlit WebSocket response: {response.status_code}")
 
-        # Return the response from Chainlit
+        # Handle WebSocket upgrade requests (Socket.IO polling)
+        if "content-type" in response.headers:
+            content_type = response.headers["content-type"]
+        else:
+            # Default to application/json for socket.io polling
+            content_type = "application/json"
+        
+        # Return the response from Chainlit with explicit content type
         return Response(
             content=response.content,
             status_code=response.status_code,
             headers=dict(response.headers),
+            media_type=content_type
         )
     except Exception as e:
         logger.error(f"Error proxying WebSocket to Chainlit: {e}")
         # Return 404 for WebSocket errors
+        return Response(content="{}", status_code=404, media_type="application/json")
+    finally:
+        await client.aclose()
+
+# Add WebSocket support for the root path to handle Socket.IO at the root URL
+@app.api_route("/socket.io/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+async def proxy_chainlit_socketio_root(request: Request, path: str):
+    """Proxy Socket.IO requests to Chainlit for the root URL"""
+    # Check if Chainlit is running first
+    status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
+    if status["status"] != "healthy":
+        return Response(content="{}", status_code=404, media_type="application/json")
+    
+    client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
+    url = f"/socket.io/{path}"
+    
+    # Get headers from the incoming request
+    headers = dict(request.headers)
+    headers.pop("host", None)  # Remove the host header
+    
+    # Get the request body if it exists
+    body = await request.body()
+
+    try:
+        # Log the proxy attempt
+        logger.info(f"Proxying Socket.IO request to Chainlit: {request.method} {url}")
+
+        # Forward the request to Chainlit
+        response = await client.request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            content=body,
+            params=request.query_params,
+            follow_redirects=True,
+            timeout=60.0  # Increase timeout for Socket.IO connections
+        )
+
+        # Log the response status
+        logger.info(f"Chainlit Socket.IO response: {response.status_code}")
+
+        # Handle Socket.IO responses with proper content type
+        if "content-type" in response.headers:
+            content_type = response.headers["content-type"]
+        else:
+            # Default to application/json for socket.io polling
+            content_type = "application/json"
+        
+        # Return the response from Chainlit with explicit content type
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=content_type
+        )
+    except Exception as e:
+        logger.error(f"Error proxying Socket.IO to Chainlit: {e}")
         return Response(content="{}", status_code=404, media_type="application/json")
     finally:
         await client.aclose()
@@ -449,6 +515,36 @@ async def monitor_reset():
 @app.get("/")
 async def root():
     """Root endpoint for the AI Companion."""
+    # Check if Chainlit is running first
+    status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
+    if status["status"] == "healthy":
+        # Proxy to Chainlit directly instead of redirecting to /chat/
+        client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
+        try:
+            # Forward the request to Chainlit
+            logger.info(f"Proxying root request to Chainlit")
+            response = await client.get(
+                "/",
+                follow_redirects=True,
+                timeout=10.0
+            )
+            
+            # Log the response status
+            logger.info(f"Chainlit root response: {response.status_code}")
+            
+            # Return the response from Chainlit
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+        except Exception as e:
+            logger.error(f"Error proxying to Chainlit root: {e}")
+            return RedirectResponse(url="/chat/error")
+        finally:
+            await client.aclose()
+    
+    # Otherwise show the API information
     return {
         "message": "AI Companion API",
         "docs_url": "/docs",
@@ -460,6 +556,65 @@ async def root():
         },
         "chainlit_url": "/chat/"
     }
+
+# Add direct access to Chainlit at the root level
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+async def proxy_chainlit_root(request: Request, path: str):
+    """Proxy requests to Chainlit running on port 8080 for paths not handled by other routes"""
+    # This route has the lowest priority and will only be used if no other route matches
+    
+    # Skip paths that should be handled by other routes
+    if path.startswith(("docs", "openapi.json", "whatsapp", "health", "auth", "project", "chat", "ws")):
+        # Let other routes handle these paths
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # Check if Chainlit is running first
+    status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
+    if status["status"] != "healthy":
+        # If Chainlit is not running, show an error
+        return RedirectResponse(url="/chat/error")
+    
+    client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
+    
+    # Construct the target URL
+    url = f"/{path}"
+    
+    # Get headers from the incoming request
+    headers = dict(request.headers)
+    headers.pop("host", None)  # Remove the host header
+    
+    # Get the request body if it exists
+    body = await request.body()
+    
+    try:
+        # Log the proxy attempt
+        logger.info(f"Proxying request to Chainlit root: {request.method} {url}")
+        
+        # Forward the request to Chainlit
+        response = await client.request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            content=body,
+            params=request.query_params,
+            follow_redirects=True,
+            timeout=10.0
+        )
+        
+        # Log the response status
+        logger.info(f"Chainlit root response: {response.status_code}")
+        
+        # Return the response from Chainlit
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+        )
+    except Exception as e:
+        logger.error(f"Error proxying to Chainlit root: {e}")
+        return RedirectResponse(url="/chat/error")
+    finally:
+        await client.aclose()
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,6 +1,6 @@
 # Set variables
 $IMAGE_NAME = "ai-companion"
-$TAG = "v1.0.7"
+$TAG = "v1.0.10"
 $ACR_NAME = "evelinaai247acr"
 $RESOURCE_GROUP = "evelina-ai-rg"
 $CONTAINER_APP_NAME = "evelina-vnet-app"
@@ -45,25 +45,42 @@ az containerapp update `
     STT_MODEL_NAME=whisper `
     TTS_MODEL_NAME=eleven_flash_v2_5
 
-Write-Host "=== Setting container scale settings ===" -ForegroundColor Green
+Write-Host "=== Setting container resources and scale settings ===" -ForegroundColor Green
 az containerapp update `
   --name $CONTAINER_APP_NAME `
   --resource-group $RESOURCE_GROUP `
   --min-replicas 1 `
-  --max-replicas 10
+  --max-replicas 10 `
+  --cpu 1.0 `
+  --memory 2.0Gi
 
-Write-Host "=== Configuring ingress for main port and removing additional port mappings ===" -ForegroundColor Green
+Write-Host "=== Configuring ingress for WebSocket support ===" -ForegroundColor Green
 az containerapp ingress update `
   --name $CONTAINER_APP_NAME `
   --resource-group $RESOURCE_GROUP `
   --target-port 8000 `
-  --external true `
-  --transport auto `
-  --allow-insecure false
+  --transport auto
+
+Write-Host "=== Configuring CORS policy for WebSocket support ===" -ForegroundColor Green
+az containerapp ingress cors update `
+  --name $CONTAINER_APP_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --allowed-origins "*" `
+  --allowed-methods "*" `
+  --allowed-headers "*" `
+  --expose-headers "*" `
+  --max-age 7200 `
+  --allow-credentials true
+
+Write-Host "=== Creating a new revision to apply changes ===" -ForegroundColor Green
+az containerapp update `
+  --name $CONTAINER_APP_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --revision-suffix "websocket-fix-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
 Write-Host "=== Deployment completed ===" -ForegroundColor Green
 Write-Host "Your application is now updated at: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io" -ForegroundColor Cyan
-Write-Host "Chainlit interface is available at: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/chat/" -ForegroundColor Cyan
+Write-Host "Chainlit interface is available directly at the root URL: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/" -ForegroundColor Cyan
 Write-Host "  - Status: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/chat/status" -ForegroundColor Cyan
 Write-Host "Monitoring interface is available at: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/health/" -ForegroundColor Cyan
 Write-Host "  - Metrics: https://evelina-vnet-app.ambitiousglacier-13171220.eastus.azurecontainerapps.io/health/metrics" -ForegroundColor Cyan
@@ -71,5 +88,5 @@ Write-Host "  - Report: https://evelina-vnet-app.ambitiousglacier-13171220.eastu
 
 Write-Host "=== Next Steps ===" -ForegroundColor Yellow
 Write-Host "1. Check container logs: az containerapp logs show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --tail 100" -ForegroundColor White
-Write-Host "2. If still crashing, run: az containerapp update --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --cpu 0.5 --memory 1.0Gi" -ForegroundColor White
+Write-Host "2. If still experiencing issues, try creating a new revision: az containerapp update --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --revision-suffix restart-$(Get-Date -Format 'yyyyMMddHHmmss')" -ForegroundColor White
 Write-Host "3. View revision history: az containerapp revision list --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP" -ForegroundColor White 
