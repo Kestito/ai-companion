@@ -240,6 +240,8 @@ __pypackages__/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
+*.next
+node_modules/
 
 # SageMath parsed files
 *.sage.py

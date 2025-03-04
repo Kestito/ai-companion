@@ -2,16 +2,20 @@
 
 This document outlines 10 incremental actions to implement the Evelina AI healthcare-focused system while preserving existing functionality. The actions prioritize user management, conversation interfaces in messaging platforms, and professional UI development first, followed by proactive features and voice capabilities.
 
+RULE - For frotend use https://m3.material.io/develop/web
+
+Respect exiting stukture and do NO DELETE FUNCTIONALITY
+
 ## Action 1: Supabase Schema Enhancement
 
 **Objective**: Extend the existing Supabase database schema to support healthcare-specific data with focus on users and conversations.
 
 **Tasks**:
-1 Create new database tables for  users, converstation , short memory , health_records and risk_assessments
-2. Add healthcare-related fields to existing users table
+1. Create new database tables for  users, converstation , short memory , risk_assessments and support_interaction_logs in Supebase 
 3. Enhance conversation and message tables with healthcare metadata
 4. Set up appropriate indexes for optimized query performance
 5. Configure row-level security policies for patient data protection
+6. Integrate Intefaces like Chainlit, Telegram , whatcapp into User, converstation, short memory
 
 **Expected Outcome**: Enhanced database schema that supports healthcare data while maintaining compatibility with existing conversation data.
 
@@ -28,6 +32,7 @@ This document outlines 10 incremental actions to implement the Evelina AI health
    - Password recovery workflow
    - Remember me functionality
    - Multi-language support (Lithuanian/English)
+   - authentication to use SUPARBASE
 
 2. Develop main dashboard
    - Overview statistics (active users, conversation metrics, key health indicators)
@@ -35,13 +40,15 @@ This document outlines 10 incremental actions to implement the Evelina AI health
    - Quick action buttons for common tasks
    - Notifications panel for alerts and system messages
    - Responsive design for desktop/tablet/mobile
+   
 
 3. Create user management interface
    - User listing with search, filter, and sorting capabilities
-   - Detail view showing user profile, medical information, and interaction history
+   - Detail view showing user profile, interaction history, and subsidy eligibility
    - Contact options (message, call, schedule) directly from user cards
    - Status indicators (active, requires follow-up, at risk)
    - User grouping by healthcare provider
+   - Chat history have to have details what inteface was used
 
 **Expected Outcome**: Professional-grade UI for core system functions that presents healthcare data in an organized, accessible manner.
 
@@ -53,14 +60,17 @@ This document outlines 10 incremental actions to implement the Evelina AI health
 
 **Tasks**:
 1. Enhance Telegram interface
-   - Healthcare-specific message templates
-   - Rich media support for medical information
+   - Treatment information guidance
+   - Legal/subsidy updates
+   - Support service navigation
    - Inline buttons for common healthcare actions
    - Custom keyboards for structured data collection
    - Support for voice messages with transcription
 
 2. Improve WhatsApp integration
-   - Healthcare-specific message templates
+   - Treatment information guidance
+   - Legal/subsidy updates
+   - Support service navigation
    - Automated appointment reminders
    - Structured healthcare questionnaires
    - Voice message support with transcription
@@ -83,9 +93,10 @@ This document outlines 10 incremental actions to implement the Evelina AI health
 
 **Tasks**:
 1. Design and implement analytics dashboard
-   - User engagement metrics
-   - Conversation analytics (topics, sentiment, resolution rates)
-   - Health trend visualizations
+   - Support utilization statistics
+   - Subsidy program engagement
+   - Legal document access patterns
+   - Treatment info search trends
    - Usage patterns by time, location, and user type
    - System performance metrics
 
@@ -98,7 +109,7 @@ This document outlines 10 incremental actions to implement the Evelina AI health
 
 3. Develop user detail screens
    - Comprehensive user profile view
-   - Medical history timeline
+   - Legal document access history
    - Conversation history with filtering
    - Risk assessment visualization
    - Treatment and medication tracking

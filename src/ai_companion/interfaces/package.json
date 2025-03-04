@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@mui/x-data-grid": "^7.27.2",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "recharts": "^2.15.1"
+  }
+}
