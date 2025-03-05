@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '@/lib/supabase/client'
+import { supabase } from '../../lib/supabase/client'
 import { CircularProgress, Box } from '@mui/material'
 
 export const RouteGuard = ({ children }: { children: React.ReactNode }) => {
@@ -19,11 +19,13 @@ export const RouteGuard = ({ children }: { children: React.ReactNode }) => {
 
     checkSession()
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      checkSession()
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/login')
+      }
     })
 
-    return () => subscription?.unsubscribe()
+    return () => authListener?.subscription.unsubscribe()
   }, [])
 
   if (loading) {

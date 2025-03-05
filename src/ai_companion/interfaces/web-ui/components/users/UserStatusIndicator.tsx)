@@ -1,0 +1,29 @@
+import { Chip } from '@mui/material'
+import CircleIcon from '@mui/icons-material/Circle'
+import { UserStatus } from '@/lib/supabase/types'
+
+interface StatusProps {
+  status: UserStatus
+}
+
+export const UserStatusIndicator = ({ status }: StatusProps) => {
+  const statusConfig = {
+    active: { label: 'Active', color: 'success' },
+    inactive: { label: 'Inactive', color: 'error' },
+    pending: { label: 'Pending', color: 'warning' }
+  }[status]
+
+  return (
+    <Chip
+      label={statusConfig.label}
+      color={statusConfig.color}
+      size="small"
+      icon={<CircleIcon sx={{ fontSize: '0.75rem' }} />}
+      sx={{ 
+        borderRadius: 1,
+        '& .MuiChip-icon': { pl: 0.5 },
+        '& .MuiChip-label': { pr: 1 }
+      }}
+    />
+  )
+}

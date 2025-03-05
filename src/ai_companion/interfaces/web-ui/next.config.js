@@ -1,11 +1,17 @@
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  swcMinify: true,
+  images: {
+    domains: ['localhost'],
+  },
+  experimental: {
+    // Enable App Router features
+    appDir: true,
+  },
   compiler: {
     styledComponents: true,
     emotion: true,
-  },
-  experimental: {
-    appDir: true,
   },
   async headers() {
     return [
@@ -16,12 +22,13 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: `
               default-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL};
-              script-src 'self' 'unsafe-eval';
+              script-src 'self' 'unsafe-inline' 'unsafe-eval';
               style-src 'self' 'unsafe-inline';
               img-src 'self' data:;
-              font-src 'self';
-              connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL}
-            `.replace(/\s+/g, ' ')
+              connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL};
+              frame-src 'self';
+              form-action 'self';
+            `.replace(/\n/g, ' ')
           }
         ]
       }
@@ -29,4 +36,4 @@ const nextConfig = {
   }
 }
 
-module.exports = nextConfig 
+module.exports = nextConfig

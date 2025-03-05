@@ -2,7 +2,7 @@
 
 This document outlines 10 incremental actions to implement the Evelina AI healthcare-focused system while preserving existing functionality. The actions prioritize user management, conversation interfaces in messaging platforms, and professional UI development first, followed by proactive features and voice capabilities.
 
-RULE - For frotend use https://m3.material.io/develop/web
+RULE - For frotend use https://m3.material.io/develop/web . Use MUI components https://mui.com/material-ui/all-components/ 
 
 Respect exiting stukture and do NO DELETE FUNCTIONALITY
 
@@ -66,6 +66,7 @@ Respect exiting stukture and do NO DELETE FUNCTIONALITY
    - Inline buttons for common healthcare actions
    - Custom keyboards for structured data collection
    - Support for voice messages with transcription
+   - use src\ai_companion\graph
 
 2. Improve WhatsApp integration
    - Treatment information guidance
@@ -75,6 +76,7 @@ Respect exiting stukture and do NO DELETE FUNCTIONALITY
    - Structured healthcare questionnaires
    - Voice message support with transcription
    - Image sharing for symptom documentation
+   - use src\ai_companion\graph
 
 3. Develop conversation management dashboard
    - Real-time conversation monitoring
@@ -129,6 +131,8 @@ Respect exiting stukture and do NO DELETE FUNCTIONALITY
 3. Implement notification system for proactive outreach
 4. Develop templates for different contact scenarios
 5. Set up monitoring dashboard for contact effectiveness
+6. Test it on telegram and whachapp .
+7. In futere it will be calls and sms. NO NEEDED YET
 
 **Expected Outcome**: Proactive contact capability that can be used alongside the existing reactive system.
 

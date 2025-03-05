@@ -242,12 +242,12 @@ celerybeat-schedule
 celerybeat.pid
 *.next
 node_modules/
-
+*.env*
 # SageMath parsed files
 *.sage.py
 
 # Environments
-.env
+.env*
 .venv
 env/
 venv/
