@@ -10,6 +10,7 @@ The AI Companion supports the following interfaces:
 2. **Chainlit** - Provides a web-based chat interface
 3. **Telegram** - Enables interaction through Telegram messaging
 4. **Monitoring** - Provides metrics and performance monitoring
+5. **Web UI** - Modern Next.js-based web interface for enhanced user experience
 
 ## Building the Docker Image
 
@@ -62,6 +63,16 @@ docker run -e INTERFACE=telegram ai-companion:latest
 docker run -p 8090:8090 -e INTERFACE=monitor ai-companion:latest
 ```
 
+#### Next.js Web UI Only
+
+```bash
+# Build the web-ui image separately
+docker build -t ai-companion-web-ui:latest -f src/ai_companion/interfaces/web-ui/Dockerfile src/ai_companion/interfaces/web-ui
+
+# Run the web-ui container
+docker run -p 3000:3000 ai-companion-web-ui:latest
+```
+
 ## Environment Variables
 
 The container uses the following environment variables:
@@ -71,6 +82,7 @@ The container uses the following environment variables:
   - `chainlit` - Run only the Chainlit web interface
   - `telegram` - Run only the Telegram bot
   - `monitor` - Run only the Monitoring interface
+  - `web-ui` - Run only the Next.js Web UI
   - `all` - Run all interfaces (default)
 
 - All other environment variables required by the specific interfaces should be provided either through:
@@ -125,6 +137,7 @@ Once the container is running, you can access the interfaces at:
   - Metrics: http://localhost:8000/health/metrics
   - Performance Report: http://localhost:8000/health/report
   - Reset Metrics: http://localhost:8000/health/reset (POST)
+- **Next.js Web UI**: http://localhost:3000 (when running the web-ui interface)
 
 ## Troubleshooting
 

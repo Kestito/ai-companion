@@ -4,8 +4,8 @@ create schema if not exists evelinaai;
 -- Users table with authentication integration
 create table evelinaai.users (
     id uuid primary key default gen_random_uuid(),
-    email text not null unique check (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-    phone text check (phone ~* '^\+?[0-9]{8,15}$'),
+    email text unique,
+    phone text,
     created_at timestamptz not null default current_timestamp,
     last_active timestamptz,
     preferred_language text default 'lt',
@@ -115,17 +115,31 @@ grant all privileges on all tables in schema evelinaai to public;
 grant all privileges on all routines in schema evelinaai to public;
 
 -- Security features
-create or replace function evelinaai.encrypt_column() returns trigger as $$
+create or replace function evelinaai.validate_and_encrypt_user() returns trigger as $$
 begin
+  -- Validate email format before encryption
+  if new.email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' then
+    raise exception 'Invalid email format';
+  end if;
+  
+  -- Validate phone format before encryption
+  if new.phone is not null and new.phone !~ '^\+?[0-9]{8,15}$' then
+    raise exception 'Invalid phone format';
+  end if;
+  
+  -- Encrypt after validation
   new.email = pgp_sym_encrypt(new.email, '${POSTGRES_PASSWORD}');
-  new.phone = pgp_sym_encrypt(new.phone, '${POSTGRES_PASSWORD}');
+  if new.phone is not null then
+    new.phone = pgp_sym_encrypt(new.phone, '${POSTGRES_PASSWORD}');
+  end if;
+  
   return new;
 end;
 $$ language plpgsql;
 
-create trigger users_encrypt_trigger
+create trigger users_validate_and_encrypt_trigger
 before insert or update on evelinaai.users
-for each row execute function evelinaai.encrypt_column();
+for each row execute function evelinaai.validate_and_encrypt_user();
 
 -- Enable JWT authentication
 create type evelinaai.jwt_token as (

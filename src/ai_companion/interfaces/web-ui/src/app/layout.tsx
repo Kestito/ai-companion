@@ -1,19 +1,28 @@
 import { Inter } from 'next/font/google';
 import type { Metadata } from "next";
-import ClientLayout from '../components/layout/ClientLayout';
+import AppProviders from '../components/providers/AppProviders';
 import "./globals.css";
 
+// Load Inter font
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-inter',
 });
 
+// Define metadata for the application
 export const metadata: Metadata = {
-  title: "Evelina AI - Healthcare Companion",
-  description: "Interactive patient care information system",
+  title: "AI Companion - Healthcare Assistance",
+  description: "Interactive AI companion for healthcare assistance",
 };
 
+/**
+ * Root layout component for the application
+ * Wraps all pages with necessary providers and global styles
+ * 
+ * @param children - The page content
+ * @returns The layout wrapped page
+ */
 export default function RootLayout({
   children,
 }: {
@@ -24,10 +33,11 @@ export default function RootLayout({
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className={`${inter.variable} antialiased min-h-screen`} suppressHydrationWarning>
-        <ClientLayout>
+      <body className={`${inter.variable} font-sans antialiased min-h-screen bg-gray-50`} suppressHydrationWarning>
+        {/* Wrap the entire application with our providers */}
+        <AppProviders>
           {children}
-        </ClientLayout>
+        </AppProviders>
       </body>
     </html>
   );

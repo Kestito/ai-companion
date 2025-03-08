@@ -1,496 +1,379 @@
 # Set variables
 $IMAGE_NAME = "ai-companion"
+$WEB_UI_IMAGE_NAME = "web-ui-companion"
 $TAG = "v1.0.10"
-$ACR_NAME = "evelinaai247acr"
-$RESOURCE_GROUP = "evelina-rg"
-$CONTAINER_APP_NAME = "eve-contaneir-app"
+$RESOURCE_GROUP = "evelina-rg-20250308115110"  # Use existing resource group
+$ACR_NAME = "evelinaacr8677"  # Use existing ACR
+$BACKEND_CONTAINER_APP_NAME = "backend-app"
+$FRONTEND_CONTAINER_APP_NAME = "frontend-app"
 $LOCATION = "eastus"
-$APP_URL = "https://eve-contaneir-app.wittytree-d4635db9.eastus.azurecontainerapps.io"
 $SUBSCRIPTION_ID = "7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e"
-$CONTAINER_ENV_NAME = "production"
-$LOG_ANALYTICS_WORKSPACE = "workspace-evelinargCvWD"
+$CONTAINER_ENV_NAME = "production-env-20250308115110"  # Use existing environment
+$LOG_ANALYTICS_WORKSPACE = "la-evelina-rg-20250308115110-167"  # Use existing workspace
+$WEB_UI_CONTAINER_APP_NAME = "web-ui-container-app"
 
-# Function to check DNS resolution
-function Test-DNSResolution {
+# Create a utilities function for colored output
+function Write-ColorOutput {
     param (
-        [string]$hostname
+        [string]$Message,
+        [string]$Color = "White",
+        [string]$Prefix = "===",
+        [string]$Suffix = "==="
     )
     
-    try {
-        $result = Resolve-DnsName -Name $hostname -ErrorAction Stop
+    Write-Host "$Prefix $Message $Suffix" -ForegroundColor $Color
+}
+
+# Create a function to check if a command succeeded
+function Test-CommandSuccess {
+    param (
+        [string]$SuccessMessage,
+        [string]$ErrorMessage
+    )
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-ColorOutput -Message $SuccessMessage -Color Green -Prefix "✅"
         return $true
-    } catch {
-        Write-Host "⚠️ DNS resolution failed for $hostname`: $($_.Exception.Message)" -ForegroundColor Yellow
+    } else {
+        Write-ColorOutput -Message "$ErrorMessage (Exit code: $LASTEXITCODE)" -Color Red -Prefix "❌"
         return $false
     }
 }
 
-Write-Host "=== Checking DNS resolution for required hosts ===" -ForegroundColor Green
-$ghcrResolved = Test-DNSResolution -hostname "ghcr.io"
-if (-not $ghcrResolved) {
-    Write-Host "⚠️ Cannot resolve ghcr.io - Docker build may fail" -ForegroundColor Yellow
-    Write-Host "Attempting to add DNS entries to hosts file..." -ForegroundColor Yellow
-    
-    # Try to get IP for ghcr.io using alternative DNS
-    try {
-        # Use Google's DNS to resolve the hostname
-        $dnsResult = nslookup ghcr.io 8.8.8.8 2>$null
-        if ($dnsResult -match "Address:\s+(\d+\.\d+\.\d+\.\d+)") {
-            $ip = $matches[1]
-            Write-Host "Resolved ghcr.io to $ip using Google DNS" -ForegroundColor Green
-            
-            # Add to hosts file (requires admin privileges)
-            # This is commented out as it requires admin privileges
-            # Add-Content -Path "$env:windir\System32\drivers\etc\hosts" -Value "`n$ip`tghcr.io" -Force
-        }
-    } catch {
-        Write-Host "Failed to resolve ghcr.io using alternative DNS" -ForegroundColor Red
-    }
-    
-    Write-Host "Please ensure your network can access ghcr.io or try running this script with admin privileges" -ForegroundColor Yellow
-    Write-Host "Continuing with deployment, but Docker build may fail..." -ForegroundColor Yellow
-}
+# Start deployment process
+Write-ColorOutput -Message "Starting AI Companion Deployment Verification Process" -Color Cyan
 
-# Set the subscription context
-Write-Host "=== Setting Azure subscription context ===" -ForegroundColor Green
-az account set --subscription $SUBSCRIPTION_ID
-
-Write-Host "=== Building Docker image ===" -ForegroundColor Green
-$buildSuccess = $false
-try {
-    docker build -t "$ACR_NAME.azurecr.io/$IMAGE_NAME`:$TAG" .
-    if ($LASTEXITCODE -eq 0) {
-        $buildSuccess = $true
-        Write-Host "✅ Docker build completed successfully" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Docker build failed with exit code $LASTEXITCODE" -ForegroundColor Red
-    }
-} catch {
-    Write-Host "❌ Docker build failed: $($_.Exception.Message)" -ForegroundColor Red
-}
-
-# If build fails, check if image already exists in ACR
-if (-not $buildSuccess) {
-    Write-Host "Checking if image already exists in ACR..." -ForegroundColor Yellow
-    
-    Write-Host "=== Logging in to Azure ===" -ForegroundColor Green
-    # Uncomment this if you need to login to Azure
-    # az login
-    
-    Write-Host "=== Logging in to Azure Container Registry ===" -ForegroundColor Green
-    az acr login --name $ACR_NAME
-    
-    $imageExists = az acr repository show --name $ACR_NAME --image "$IMAGE_NAME`:$TAG" 2>$null
-    
-    if ($imageExists) {
-        Write-Host "✅ Image $IMAGE_NAME`:$TAG already exists in ACR, proceeding with deployment" -ForegroundColor Green
-        $buildSuccess = $true
-    } else {
-        Write-Host "❌ Image does not exist in ACR and build failed. Cannot proceed with deployment." -ForegroundColor Red
-        Write-Host "Please fix the Docker build issues and try again." -ForegroundColor Red
-        exit 1
-    }
+# Step 1: Verify Resource Group exists (don't create or delete)
+Write-ColorOutput -Message "Verifying Resource Group: $RESOURCE_GROUP" -Color Green
+$rgExists = az group exists --name $RESOURCE_GROUP
+if ($rgExists -eq "true") {
+    Write-ColorOutput -Message "Resource group exists, proceeding with deployment" -Color Green -Prefix "✅"
 } else {
-    Write-Host "=== Logging in to Azure ===" -ForegroundColor Green
-    # Uncomment this if you need to login to Azure
-    # az login
+    Write-ColorOutput -Message "Resource group $RESOURCE_GROUP does not exist. Please update the script with correct resource group name." -Color Red -Prefix "❌"
+    exit 1
+}
+
+# Step 2: Set Azure Subscription
+Write-ColorOutput -Message "Setting Azure subscription context" -Color Green
+az account set --subscription $SUBSCRIPTION_ID
+if (-not (Test-CommandSuccess -SuccessMessage "Subscription set successfully" -ErrorMessage "Failed to set subscription")) {
+    exit 1
+}
+
+# Step 3: Verify ACR exists
+Write-ColorOutput -Message "Verifying Azure Container Registry" -Color Green
+$acrExists = az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($acrExists) {
+    Write-ColorOutput -Message "ACR exists, proceeding with deployment" -Color Green -Prefix "✅"
+} else {
+    Write-ColorOutput -Message "ACR $ACR_NAME does not exist. Please update the script with correct ACR name." -Color Red -Prefix "❌"
+    exit 1
+}
+
+# Login to ACR
+Write-ColorOutput -Message "Logging in to Azure Container Registry" -Color Green
+az acr login --name $ACR_NAME
+if (-not (Test-CommandSuccess -SuccessMessage "Logged in to ACR successfully" -ErrorMessage "Failed to login to ACR")) {
+    exit 1
+}
+
+# Get ACR credentials
+Write-ColorOutput -Message "Getting ACR credentials" -Color Yellow -Prefix "→"
+$acrCredentials = az acr credential show --name $ACR_NAME --resource-group $RESOURCE_GROUP | ConvertFrom-Json
+$ACR_USERNAME = $acrCredentials.username
+$ACR_PASSWORD = $acrCredentials.passwords[0].value
+
+# Step 4: Check if Container Apps Environment exists
+Write-ColorOutput -Message "Checking if Container App Environment exists" -Color Green
+$envExists = az containerapp env show --name $CONTAINER_ENV_NAME --resource-group $RESOURCE_GROUP 2>$null
+if (-not $envExists) {
+    Write-ColorOutput -Message "Container App Environment does not exist. Creating new environment." -Color Yellow -Prefix "→"
     
-    Write-Host "=== Logging in to Azure Container Registry ===" -ForegroundColor Green
-    az acr login --name $ACR_NAME
-    
-    Write-Host "=== Pushing image to Azure Container Registry ===" -ForegroundColor Green
-    docker push "$ACR_NAME.azurecr.io/$IMAGE_NAME`:$TAG"
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Failed to push image to ACR. Checking if image already exists..." -ForegroundColor Red
-        
-        $imageExists = az acr repository show --name $ACR_NAME --image "$IMAGE_NAME`:$TAG" 2>$null
-        
-        if ($imageExists) {
-            Write-Host "✅ Image $IMAGE_NAME`:$TAG already exists in ACR, proceeding with deployment" -ForegroundColor Green
-        } else {
-            Write-Host "❌ Image does not exist in ACR and push failed. Cannot proceed with deployment." -ForegroundColor Red
-            Write-Host "Please fix the Docker push issues and try again." -ForegroundColor Red
+    # Create Log Analytics workspace if it doesn't exist
+    $workspaceExists = az monitor log-analytics workspace show --resource-group $RESOURCE_GROUP --workspace-name $LOG_ANALYTICS_WORKSPACE 2>$null
+    if (-not $workspaceExists) {
+        Write-ColorOutput -Message "Creating Log Analytics workspace" -Color Yellow -Prefix "→"
+        az monitor log-analytics workspace create `
+            --resource-group $RESOURCE_GROUP `
+            --workspace-name $LOG_ANALYTICS_WORKSPACE `
+            --location $LOCATION
+
+        if (-not (Test-CommandSuccess -SuccessMessage "Log Analytics workspace created successfully" -ErrorMessage "Failed to create Log Analytics workspace")) {
             exit 1
         }
     }
-}
 
-Write-Host "=== Checking if Container App exists ===" -ForegroundColor Green
-$appExists = az containerapp show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "name" --output tsv 2>$null
-$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+    # Get Log Analytics workspace details
+    Write-ColorOutput -Message "Getting Log Analytics workspace details" -Color Yellow -Prefix "→"
+    $workspace = az monitor log-analytics workspace show `
+        --resource-group $RESOURCE_GROUP `
+        --workspace-name $LOG_ANALYTICS_WORKSPACE | ConvertFrom-Json
 
-if (!$appExists) {
-    Write-Host "Container App does not exist. Creating new Container App..." -ForegroundColor Yellow
-    
-    # Check if the Container App Environment exists
-    $envExists = az containerapp env show --name $CONTAINER_ENV_NAME --resource-group $RESOURCE_GROUP --query "name" --output tsv 2>$null
-    if (!$envExists) {
-        Write-Host "Creating Container App Environment..." -ForegroundColor Yellow
-        az containerapp env create `
-          --name $CONTAINER_ENV_NAME `
-          --resource-group $RESOURCE_GROUP `
-          --location $LOCATION `
-          --logs-workspace-id $LOG_ANALYTICS_WORKSPACE
-    }
-    
-    # Create the Container App
-    az containerapp create `
-      --name $CONTAINER_APP_NAME `
-      --resource-group $RESOURCE_GROUP `
-      --environment $CONTAINER_ENV_NAME `
-      --image "$ACR_NAME.azurecr.io/$IMAGE_NAME`:$TAG" `
-      --target-port 8000 `
-      --ingress external `
-      --min-replicas 1 `
-      --max-replicas 10 `
-      --cpu 1.0 `
-      --memory 2.0Gi `
-      --env-vars `
-        INTERFACE=all `
-        PORT=8000 `
-        QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io `
-        QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw `
-        AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
-        AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
-        AZURE_OPENAI_API_VERSION=2024-08-01-preview `
-        AZURE_OPENAI_DEPLOYMENT=gpt-4o `
-        AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small `
-        OPENAI_API_TYPE=azure `
-        OPENAI_API_VERSION=2024-08-01-preview `
-        EMBEDDING_MODEL=text-embedding-3-small `
-        LLM_MODEL=gpt-4o `
-        SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-        SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
-        COLLECTION_NAME=Information `
-        ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d `
-        ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt `
-        PYTHONUNBUFFERED=1 `
-        PYTHONPATH=/app `
-        STT_MODEL_NAME=whisper `
-        TTS_MODEL_NAME=eleven_flash_v2_5 `
-        CHAINLIT_FORCE_POLLING=true `
-        CHAINLIT_NO_WEBSOCKET=true `
-        CHAINLIT_POLLING_MAX_WAIT=5000
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Container App created successfully" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Failed to create Container App. Exit code: $LASTEXITCODE" -ForegroundColor Red
+    $workspaceId = $workspace.customerId
+    $workspaceKey = az monitor log-analytics workspace get-shared-keys `
+        --resource-group $RESOURCE_GROUP `
+        --workspace-name $LOG_ANALYTICS_WORKSPACE `
+        --query primarySharedKey -o tsv
+
+    # Create Container App Environment
+    Write-ColorOutput -Message "Creating Container App Environment" -Color Yellow -Prefix "→"
+    az containerapp env create `
+        --name $CONTAINER_ENV_NAME `
+        --resource-group $RESOURCE_GROUP `
+        --location $LOCATION `
+        --logs-destination log-analytics `
+        --logs-workspace-id $workspaceId `
+        --logs-workspace-key $workspaceKey
+
+    if (-not (Test-CommandSuccess -SuccessMessage "Container App Environment created successfully" -ErrorMessage "Failed to create Container App Environment")) {
         exit 1
     }
-} else {
-    Write-Host "=== Updating Container App with new image and proper environment variables ===" -ForegroundColor Green
-    az containerapp update `
-      --name $CONTAINER_APP_NAME `
-      --resource-group $RESOURCE_GROUP `
-      --image "$ACR_NAME.azurecr.io/$IMAGE_NAME`:$TAG" `
-      --set-env-vars `
-        INTERFACE=all `
-        PORT=8000 `
-        QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io `
-        QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw `
-        AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
-        AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
-        AZURE_OPENAI_API_VERSION=2024-08-01-preview `
-        AZURE_OPENAI_DEPLOYMENT=gpt-4o `
-        AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small `
-        OPENAI_API_TYPE=azure `
-        OPENAI_API_VERSION=2024-08-01-preview `
-        EMBEDDING_MODEL=text-embedding-3-small `
-        LLM_MODEL=gpt-4o `
-        SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-        SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
-        COLLECTION_NAME=Information `
-        ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d `
-        ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt `
-        PYTHONUNBUFFERED=1 `
-        PYTHONPATH=/app `
-        STT_MODEL_NAME=whisper `
-        TTS_MODEL_NAME=eleven_flash_v2_5 `
-        CHAINLIT_FORCE_POLLING=true `
-        CHAINLIT_NO_WEBSOCKET=true `
-        CHAINLIT_POLLING_MAX_WAIT=5000
-        
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Failed to update Container App. Exit code: $LASTEXITCODE" -ForegroundColor Red
-        Write-Host "Continuing with deployment, but some settings may not be applied." -ForegroundColor Yellow
-    }
 }
 
-Write-Host "=== Setting container resources and scale settings ===" -ForegroundColor Green
-az containerapp update `
-  --name $CONTAINER_APP_NAME `
-  --resource-group $RESOURCE_GROUP `
-  --min-replicas 1 `
-  --max-replicas 10 `
-  --cpu 1.0 `
-  --memory 2.0Gi
+# Step 5: Check Backend Container App
+Write-ColorOutput -Message "Checking Backend Container App" -Color Green
+$backendAppExists = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$backendAppNeedsUpdate = $false
+$backendAppRunning = $true
 
-Write-Host "=== Configuring ingress for HTTP/WS support ===" -ForegroundColor Green
-try {
-    # Using the proper command format for ingress update
-    az containerapp ingress update `
-      --name $CONTAINER_APP_NAME `
-      --resource-group $RESOURCE_GROUP `
-      --target-port 8000 `
-      --transport auto
+if ($backendAppExists) {
+    # Check if it's running properly
+    Write-ColorOutput -Message "Backend app exists, checking status" -Color Yellow -Prefix "→"
     
-    Write-Host "✅ Successfully configured ingress" -ForegroundColor Green
-} catch {
-    Write-Host "❌ Failed to configure ingress: $_" -ForegroundColor Red
-    Write-Host "Attempting alternative ingress configuration..." -ForegroundColor Yellow
+    # Get the backend app URL
+    $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $backendAppUrl = "https://$backendAppUrl"
     
-    # Alternative approach
-    az containerapp update `
-      --name $CONTAINER_APP_NAME `
-      --resource-group $RESOURCE_GROUP `
-      --ingress-transport auto
-    
-    Write-Host "✅ Completed alternative ingress configuration" -ForegroundColor Green
-}
-
-Write-Host "=== Configuring CORS policy ===" -ForegroundColor Green
-az containerapp ingress cors update `
-  --name $CONTAINER_APP_NAME `
-  --resource-group $RESOURCE_GROUP `
-  --allowed-origins "*" `
-  --allowed-methods "GET,POST,PUT,DELETE,OPTIONS" `
-  --allowed-headers "*" `
-  --max-age 7200 `
-  --allow-credentials true
-
-# Fixed health probe configuration - using container-level probes
-Write-Host "=== Configuring health probes ===" -ForegroundColor Green
-try {
-    az containerapp update `
-      --name $CONTAINER_APP_NAME `
-      --resource-group $RESOURCE_GROUP `
-      --container-name $CONTAINER_APP_NAME `
-      --probe "liveness:http:8000:/monitor/health:30:3:10:1" `
-      --probe "readiness:http:8000:/monitor/health:10:3:5:1" `
-      --probe "startup:http:8000:/monitor/health:5:30:5:1"
-       
-    Write-Host "✅ Successfully configured health probes" -ForegroundColor Green
-} catch {
-    Write-Host "❌ Failed to configure health probes: $_" -ForegroundColor Red
-    Write-Host "This may be due to an unsupported format. Continuing with deployment." -ForegroundColor Yellow
-}
-
-Write-Host "=== Creating a new revision to apply changes ===" -ForegroundColor Green
-az containerapp update `
-  --name $CONTAINER_APP_NAME `
-  --resource-group $RESOURCE_GROUP `
-  --revision-suffix "httponly$timestamp"
-
-# Use the provided app URL instead of dynamically retrieving it
-$baseUrl = $APP_URL
-
-Write-Host "=== Deployment completed ===" -ForegroundColor Green
-Write-Host "Your application is now updated at: $baseUrl" -ForegroundColor Cyan
-Write-Host "Chainlit interface is available directly at the root URL: $baseUrl/" -ForegroundColor Cyan
-Write-Host "  - Status: $baseUrl/chat/status" -ForegroundColor Cyan
-Write-Host "Monitoring interface is available at: $baseUrl/health/" -ForegroundColor Cyan
-Write-Host "  - Metrics: $baseUrl/health/metrics" -ForegroundColor Cyan
-Write-Host "  - Report: $baseUrl/health/report" -ForegroundColor Cyan
-
-Write-Host "=== Next Steps ===" -ForegroundColor Yellow
-Write-Host "1. Check container logs: az containerapp logs show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --tail 100" -ForegroundColor White
-Write-Host "2. If still experiencing issues, try creating a new revision: az containerapp update --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --revision-suffix restart$(Get-Date -Format 'yyyyMMddHHmmss')" -ForegroundColor White
-Write-Host "3. View revision history: az containerapp revision list --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP" -ForegroundColor White 
-
-Write-Host "=== Connection Troubleshooting ===" -ForegroundColor Yellow
-Write-Host "If experiencing 'Could not reach the server' errors in Chainlit UI:" -ForegroundColor White
-Write-Host "1. Ensure the container is running: az containerapp show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query 'properties.runningStatus'" -ForegroundColor White
-Write-Host "2. Create a new revision with updated polling settings: az containerapp update --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --revision-suffix 'nows$(Get-Date -Format 'yyyyMMddHHmmss')'" -ForegroundColor White
-Write-Host "3. Verify CORS policy is correctly configured: az containerapp ingress cors show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP" -ForegroundColor White
-Write-Host "4. Check environment variables for CHAINLIT_FORCE_POLLING and CHAINLIT_NO_WEBSOCKET: az containerapp show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env'" -ForegroundColor White
-Write-Host "5. Clear browser cache and cookies, then try loading the page again" -ForegroundColor White
-
-Write-Host "=== Verifying Deployment ===" -ForegroundColor Green
-Write-Host "Waiting 60 seconds for deployment to stabilize..." -ForegroundColor Yellow
-Start-Sleep -Seconds 60
-
-# Check main app endpoint
-try {
-    Write-Host "Testing main app URL..." -ForegroundColor Yellow
-    $response = Invoke-WebRequest -Uri $baseUrl -UseBasicParsing -ErrorAction Stop
-    if ($response.StatusCode -eq 200) {
-        Write-Host "✅ Main app endpoint is accessible: $baseUrl" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Main app endpoint returned unexpected status: $($response.StatusCode)" -ForegroundColor Red
-    }
-} catch {
-    Write-Host "❌ Failed to access main app endpoint: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "The app may still be initializing. Try accessing it manually in a few minutes." -ForegroundColor Yellow
-}
-
-# Check status endpoint
-try {
-    Write-Host "Testing status endpoint..." -ForegroundColor Yellow
-    $response = Invoke-WebRequest -Uri "$baseUrl/chat/status" -UseBasicParsing -ErrorAction Stop
-    $content = $response.Content | ConvertFrom-Json
-    if ($response.StatusCode -eq 200 -and $content.status -eq "healthy") {
-        Write-Host "✅ Status endpoint is healthy: $baseUrl/chat/status" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Status endpoint returned unexpected status: $($content.status)" -ForegroundColor Red
-    }
-} catch {
-    Write-Host "❌ Failed to access status endpoint: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "The app may still be initializing. Try accessing it manually in a few minutes." -ForegroundColor Yellow
-}
-
-# Check health endpoint
-try {
-    Write-Host "Testing health monitoring endpoint..." -ForegroundColor Yellow
-    $response = Invoke-WebRequest -Uri "$baseUrl/monitor/health" -UseBasicParsing -ErrorAction Stop
-    $content = $response.Content | ConvertFrom-Json
-    if ($response.StatusCode -eq 200 -and $content.status -eq "healthy") {
-        Write-Host "✅ Health endpoint is healthy: $baseUrl/monitor/health" -ForegroundColor Green
-    } else {
-        Write-Host "❌ Health endpoint returned unexpected status: $($content.status)" -ForegroundColor Red
-    }
-} catch {
-    Write-Host "❌ Failed to access health endpoint: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "The app may still be initializing. Try accessing it manually in a few minutes." -ForegroundColor Yellow
-}
-
-# Check HTTP polling configuration
-try {
-    Write-Host "Verifying HTTP polling configuration..." -ForegroundColor Yellow
-    $ingress = az containerapp ingress show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP | ConvertFrom-Json
-    if ($ingress) {
-        Write-Host "✅ Ingress configuration found. HTTP polling will be used instead of WebSockets" -ForegroundColor Green
-        Write-Host "   Transport setting: $($ingress.transport) (no longer needed for polling)" -ForegroundColor Cyan
-    }
-} catch {
-    Write-Host "❌ Failed to verify HTTP polling configuration: $($_.Exception.Message)" -ForegroundColor Red
-}
-
-# Check logs for successful connections
-try {
-    Write-Host "Checking logs for successful connections..." -ForegroundColor Yellow
-    $logs = az containerapp logs show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --tail 50
-    if ($logs -match "200") {
-        Write-Host "✅ Successful connections found in logs" -ForegroundColor Green
-    } else {
-        Write-Host "⚠️ No successful connections found in recent logs" -ForegroundColor Yellow
-        Write-Host "This is normal if the app was just deployed or hasn't received traffic yet" -ForegroundColor Cyan
-    }
-} catch {
-    Write-Host "❌ Failed to check logs: $($_.Exception.Message)" -ForegroundColor Red
-}
-
-Write-Host "=== Deployment Verification Complete ===" -ForegroundColor Green
-Write-Host "For best results, please test the Chainlit interface in a browser at $baseUrl" -ForegroundColor Cyan 
-
-# Add simulated Chainlit entry test
-Write-Host "=== Testing Chainlit Application ===" -ForegroundColor Green
-
-# Check general connectivity before running the test
-Write-Host "Verifying connection status..." -ForegroundColor Yellow
-try {
-    $statusCheck = Invoke-WebRequest -Uri "$baseUrl/chat/status" -UseBasicParsing -ErrorAction SilentlyContinue
-    if ($statusCheck -and $statusCheck.StatusCode -eq 200) {
-        Write-Host "✅ Chat status endpoint is responding, proceeding with test" -ForegroundColor Green
-    } else {
-        Write-Host "⚠️ Chat status endpoint is not responding" -ForegroundColor Yellow
-        Write-Host "Waiting 30 seconds for application to initialize..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 30
-        $statusCheck = Invoke-WebRequest -Uri "$baseUrl/chat/status" -UseBasicParsing -ErrorAction SilentlyContinue
-        if ($statusCheck -and $statusCheck.StatusCode -eq 200) {
-            Write-Host "✅ Chat status endpoint is now responding" -ForegroundColor Green
-        } else {
-            Write-Host "⚠️ Chat status endpoint is still not responding, but proceeding with test" -ForegroundColor Yellow
-        }
-    }
-} catch {
-    Write-Host "⚠️ Chat status endpoint is not responding: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "The test will proceed, but it may fail if the application is not fully initialized" -ForegroundColor Yellow
-}
-
-# Test the main application UI instead of direct API POST
-Write-Host "Testing main application UI..." -ForegroundColor Yellow
-try {
-    $response = Invoke-WebRequest -Uri $baseUrl -UseBasicParsing -ErrorAction Stop
-    if ($response.StatusCode -eq 200) {
-        Write-Host "✅ Main UI is accessible at: $baseUrl" -ForegroundColor Green
-        
-        # Check for typical Chainlit UI elements in the response
-        if ($response.Content -match "Chainlit" -or $response.Content -match "<title>Chat" -or $response.Content -match "chat-container") {
-            Write-Host "✅ Chainlit UI elements detected - application appears to be working correctly" -ForegroundColor Green
-        } else {
-            Write-Host "⚠️ Page loaded but Chainlit UI elements not detected. Manual verification recommended." -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "⚠️ Main UI returned unexpected status: $($response.StatusCode)" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "❌ Failed to access main UI: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Application may still be initializing. Try accessing it manually in a browser." -ForegroundColor Yellow
-}
-
-# Check common health/monitoring endpoints
-$endpoints = @(
-    "/health", 
-    "/monitor/health",
-    "/_health"
-)
-
-$foundHealthEndpoint = $false
-foreach ($endpoint in $endpoints) {
-    Write-Host "Testing health endpoint: $endpoint..." -ForegroundColor Yellow
+    # Check health endpoint
     try {
-        $response = Invoke-WebRequest -Uri "$baseUrl$endpoint" -UseBasicParsing -ErrorAction Stop
-        if ($response.StatusCode -eq 200) {
-            Write-Host "✅ Health endpoint found and responding at: $baseUrl$endpoint" -ForegroundColor Green
-            $foundHealthEndpoint = $true
-            break
+        $response = Invoke-WebRequest -Uri "$backendAppUrl/monitor/health" -UseBasicParsing -ErrorAction Stop
+        $content = $response.Content | ConvertFrom-Json
+        if ($response.StatusCode -eq 200 -and $content.status -eq "healthy") {
+            Write-ColorOutput -Message "Backend Python app is running correctly" -Color Green -Prefix "✅"
+        } else {
+            Write-ColorOutput -Message "Backend app returned unexpected status. Container may need to be recreated." -Color Yellow -Prefix "⚠️"
+            $backendAppNeedsUpdate = $true
         }
     } catch {
-        # Silently continue to next endpoint
+        Write-ColorOutput -Message "Failed to access backend health endpoint. Container may need to be recreated." -Color Yellow -Prefix "⚠️"
+        $backendAppNeedsUpdate = $true
     }
-}
-
-if (-not $foundHealthEndpoint) {
-    Write-Host "⚠️ No health endpoints responded. This may be normal if health endpoints are secured or not exposed." -ForegroundColor Yellow
-}
-
-Write-Host "=== Testing Specific Chainlit Routes ===" -ForegroundColor Green
-
-# Check frontend static content
-try {
-    $response = Invoke-WebRequest -Uri "$baseUrl/public/favicon.ico" -UseBasicParsing -ErrorAction Stop
-    if ($response.StatusCode -eq 200) {
-        Write-Host "✅ Static content is accessible" -ForegroundColor Green
+    
+    # Check if this is a Python app (look for Python-related headers or response patterns)
+    try {
+        $response = Invoke-WebRequest -Uri "$backendAppUrl" -UseBasicParsing -ErrorAction Stop
+        # Check for Chainlit or Python indicators in the response
+        if ($response.Content -match "Chainlit" -or $response.Headers["Server"] -match "Python" -or $response.Content -match "Python") {
+            Write-ColorOutput -Message "Confirmed that backend is a Python application" -Color Green -Prefix "✅"
+        } else {
+            Write-ColorOutput -Message "Backend does not appear to be the Python app we expected" -Color Yellow -Prefix "⚠️"
+            $backendAppNeedsUpdate = $true
+        }
+    } catch {
+        Write-ColorOutput -Message "Failed to verify if backend is a Python app" -Color Yellow -Prefix "⚠️"
+        $backendAppNeedsUpdate = $true
     }
-} catch {
-    Write-Host "⚠️ Static content check failed: $($_.Exception.Message)" -ForegroundColor Yellow
+} else {
+    Write-ColorOutput -Message "Backend app does not exist, needs to be created" -Color Yellow -Prefix "→"
+    $backendAppNeedsUpdate = $true
+    $backendAppRunning = $false
 }
 
-# Test a GET status endpoint instead of POST API endpoint
-try {
-    Write-Host "Testing Chainlit status endpoint..." -ForegroundColor Yellow
-    $response = Invoke-WebRequest -Uri "$baseUrl/chat/status" -Method GET -UseBasicParsing -ErrorAction Stop
-    if ($response.StatusCode -eq 200) {
-        Write-Host "✅ Chainlit status endpoint is working" -ForegroundColor Green
+# Step 6: Check Frontend Container App
+Write-ColorOutput -Message "Checking Frontend Container App" -Color Green
+$frontendAppExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$frontendAppNeedsUpdate = $false
+$frontendAppRunning = $true
+
+if ($frontendAppExists) {
+    # Check if it's running properly
+    Write-ColorOutput -Message "Frontend app exists, checking status" -Color Yellow -Prefix "→"
+    
+    # Get the frontend app URL
+    $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $frontendAppUrl = "https://$frontendAppUrl"
+    
+    # Check if the frontend is responding
+    try {
+        $response = Invoke-WebRequest -Uri $frontendAppUrl -UseBasicParsing -ErrorAction Stop
+        if ($response.StatusCode -eq 200) {
+            Write-ColorOutput -Message "Frontend app is responding" -Color Green -Prefix "✅"
+            
+            # Check if this is a React/Next.js app (look for typical React patterns)
+            if ($response.Content -match "react" -or $response.Content -match "next" -or $response.Content -match "_next") {
+                Write-ColorOutput -Message "Confirmed that frontend is a React/Next.js application" -Color Green -Prefix "✅"
+            } else {
+                Write-ColorOutput -Message "Frontend does not appear to be the React/Next.js app we expected" -Color Yellow -Prefix "⚠️"
+                $frontendAppNeedsUpdate = $true
+            }
+        } else {
+            Write-ColorOutput -Message "Frontend app returned unexpected status. Container may need to be recreated." -Color Yellow -Prefix "⚠️"
+            $frontendAppNeedsUpdate = $true
+        }
+    } catch {
+        Write-ColorOutput -Message "Failed to access frontend. Container may need to be recreated." -Color Yellow -Prefix "⚠️"
+        $frontendAppNeedsUpdate = $true
+    }
+} else {
+    Write-ColorOutput -Message "Frontend app does not exist, needs to be created" -Color Yellow -Prefix "→"
+    $frontendAppNeedsUpdate = $true
+    $frontendAppRunning = $false
+}
+
+# Step 7: Delete and recreate backend if needed
+if ($backendAppNeedsUpdate) {
+    if ($backendAppRunning) {
+        Write-ColorOutput -Message "Deleting misconfigured backend container app" -Color Yellow -Prefix "→"
+        az containerapp delete --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+        if (-not (Test-CommandSuccess -SuccessMessage "Backend container app deleted successfully" -ErrorMessage "Failed to delete backend container app")) {
+            Write-ColorOutput -Message "Continuing despite backend deletion failure" -Color Yellow -Prefix "⚠️"
+        }
+    }
+    
+    Write-ColorOutput -Message "Deploying Backend Container App" -Color Green
+    az containerapp create `
+        --name $BACKEND_CONTAINER_APP_NAME `
+        --resource-group $RESOURCE_GROUP `
+        --environment $CONTAINER_ENV_NAME `
+        --image "$ACR_NAME.azurecr.io/$IMAGE_NAME`:$TAG" `
+        --registry-server "$ACR_NAME.azurecr.io" `
+        --registry-username $ACR_USERNAME `
+        --registry-password $ACR_PASSWORD `
+        --target-port 8000 `
+        --ingress external `
+        --min-replicas 1 `
+        --max-replicas 10 `
+        --cpu 1.0 `
+        --memory 2.0Gi `
+        --env-vars `
+          INTERFACE=all `
+          PORT=8000 `
+          QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io `
+          QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw `
+          AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
+          AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
+          AZURE_OPENAI_API_VERSION=2024-08-01-preview `
+          AZURE_OPENAI_DEPLOYMENT=gpt-4o `
+          AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small `
+          OPENAI_API_TYPE=azure `
+          OPENAI_API_VERSION=2024-08-01-preview `
+          EMBEDDING_MODEL=text-embedding-3-small `
+          LLM_MODEL=gpt-4o `
+          SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
+          SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
+          COLLECTION_NAME=Information `
+          ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d `
+          ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt `
+          PYTHONUNBUFFERED=1 `
+          PYTHONPATH=/app `
+          STT_MODEL_NAME=whisper `
+          TTS_MODEL_NAME=eleven_flash_v2_5 `
+          CHAINLIT_FORCE_POLLING=true `
+          CHAINLIT_NO_WEBSOCKET=true `
+          CHAINLIT_POLLING_MAX_WAIT=5000
+
+    if (-not (Test-CommandSuccess -SuccessMessage "Backend Container App deployed successfully" -ErrorMessage "Failed to deploy Backend Container App")) {
+        Write-ColorOutput -Message "Failed to deploy backend, continuing with deployment" -Color Yellow -Prefix "⚠️"
+    } else {
+        # Update URL and configure settings
+        $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+        $backendAppUrl = "https://$backendAppUrl"
+        Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
         
-        try {
-            $responseContent = $response.Content | ConvertFrom-Json
-            Write-Host "Status response: $($responseContent | ConvertTo-Json -Compress)" -ForegroundColor Cyan
-        } catch {
-            Write-Host "Response received but could not parse as JSON" -ForegroundColor Yellow
+        # Configure other settings
+        Write-ColorOutput -Message "Configuring Backend Ingress" -Color Green
+        az containerapp ingress update `
+            --name $BACKEND_CONTAINER_APP_NAME `
+            --resource-group $RESOURCE_GROUP `
+            --target-port 8000 `
+            --transport auto
+            
+        Write-ColorOutput -Message "Configuring CORS for Backend" -Color Green
+        az containerapp ingress cors update `
+            --name $BACKEND_CONTAINER_APP_NAME `
+            --resource-group $RESOURCE_GROUP `
+            --allowed-origins "*" `
+            --allowed-methods "GET,POST,PUT,DELETE,OPTIONS" `
+            --allowed-headers "*" `
+            --max-age 7200 `
+            --allow-credentials true
+    }
+} else {
+    # Get existing backend URL for frontend configuration
+    $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $backendAppUrl = "https://$backendAppUrl"
+    Write-ColorOutput -Message "Using existing Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
+}
+
+# Step 8: Delete and recreate frontend if needed
+if ($frontendAppNeedsUpdate) {
+    # Check if frontend image exists in ACR
+    Write-ColorOutput -Message "Checking if frontend image exists in ACR" -Color Yellow -Prefix "→"
+    $frontendImageExists = az acr repository show --name $ACR_NAME --image "$WEB_UI_IMAGE_NAME`:$TAG" 2>$null
+    
+    if ($frontendImageExists) {
+        if ($frontendAppRunning) {
+            Write-ColorOutput -Message "Deleting misconfigured frontend container app" -Color Yellow -Prefix "→"
+            az containerapp delete --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+            if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app deleted successfully" -ErrorMessage "Failed to delete frontend container app")) {
+                Write-ColorOutput -Message "Continuing despite frontend deletion failure" -Color Yellow -Prefix "⚠️"
+            }
+        }
+        
+        Write-ColorOutput -Message "Deploying Frontend Container App" -Color Green
+        az containerapp create `
+            --name $FRONTEND_CONTAINER_APP_NAME `
+            --resource-group $RESOURCE_GROUP `
+            --environment $CONTAINER_ENV_NAME `
+            --image "$ACR_NAME.azurecr.io/$WEB_UI_IMAGE_NAME`:$TAG" `
+            --registry-server "$ACR_NAME.azurecr.io" `
+            --registry-username $ACR_USERNAME `
+            --registry-password $ACR_PASSWORD `
+            --target-port 3000 `
+            --ingress external `
+            --min-replicas 1 `
+            --max-replicas 5 `
+            --cpu 0.5 `
+            --memory 1.0Gi `
+            --env-vars `
+              NEXT_PUBLIC_API_URL=$backendAppUrl `
+              NODE_ENV=production
+
+        if (-not (Test-CommandSuccess -SuccessMessage "Frontend Container App deployed successfully" -ErrorMessage "Failed to deploy Frontend Container App")) {
+            Write-ColorOutput -Message "Frontend deployment failed, continuing with backend only" -Color Yellow -Prefix "⚠️"
+        } else {
+            $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+            $frontendAppUrl = "https://$frontendAppUrl"
+            Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
         }
     } else {
-        Write-Host "⚠️ Status endpoint returned unexpected status: $($response.StatusCode)" -ForegroundColor Yellow
+        Write-ColorOutput -Message "Frontend image does not exist in ACR. Cannot deploy frontend." -Color Yellow -Prefix "⚠️"
     }
-} catch {
-    Write-Host "❌ Failed to access status endpoint: $($_.Exception.Message)" -ForegroundColor Red
 }
 
-Write-Host "=== Application Testing Complete ===" -ForegroundColor Green
-Write-Host "Testing suggests the application is deployed and responding to requests." -ForegroundColor Cyan
-Write-Host "For full functionality testing, please use a browser to access: $baseUrl" -ForegroundColor Cyan
+# Step 9: Deployment Summary
+Write-ColorOutput -Message "Deployment Summary" -Color Green -Prefix "📋"
+Write-Host ""
+Write-Host "Backend Application:" -ForegroundColor Cyan
+Write-Host "  URL: $backendAppUrl" -ForegroundColor White
+Write-Host "  Status Endpoint: $backendAppUrl/chat/status" -ForegroundColor White
+Write-Host "  Health Endpoint: $backendAppUrl/monitor/health" -ForegroundColor White
+Write-Host ""
 
-Write-Host "=== Deployment and Verification Process Complete ===" -ForegroundColor Green
-Write-Host "Your Chainlit application is ready at: $baseUrl" -ForegroundColor Cyan 
+# Check if frontend exists for summary
+$frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($frontendExists) {
+    $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $frontendAppUrl = "https://$frontendAppUrl"
+    
+    Write-Host "Frontend Application:" -ForegroundColor Cyan
+    Write-Host "  URL: $frontendAppUrl" -ForegroundColor White
+    Write-Host ""
+}
+
+Write-Host "Resource Group: $RESOURCE_GROUP" -ForegroundColor Cyan
+Write-Host "Container Registry: $ACR_NAME" -ForegroundColor Cyan
+Write-Host "Container App Environment: $CONTAINER_ENV_NAME" -ForegroundColor Cyan
+Write-Host ""
+
+Write-ColorOutput -Message "Deployment Verification Complete" -Color Green -Prefix "🚀" 

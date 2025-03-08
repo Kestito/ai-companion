@@ -17,6 +17,20 @@ Respect exiting stukture and do NO DELETE FUNCTIONALITY
 5. Configure row-level security policies for patient data protection
 6. Integrate Intefaces like Chainlit, Telegram , whatcapp into User, converstation, short memory
 
+UUID Format
+Changed all IDs to use proper hexadecimal format
+Used consistent prefixes for different types of records:
+11 for doctors (e.g., 11123c45-...)
+2x for patients (e.g., 21a23b45-...)
+3x for risk assessments
+4x for appointments
+5x for conversations
+6x for conversation details
+7x for reports
+8x for long-term memory
+9x for short-term memory
+ax, bx for historical records
+
 **Expected Outcome**: Enhanced database schema that supports healthcare data while maintaining compatibility with existing conversation data.
 
 **Timeline**: 1 week

@@ -1,4 +1,4 @@
-import { UserStatus } from '../../lib/supabase/types';
+import { UserStatus } from '@/lib/supabase/types';
 
 interface UserStatusIndicatorProps {
   status: UserStatus;

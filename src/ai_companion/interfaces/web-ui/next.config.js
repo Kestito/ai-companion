@@ -1,13 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   swcMinify: true,
   images: {
     domains: ['localhost'],
   },
   experimental: {
-    // Enable App Router features
-    appDir: true,
+    // Enable if you're using App Router
+    // appDir: true,
   },
   compiler: {
     styledComponents: true,

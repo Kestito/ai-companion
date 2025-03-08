@@ -1,0 +1,23 @@
+{
+    "mcpServers": {
+      "Puppeteer": {
+        "command": "node",
+        "args": [
+          "C:\\npm\\node_modules\\@modelcontextprotocol\\server-puppeteer\\dist\\index.js"
+        ]
+      },
+      "Supabase Database": {
+        "command": "node",
+        "args": [
+          "C:\\npm\\node_modules\\@modelcontextprotocol\\server-postgres\\dist\\index.js",
+          "postgresql://postgres.aubulhjfeszmsheonmpy:xDBQai19zQBYZjc3@aws-0-eu-north-1.pooler.supabase.com:6543/postgres"
+        ]
+      },
+      "Sequential Thinking": {
+        "command": "node",
+        "args": [
+          "C:\\npm\\node_modules\\@modelcontextprotocol\\server-sequential-thinking\\dist\\index.js"
+        ]
+      }
+    }
+  }

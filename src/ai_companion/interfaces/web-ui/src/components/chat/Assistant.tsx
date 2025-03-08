@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../../lib/supabase/client'
+import getSupabaseClient from '@/lib/supabase/client'
 
 export const Assistant = () => {
   const handleQuery = async (query: string) => {

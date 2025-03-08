@@ -72,6 +72,14 @@ case "$INTERFACE" in
     /app/.venv/bin/uvicorn ai_companion.interfaces.monitor.app:app --host 0.0.0.0 --port 8090
     ;;
     
+  "web-ui")
+    echo "Starting Next.js Web UI interface..."
+    # The web-ui is expected to be started by its own Dockerfile with CMD ["node", "server.js"]
+    # This case is here to prevent the entrypoint script from starting other interfaces
+    # when running the web-ui container
+    exec "$@"
+    ;;
+    
   "all")
     echo "Starting all interfaces..."
     
@@ -95,7 +103,7 @@ case "$INTERFACE" in
     ;;
     
   *)
-    echo "Unknown interface: $INTERFACE. Valid options are: whatsapp, chainlit, telegram, monitor, all"
+    echo "Unknown interface: $INTERFACE. Valid options are: whatsapp, chainlit, telegram, monitor, web-ui, all"
     exit 1
     ;;
 esac 
