@@ -12,7 +12,8 @@ import {
   Divider,
   Avatar,
   Typography,
-  Stack
+  Stack,
+  Tooltip
 } from '@mui/material';
 import {
   Dashboard,
@@ -22,7 +23,11 @@ import {
   CalendarMonth,
   Settings,
   Menu as MenuIcon,
-  ChevronLeft
+  ChevronLeft,
+  HealthAndSafety,
+  NotificationsActive,
+  MedicalServices,
+  BarChart
 } from '@mui/icons-material';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
@@ -30,25 +35,41 @@ import { useNavigation } from '../providers/NavigationProvider';
 
 const DRAWER_WIDTH = 280;
 
+// Main navigation items for the sidebar
 const menuItems = [
-  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-  { text: 'Users', icon: <People />, path: '/users' },
-  { text: 'Messages', icon: <Message />, path: '/messages' },
-  { text: 'Analytics', icon: <Assessment />, path: '/analytics' },
-  { text: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
+  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard', description: 'Overview and statistics' },
+  { text: 'Patients', icon: <People />, path: '/patients', description: 'Patient management' },
+  { text: 'Appointments', icon: <CalendarMonth />, path: '/appointments', description: 'Schedule management' },
+  { text: 'Messages', icon: <Message />, path: '/messages', description: 'Communication center' },
+  { text: 'Health Records', icon: <HealthAndSafety />, path: '/records', description: 'Patient health data' },
+  { text: 'Alerts', icon: <NotificationsActive />, path: '/alerts', description: 'Critical notifications' },
+  { text: 'Analytics', icon: <BarChart />, path: '/analytics', description: 'Data analysis' },
 ];
 
+// Bottom navigation items for settings, etc.
 const bottomMenuItems = [
-  { text: 'Settings', icon: <Settings />, path: '/settings' },
+  { text: 'Medical Resources', icon: <MedicalServices />, path: '/resources', description: 'Reference materials' },
+  { text: 'Settings', icon: <Settings />, path: '/settings', description: 'System configuration' },
 ];
 
+/**
+ * Sidebar navigation component
+ * Provides main navigation for the application
+ * Can be collapsed to save space
+ */
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { isSidebarOpen, toggleSidebar } = useNavigation();
 
+  // Navigate to the selected path
   const handleNavigation = (path: string) => {
     router.push(path);
+  };
+
+  // Determine if an item is currently selected
+  const isActive = (path: string) => {
+    return pathname === path || pathname.startsWith(`${path}/`);
   };
 
   return (
@@ -71,7 +92,7 @@ export default function Sidebar() {
         {isSidebarOpen && (
           <Image
             src="/logo.svg"
-            alt="Evelina AI Logo"
+            alt="AI Companion Logo"
             width={40}
             height={40}
             priority
@@ -79,12 +100,13 @@ export default function Sidebar() {
         )}
         {isSidebarOpen && (
           <Typography variant="h6" noWrap>
-            Evelina AI
+            AI Companion
           </Typography>
         )}
         <IconButton 
           onClick={toggleSidebar}
           sx={{ ml: isSidebarOpen ? 'auto' : 'auto' }}
+          aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
         >
           {isSidebarOpen ? <ChevronLeft /> : <MenuIcon />}
         </IconButton>
@@ -96,22 +118,48 @@ export default function Sidebar() {
         <List>
           {menuItems.map((item) => (
             <ListItem key={item.text} disablePadding>
-              <ListItemButton
-                selected={pathname === item.path}
-                onClick={() => handleNavigation(item.path)}
-                sx={{
-                  minHeight: 48,
-                  px: 2.5,
-                  '&.Mui-selected': {
-                    bgcolor: 'action.selected',
-                  },
-                }}
+              <Tooltip 
+                title={!isSidebarOpen ? item.text : ""}
+                placement="right"
+                arrow
               >
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  {item.icon}
-                </ListItemIcon>
-                {isSidebarOpen && <ListItemText primary={item.text} />}
-              </ListItemButton>
+                <ListItemButton
+                  selected={isActive(item.path)}
+                  onClick={() => handleNavigation(item.path)}
+                  sx={{
+                    minHeight: 48,
+                    px: 2.5,
+                    '&.Mui-selected': {
+                      bgcolor: 'primary.light',
+                      color: 'primary.contrastText',
+                      '& .MuiListItemIcon-root': {
+                        color: 'primary.contrastText',
+                      },
+                    },
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36, color: isActive(item.path) ? 'inherit' : 'primary.main' }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  {isSidebarOpen && (
+                    <ListItemText 
+                      primary={item.text} 
+                      secondary={item.description}
+                      primaryTypographyProps={{
+                        variant: 'body2',
+                        fontWeight: isActive(item.path) ? 'bold' : 'medium',
+                      }}
+                      secondaryTypographyProps={{
+                        variant: 'caption',
+                        sx: { display: { xs: 'none', sm: 'block' } }
+                      }}
+                    />
+                  )}
+                </ListItemButton>
+              </Tooltip>
             </ListItem>
           ))}
         </List>
@@ -122,22 +170,48 @@ export default function Sidebar() {
       <List>
         {bottomMenuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
-            <ListItemButton
-              selected={pathname === item.path}
-              onClick={() => handleNavigation(item.path)}
-              sx={{
-                minHeight: 48,
-                px: 2.5,
-                '&.Mui-selected': {
-                  bgcolor: 'action.selected',
-                },
-              }}
+            <Tooltip 
+              title={!isSidebarOpen ? item.text : ""}
+              placement="right"
+              arrow
             >
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                {item.icon}
-              </ListItemIcon>
-              {isSidebarOpen && <ListItemText primary={item.text} />}
-            </ListItemButton>
+              <ListItemButton
+                selected={isActive(item.path)}
+                onClick={() => handleNavigation(item.path)}
+                sx={{
+                  minHeight: 48,
+                  px: 2.5,
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.light',
+                    color: 'primary.contrastText',
+                    '& .MuiListItemIcon-root': {
+                      color: 'primary.contrastText',
+                    },
+                  },
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36, color: isActive(item.path) ? 'inherit' : 'primary.main' }}>
+                  {item.icon}
+                </ListItemIcon>
+                {isSidebarOpen && (
+                  <ListItemText 
+                    primary={item.text} 
+                    secondary={item.description}
+                    primaryTypographyProps={{
+                      variant: 'body2',
+                      fontWeight: isActive(item.path) ? 'bold' : 'medium',
+                    }}
+                    secondaryTypographyProps={{
+                      variant: 'caption',
+                      sx: { display: { xs: 'none', sm: 'block' } }
+                    }}
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
           </ListItem>
         ))}
       </List>
@@ -145,13 +219,13 @@ export default function Sidebar() {
       {isSidebarOpen && (
         <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           <Stack direction="row" spacing={2} alignItems="center">
-            <Avatar sx={{ width: 32, height: 32 }}>A</Avatar>
+            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>A</Avatar>
             <Box sx={{ flexGrow: 1 }}>
               <Typography variant="subtitle2" noWrap>
                 Admin User
               </Typography>
               <Typography variant="body2" color="text.secondary" noWrap>
-                admin@evelina.ai
+                admin@example.com
               </Typography>
             </Box>
           </Stack>

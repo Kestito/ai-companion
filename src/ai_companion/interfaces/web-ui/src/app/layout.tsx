@@ -1,6 +1,7 @@
 import { Inter } from 'next/font/google';
 import type { Metadata } from "next";
 import AppProviders from '../components/providers/AppProviders';
+import ClientLayout from '../components/layout/ClientLayout';
 import "./globals.css";
 
 // Load Inter font
@@ -36,7 +37,9 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased min-h-screen bg-gray-50`} suppressHydrationWarning>
         {/* Wrap the entire application with our providers */}
         <AppProviders>
-          {children}
+          <ClientLayout>
+            {children}
+          </ClientLayout>
         </AppProviders>
       </body>
     </html>

@@ -11,7 +11,7 @@ interface ServiceStatus {
 }
 
 const statusIcons = {
-  healthy: <CheckCircle color="success" />,
+  healthy: <CheckCircle color="primary" />,
   degraded: <Warning color="warning" />,
   down: <Error color="error" />
 };

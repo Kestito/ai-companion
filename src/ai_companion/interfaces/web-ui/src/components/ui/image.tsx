@@ -1,6 +1,24 @@
 import Image from 'next/image';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
+/**
+ * ResponsiveImage Component
+ * 
+ * A responsive image component that wraps Next.js Image with responsive behavior.
+ * 
+ * @param props - Component properties
+ * @returns The ResponsiveImage component
+ * 
+ * @example
+ * ```tsx
+ * <ResponsiveImage 
+ *   src="/images/example.jpg" 
+ *   alt="Example image" 
+ *   width={800} 
+ *   height={600} 
+ * />
+ * ```
+ */
 interface ResponsiveImageProps {
   src: string;
   alt: string;

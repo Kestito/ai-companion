@@ -194,6 +194,7 @@ const NotificationsCard = ({ notifications }: { notifications: any[] }) => (
       fullWidth
       variant="outlined"
       sx={{ mt: 3 }}
+      color="primary"
     >
       View All Notifications
     </Button>
@@ -227,7 +228,7 @@ const QuickActions = () => (
       <Button 
         startIcon={<Message />} 
         variant="outlined" 
-        color="info"
+        color="primary"
         fullWidth
       >
         Send Message
@@ -248,7 +249,15 @@ export default function DashboardPage() {
   const router = useRouter();
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="xl" sx={{ py: 4, mt: 2 }}>
+      <Box sx={{ mb: 5, pt: 1 }}>
+        <Typography variant="h4" component="h1" gutterBottom fontWeight="500">
+          Dashboard
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Welcome back! Here's an overview of your medical practice.
+        </Typography>
+      </Box>
       <Grid container spacing={3}>
         {/* Stats Section */}
         <Grid item xs={12} md={4}>

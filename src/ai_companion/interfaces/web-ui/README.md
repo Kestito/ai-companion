@@ -34,3 +34,19 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Project Structure
+
+This project follows Next.js best practices with a clean, organized folder structure:
+
+```
+src/                      # All application code lives here
+├── app/                  # Next.js app router pages and layouts
+├── components/           # React components
+├── hooks/                # Custom React hooks
+├── lib/                  # Utility functions and services
+├── store/                # State management
+└── types/                # TypeScript type definitions
+```
+
+For more details about the project structure, please see [project-docs/folder-structure.md](./project-docs/folder-structure.md).
