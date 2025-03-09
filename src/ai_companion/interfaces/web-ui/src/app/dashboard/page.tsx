@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, Container, Grid, Paper, Typography, Button, IconButton, Stack, LinearProgress } from '@mui/material';
+import { Box, Container, Grid, Paper, Typography, Button, IconButton, Stack, LinearProgress, Breadcrumbs, Link, Divider } from '@mui/material';
 import { 
   Notifications, 
   Person, 
@@ -9,7 +9,8 @@ import {
   CalendarMonth,
   TrendingUp,
   MoreVert,
-  Add
+  Add,
+  Home as HomeIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 
@@ -249,58 +250,76 @@ export default function DashboardPage() {
   const router = useRouter();
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4, mt: 2 }}>
-      <Box sx={{ mb: 8, pt: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="500">
-          Dashboard
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Welcome back! Here's an overview of your medical practice.
-        </Typography>
+    <Container maxWidth="xl">
+      <Box sx={{ py: 4, mt: 6 }}>
+        {/* Page header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pt: 3 }}>
+          <Box>
+            <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 1 }}>
+              <Link underline="hover" color="inherit" href="/" sx={{ display: 'flex', alignItems: 'center' }}>
+                <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+                Home
+              </Link>
+              <Typography color="text.primary" sx={{ display: 'flex', alignItems: 'center' }}>
+                <Assessment sx={{ mr: 0.5 }} fontSize="inherit" />
+                Dashboard
+              </Typography>
+            </Breadcrumbs>
+            <Typography variant="h4" component="h1" gutterBottom fontWeight="500">
+              Dashboard
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Welcome back! Here's an overview of your medical practice.
+            </Typography>
+          </Box>
+        </Box>
+
+        <Divider sx={{ mb: 4 }} />
+
+        <Grid container spacing={3}>
+          {/* Stats Section */}
+          <Grid item xs={12} md={4}>
+            <StatCard 
+              title="Active Patients"
+              value={mockData.stats.activeUsers}
+              icon={<Person sx={{ fontSize: 24 }} />}
+              color="primary"
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <StatCard 
+              title="Pending Appointments"
+              value={mockData.stats.pendingAppointments}
+              icon={<CalendarMonth sx={{ fontSize: 24 }} />}
+              color="warning"
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <StatCard 
+              title="Critical Alerts"
+              value={mockData.stats.criticalAlerts}
+              icon={<Notifications sx={{ fontSize: 24 }} />}
+              color="error"
+            />
+          </Grid>
+
+          {/* Activity Section */}
+          <Grid item xs={12} md={8}>
+            <ActivityCard 
+              title="Recent Activity"
+              items={mockData.recentActivity}
+            />
+          </Grid>
+
+          {/* Notifications Section */}
+          <Grid item xs={12} md={4}>
+            <Stack spacing={3}>
+              <NotificationsCard notifications={mockData.notifications} />
+              <QuickActions />
+            </Stack>
+          </Grid>
+        </Grid>
       </Box>
-      <Grid container spacing={3}>
-        {/* Stats Section */}
-        <Grid item xs={12} md={4}>
-          <StatCard 
-            title="Active Patients"
-            value={mockData.stats.activeUsers}
-            icon={<Person sx={{ fontSize: 24 }} />}
-            color="primary"
-          />
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <StatCard 
-            title="Pending Appointments"
-            value={mockData.stats.pendingAppointments}
-            icon={<CalendarMonth sx={{ fontSize: 24 }} />}
-            color="warning"
-          />
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <StatCard 
-            title="Critical Alerts"
-            value={mockData.stats.criticalAlerts}
-            icon={<Notifications sx={{ fontSize: 24 }} />}
-            color="error"
-          />
-        </Grid>
-
-        {/* Activity Section */}
-        <Grid item xs={12} md={8}>
-          <ActivityCard 
-            title="Recent Activity"
-            items={mockData.recentActivity}
-          />
-        </Grid>
-
-        {/* Notifications Section */}
-        <Grid item xs={12} md={4}>
-          <Stack spacing={3}>
-            <NotificationsCard notifications={mockData.notifications} />
-            <QuickActions />
-          </Stack>
-        </Grid>
-      </Grid>
     </Container>
   );
 } 

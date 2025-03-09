@@ -82,9 +82,9 @@ export default function PatientsPage() {
 
   return (
     <Container maxWidth="xl">
-      <Box sx={{ py: 4, mt: 2 }}>
+      <Box sx={{ py: 4, mt: 6 }}>
         {/* Page header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pt: 1 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pt: 3 }}>
           <Box>
             <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 1 }}>
               <Link underline="hover" color="inherit" href="/" sx={{ display: 'flex', alignItems: 'center' }}>

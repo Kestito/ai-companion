@@ -134,9 +134,9 @@ export default function PatientDetailPage() {
 
   return (
     <Container maxWidth="lg">
-      <Box sx={{ py: 6 }}>
+      <Box sx={{ py: 8, mt: 6 }}>
         {/* Breadcrumbs navigation */}
-        <Box sx={{ mb: 3, mt: 2 }}>
+        <Box sx={{ mb: 3, mt: 3 }}>
           <Breadcrumbs aria-label="breadcrumb">
             <Link underline="hover" color="inherit" href="/" sx={{ display: 'flex', alignItems: 'center' }}>
               <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
@@ -228,8 +228,6 @@ export default function PatientDetailPage() {
               <Tab label="Overview" {...a11yProps(0)} />
               <Tab label="Medical Records" {...a11yProps(1)} />
               <Tab label="Medications" {...a11yProps(2)} />
-              <Tab label="Test Results" {...a11yProps(3)} />
-              <Tab label="Billing" {...a11yProps(4)} />
             </Tabs>
           </Box>
           
@@ -416,30 +414,6 @@ export default function PatientDetailPage() {
               </Typography>
               <Typography variant="body1" color="text.secondary">
                 The medications for this patient will be displayed here.
-              </Typography>
-            </Paper>
-          </TabPanel>
-          
-          <TabPanel value={activeTab} index={3}>
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <EventIcon sx={{ fontSize: 60, color: 'primary.light', mb: 2 }} />
-              <Typography variant="h6" gutterBottom>
-                Test Results
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                The test results for this patient will be displayed here.
-              </Typography>
-            </Paper>
-          </TabPanel>
-          
-          <TabPanel value={activeTab} index={4}>
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <ShareIcon sx={{ fontSize: 60, color: 'primary.light', mb: 2 }} />
-              <Typography variant="h6" gutterBottom>
-                Billing
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                The billing information for this patient will be displayed here.
               </Typography>
             </Paper>
           </TabPanel>

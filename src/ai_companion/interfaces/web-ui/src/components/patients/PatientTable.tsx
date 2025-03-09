@@ -120,10 +120,8 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
                 />
               </TableCell>
               <TableCell>Patient</TableCell>
-              <TableCell>Room</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Doctor</TableCell>
-              <TableCell>Diagnosis</TableCell>
               <TableCell>Admission Date</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
@@ -164,20 +162,10 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
                     </Box>
                   </TableCell>
                   <TableCell>
-                    {patient.roomNumber || '-'}
-                  </TableCell>
-                  <TableCell>
                     <PatientStatusIndicator status={patient.status} />
                   </TableCell>
                   <TableCell>
                     {patient.doctor}
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip title={patient.diagnosis} arrow>
-                      <Typography noWrap sx={{ maxWidth: 200 }}>
-                        {patient.diagnosis}
-                      </Typography>
-                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     {new Date(patient.admissionDate).toLocaleDateString()}
