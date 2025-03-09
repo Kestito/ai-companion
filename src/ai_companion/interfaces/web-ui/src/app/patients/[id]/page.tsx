@@ -36,8 +36,8 @@ import {
 } from '@mui/icons-material';
 import { useParams, useRouter } from 'next/navigation';
 import { PatientStatusIndicator } from '@/components/patients/patientstatusindicator';
-import { mockPatients } from '@/lib/mockData';
 import { Patient } from '@/lib/supabase/types';
+import { fetchPatientById } from '@/lib/supabase/patientService';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -79,15 +79,45 @@ export default function PatientDetailPage() {
   
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      const foundPatient = mockPatients.find(p => p.id === patientId);
-      setPatient(foundPatient || null);
-      setLoading(false);
-    }, 500);
+    async function loadPatient() {
+      try {
+        setLoading(true);
+        const data = await fetchPatientById(patientId);
+        
+        if (data) {
+          setPatient(data);
+        } else {
+          // If patient not found in Supabase, try to use mock data as fallback
+          import('@/lib/mockData').then(({ mockPatients }) => {
+            const mockPatient = mockPatients.find(p => p.id === patientId);
+            if (mockPatient) {
+              setPatient(mockPatient);
+            } else {
+              setError('Patient not found.');
+            }
+          });
+        }
+      } catch (err) {
+        console.error(`Error loading patient with ID ${patientId}:`, err);
+        setError('Failed to load patient data. Please try again later.');
+        
+        // Try to fall back to mock data
+        import('@/lib/mockData').then(({ mockPatients }) => {
+          const mockPatient = mockPatients.find(p => p.id === patientId);
+          if (mockPatient) {
+            setPatient(mockPatient);
+          }
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadPatient();
   }, [patientId]);
 
   const handleChangeTab = (event: React.SyntheticEvent, newValue: number) => {

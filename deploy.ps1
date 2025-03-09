@@ -3,8 +3,9 @@ param (
     [switch]$ForceRebuild = $false,
     [string]$CustomTag,
     [switch]$SkipChangeDetection = $false,  # Add parameter to skip change detection
-    [switch]$AutoIncrement = $false,        # Add parameter to auto-increment version
-    [switch]$CleanupLocalImages = $false    # Add parameter to clean up local images after deployment
+    [switch]$AutoIncrement = $true,        # Auto-increment version by default
+    [switch]$CleanupLocalImages = $false,    # Add parameter to clean up local images after deployment
+    [switch]$ForceUpdate = $true           # Force update container apps to latest image by default
 )
 
 # Set variables
@@ -34,10 +35,36 @@ if ($ForceRebuild) {
     Write-Host "Force rebuild enabled: Images will be rebuilt even if they exist in ACR" -ForegroundColor Yellow
 }
 
-# Handle version auto-incrementing
-if ($AutoIncrement) {
-    Write-Host "Auto-increment enabled: Version will be incremented" -ForegroundColor Yellow
-    
+# By default ForceUpdate is now true, so we only need to show the message
+Write-Host "Container apps will be updated to match local image versions (ForceUpdate=true by default)" -ForegroundColor Green
+Write-Host "Use -ForceUpdate:$false to disable automatic updates" -ForegroundColor Green
+
+# By default AutoIncrement is now true
+Write-Host "Version will be auto-incremented on each deployment (AutoIncrement=true by default)" -ForegroundColor Green
+Write-Host "Use -AutoIncrement:$false to keep the same version" -ForegroundColor Green
+
+# Handle version auto-incrementing (now enabled by default)
+if (-not $AutoIncrement) {
+    # AutoIncrement is disabled, check if custom tag is provided
+    if ($CustomTag) {
+        $TAG = $CustomTag
+        Write-Host "Using custom tag: $TAG" -ForegroundColor Yellow
+        # Update the version file with the custom tag
+        $TAG | Out-File -FilePath $VERSION_FILE
+    } else {
+        # If no auto-increment and no custom tag, use existing version if available
+        if (Test-Path $VERSION_FILE) {
+            $fileVersion = Get-Content -Path $VERSION_FILE -Raw
+            $TAG = $fileVersion.Trim()
+            Write-Host "Using existing version from file: $TAG" -ForegroundColor Yellow
+        } else {
+            # If no version file, create one with default tag
+            $TAG | Out-File -FilePath $VERSION_FILE
+            Write-Host "Created version file with default version: $TAG" -ForegroundColor Yellow
+        }
+    }
+} else {
+    # AutoIncrement is enabled (default behavior)
     # Check if version file exists
     if (Test-Path $VERSION_FILE) {
         # Read current version
@@ -66,20 +93,6 @@ if ($AutoIncrement) {
     
     # Write new version to file
     $TAG | Out-File -FilePath $VERSION_FILE
-} elseif ($CustomTag) {
-    $TAG = $CustomTag
-    Write-Host "Using custom tag: $TAG" -ForegroundColor Yellow
-} else {
-    # Check if version file exists and use its value
-    if (Test-Path $VERSION_FILE) {
-        $fileVersion = Get-Content -Path $VERSION_FILE -Raw
-        $TAG = $fileVersion.Trim()
-        Write-Host "Using version from file: $TAG" -ForegroundColor Yellow
-    } else {
-        # If no version file, create one with default tag
-        $TAG | Out-File -FilePath $VERSION_FILE
-        Write-Host "Created version file with default version: $TAG" -ForegroundColor Yellow
-    }
 }
 
 # Create a utilities function for colored output
@@ -443,7 +456,7 @@ if (-not $needToBuildFrontend) {
         # Create a single-line Docker build command that PowerShell can understand
         $dockerBuildCmd = "docker build --no-cache " + 
             "--build-arg NEXT_PUBLIC_SUPABASE_URL=`"https://aubulhjfeszmsheonmpy.supabase.co`" " + 
-            "--build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=`"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q`" " + 
+            "--build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=`"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q7Q`" " + 
             "--build-arg NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=`"https://ai-kestutis9429ai265477517797.openai.azure.com`" " + 
             "--build-arg NEXT_PUBLIC_AZURE_OPENAI_API_KEY=`"Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl`" " + 
             "--build-arg NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=`"gpt-4o`" " + 
@@ -623,82 +636,109 @@ if ($frontendAppExists) {
 }
 
 # Step 8: Delete and recreate backend if needed
-if ($backendAppNeedsUpdate) {
-    if ($backendAppRunning) {
+if ($backendAppNeedsUpdate -or $ForceUpdate) {
+    if ($backendAppRunning -and (-not $ForceUpdate)) {
         Write-ColorOutput -Message "Deleting misconfigured backend container app" -Color Yellow -Prefix "→"
         az containerapp delete --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
         if (-not (Test-CommandSuccess -SuccessMessage "Backend container app deleted successfully" -ErrorMessage "Failed to delete backend container app")) {
             Write-ColorOutput -Message "Continuing despite backend deletion failure" -Color Yellow -Prefix "⚠️"
         }
+    } elseif ($backendAppRunning -and $ForceUpdate) {
+        # Update the existing container app instead of deleting and recreating
+        Write-ColorOutput -Message "Updating existing backend container app to image version: $TAG" -Color Yellow -Prefix "→"
+        az containerapp update `
+            --name $BACKEND_CONTAINER_APP_NAME `
+            --resource-group $RESOURCE_GROUP `
+            --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+        
+        if (-not (Test-CommandSuccess -SuccessMessage "Backend container app updated successfully" -ErrorMessage "Failed to update backend container app")) {
+            Write-ColorOutput -Message "Failed to update backend, will attempt to recreate" -Color Yellow -Prefix "⚠️"
+            
+            # If update fails, delete and recreate
+            az containerapp delete --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+            if (-not (Test-CommandSuccess -SuccessMessage "Backend container app deleted successfully" -ErrorMessage "Failed to delete backend container app")) {
+                Write-ColorOutput -Message "Continuing despite backend deletion failure" -Color Yellow -Prefix "⚠️"
+            }
+            $backendAppRunning = $false
+        } else {
+            # Get updated URL
+            $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+            $backendAppUrl = "https://$backendAppUrl"
+            Write-ColorOutput -Message "Backend App updated to version $TAG" -Color Green -Prefix "✅"
+            Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
+        }
     }
     
-    Write-ColorOutput -Message "Deploying Backend Container App" -Color Green
-    az containerapp create `
-        --name $BACKEND_CONTAINER_APP_NAME `
-        --resource-group $RESOURCE_GROUP `
-        --environment $CONTAINER_ENV_NAME `
-        --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}" `
-        --registry-server "${ACR_NAME}.azurecr.io" `
-        --registry-username $ACR_USERNAME `
-        --registry-password $ACR_PASSWORD `
-        --target-port 8000 `
-        --ingress external `
-        --min-replicas 1 `
-        --max-replicas 10 `
-        --cpu 1.0 `
-        --memory 2.0Gi `
-        --env-vars `
-          INTERFACE=all `
-          PORT=8000 `
-          QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io `
-          QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw `
-          AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
-          AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
-          AZURE_OPENAI_API_VERSION=2024-08-01-preview `
-          AZURE_OPENAI_DEPLOYMENT=gpt-4o `
-          AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small `
-          OPENAI_API_TYPE=azure `
-          OPENAI_API_VERSION=2024-08-01-preview `
-          EMBEDDING_MODEL=text-embedding-3-small `
-          LLM_MODEL=gpt-4o `
-          SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-          SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
-          COLLECTION_NAME=Information `
-          ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d `
-          ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt `
-          PYTHONUNBUFFERED=1 `
-          PYTHONPATH=/app `
-          STT_MODEL_NAME=whisper `
-          TTS_MODEL_NAME=eleven_flash_v2_5 `
-          CHAINLIT_FORCE_POLLING=true `
-          CHAINLIT_NO_WEBSOCKET=true `
-          CHAINLIT_POLLING_MAX_WAIT=5000
-
-    if (-not (Test-CommandSuccess -SuccessMessage "Backend Container App deployed successfully" -ErrorMessage "Failed to deploy Backend Container App")) {
-        Write-ColorOutput -Message "Failed to deploy backend, continuing with deployment" -Color Yellow -Prefix "⚠️"
-    } else {
-        # Update URL and configure settings
-        $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
-        $backendAppUrl = "https://$backendAppUrl"
-        Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
-        
-        # Configure other settings
-        Write-ColorOutput -Message "Configuring Backend Ingress" -Color Green
-        az containerapp ingress update `
+    # Only create if app doesn't exist or was deleted
+    if (-not $backendAppRunning) {
+        Write-ColorOutput -Message "Deploying Backend Container App" -Color Green
+        az containerapp create `
             --name $BACKEND_CONTAINER_APP_NAME `
             --resource-group $RESOURCE_GROUP `
+            --environment $CONTAINER_ENV_NAME `
+            --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}" `
+            --registry-server "${ACR_NAME}.azurecr.io" `
+            --registry-username $ACR_USERNAME `
+            --registry-password $ACR_PASSWORD `
             --target-port 8000 `
-            --transport auto
+            --ingress external `
+            --min-replicas 1 `
+            --max-replicas 10 `
+            --cpu 1.0 `
+            --memory 2.0Gi `
+            --env-vars `
+              INTERFACE=all `
+              PORT=8000 `
+              QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io `
+              QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw `
+              AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
+              AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
+              AZURE_OPENAI_API_VERSION=2024-08-01-preview `
+              AZURE_OPENAI_DEPLOYMENT=gpt-4o `
+              AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small `
+              OPENAI_API_TYPE=azure `
+              OPENAI_API_VERSION=2024-08-01-preview `
+              EMBEDDING_MODEL=text-embedding-3-small `
+              LLM_MODEL=gpt-4o `
+              SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
+              SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
+              COLLECTION_NAME=Information `
+              ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d `
+              ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt `
+              PYTHONUNBUFFERED=1 `
+              PYTHONPATH=/app `
+              STT_MODEL_NAME=whisper `
+              TTS_MODEL_NAME=eleven_flash_v2_5 `
+              CHAINLIT_FORCE_POLLING=true `
+              CHAINLIT_NO_WEBSOCKET=true `
+              CHAINLIT_POLLING_MAX_WAIT=5000
+
+        if (-not (Test-CommandSuccess -SuccessMessage "Backend Container App deployed successfully" -ErrorMessage "Failed to deploy Backend Container App")) {
+            Write-ColorOutput -Message "Failed to deploy backend, continuing with deployment" -Color Yellow -Prefix "⚠️"
+        } else {
+            # Update URL and configure settings
+            $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+            $backendAppUrl = "https://$backendAppUrl"
+            Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
             
-        Write-ColorOutput -Message "Configuring CORS for Backend" -Color Green
-        az containerapp ingress cors update `
-            --name $BACKEND_CONTAINER_APP_NAME `
-            --resource-group $RESOURCE_GROUP `
-            --allowed-origins "*" `
-            --allowed-methods "GET,POST,PUT,DELETE,OPTIONS" `
-            --allowed-headers "*" `
-            --max-age 7200 `
-            --allow-credentials true
+            # Configure other settings
+            Write-ColorOutput -Message "Configuring Backend Ingress" -Color Green
+            az containerapp ingress update `
+                --name $BACKEND_CONTAINER_APP_NAME `
+                --resource-group $RESOURCE_GROUP `
+                --target-port 8000 `
+                --transport auto
+                
+            Write-ColorOutput -Message "Configuring CORS for Backend" -Color Green
+            az containerapp ingress cors update `
+                --name $BACKEND_CONTAINER_APP_NAME `
+                --resource-group $RESOURCE_GROUP `
+                --allowed-origins "*" `
+                --allowed-methods "GET,POST,PUT,DELETE,OPTIONS" `
+                --allowed-headers "*" `
+                --max-age 7200 `
+                --allow-credentials true
+        }
     }
 } else {
     # Get existing backend URL for frontend configuration
@@ -708,59 +748,159 @@ if ($backendAppNeedsUpdate) {
 }
 
 # Step 9: Delete and recreate frontend if needed
-if ($frontendAppNeedsUpdate) {
+if ($frontendAppNeedsUpdate -or $ForceUpdate) {
     # Use the already known frontendImageExists variable from Step 4
     if ($frontendImageExists) {
-        if ($frontendAppRunning) {
+        if ($frontendAppRunning -and (-not $ForceUpdate)) {
             Write-ColorOutput -Message "Deleting misconfigured frontend container app" -Color Yellow -Prefix "→"
             az containerapp delete --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
             if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app deleted successfully" -ErrorMessage "Failed to delete frontend container app")) {
                 Write-ColorOutput -Message "Continuing despite frontend deletion failure" -Color Yellow -Prefix "⚠️"
             }
+        } elseif ($frontendAppRunning -and $ForceUpdate) {
+            # Update the existing container app instead of deleting and recreating
+            Write-ColorOutput -Message "Updating existing frontend container app to image version: $TAG" -Color Yellow -Prefix "→"
+            az containerapp update `
+                --name $FRONTEND_CONTAINER_APP_NAME `
+                --resource-group $RESOURCE_GROUP `
+                --image "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG}" `
+                --env-vars NEXT_PUBLIC_API_URL=$backendAppUrl
+
+            if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app updated successfully" -ErrorMessage "Failed to update frontend container app")) {
+                Write-ColorOutput -Message "Failed to update frontend, will attempt to recreate" -Color Yellow -Prefix "⚠️"
+                
+                # If update fails, delete and recreate
+                az containerapp delete --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+                if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app deleted successfully" -ErrorMessage "Failed to delete frontend container app")) {
+                    Write-ColorOutput -Message "Continuing despite frontend deletion failure" -Color Yellow -Prefix "⚠️"
+                }
+                $frontendAppRunning = $false
+            } else {
+                # Get URL of updated app
+                $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+                $frontendAppUrl = "https://$frontendAppUrl"
+                Write-ColorOutput -Message "Frontend App updated to version $TAG" -Color Green -Prefix "✅"
+                Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
+            }
         }
         
-        Write-ColorOutput -Message "Deploying Frontend Container App" -Color Green
-        az containerapp create `
-            --name $FRONTEND_CONTAINER_APP_NAME `
-            --resource-group $RESOURCE_GROUP `
-            --environment $CONTAINER_ENV_NAME `
-            --image "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG}" `
-            --registry-server "${ACR_NAME}.azurecr.io" `
-            --registry-username $ACR_USERNAME `
-            --registry-password $ACR_PASSWORD `
-            --target-port 3000 `
-            --ingress external `
-            --min-replicas 1 `
-            --max-replicas 5 `
-            --cpu 0.5 `
-            --memory 1.0Gi `
-            --env-vars `
-              NEXT_PUBLIC_API_URL=$backendAppUrl `
-              NEXT_PUBLIC_SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-              NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q `
-              SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
-              NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
-              NEXT_PUBLIC_AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
-              NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=gpt-4o `
-              NEXT_PUBLIC_EMBEDDING_MODEL=text-embedding-3-small `
-              NEXT_PUBLIC_LLM_MODEL=gpt-4o `
-              NEXT_PUBLIC_COLLECTION_NAME=Information `
-              NODE_ENV=production
+        # Only create if app doesn't exist or was deleted
+        if (-not $frontendAppRunning) {
+            Write-ColorOutput -Message "Deploying Frontend Container App" -Color Green
+            az containerapp create `
+                --name $FRONTEND_CONTAINER_APP_NAME `
+                --resource-group $RESOURCE_GROUP `
+                --environment $CONTAINER_ENV_NAME `
+                --image "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG}" `
+                --registry-server "${ACR_NAME}.azurecr.io" `
+                --registry-username $ACR_USERNAME `
+                --registry-password $ACR_PASSWORD `
+                --target-port 3000 `
+                --ingress external `
+                --min-replicas 1 `
+                --max-replicas 5 `
+                --cpu 0.5 `
+                --memory 1.0Gi `
+                --env-vars `
+                  NEXT_PUBLIC_API_URL=$backendAppUrl `
+                  NEXT_PUBLIC_SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
+                  NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q7Q `
+                  SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
+                  NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
+                  NEXT_PUBLIC_AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
+                  NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=gpt-4o `
+                  NEXT_PUBLIC_EMBEDDING_MODEL=text-embedding-3-small `
+                  NEXT_PUBLIC_LLM_MODEL=gpt-4o `
+                  NEXT_PUBLIC_COLLECTION_NAME=Information `
+                  NODE_ENV=production
 
-        if (-not (Test-CommandSuccess -SuccessMessage "Frontend Container App deployed successfully" -ErrorMessage "Failed to deploy Frontend Container App")) {
-            Write-ColorOutput -Message "Frontend deployment failed, continuing with backend only" -Color Yellow -Prefix "⚠️"
-        } else {
-            $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
-            $frontendAppUrl = "https://$frontendAppUrl"
-            Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
+            if (-not (Test-CommandSuccess -SuccessMessage "Frontend Container App deployed successfully" -ErrorMessage "Failed to deploy Frontend Container App")) {
+                Write-ColorOutput -Message "Frontend deployment failed, continuing with backend only" -Color Yellow -Prefix "⚠️"
+            } else {
+                $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+                $frontendAppUrl = "https://$frontendAppUrl"
+                Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
+            }
         }
     } else {
         Write-ColorOutput -Message "Frontend image does not exist in ACR. Cannot deploy frontend." -Color Yellow -Prefix "⚠️"
+    }
+} else {
+    # Get existing frontend URL
+    $frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+    if ($frontendExists) {
+        $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+        $frontendAppUrl = "https://$frontendAppUrl"
+        Write-ColorOutput -Message "Using existing Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
+        
+        # Add check to see if versions match and report
+        $deployedImageRef = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+        if ($deployedImageRef -like "*:$TAG") {
+            Write-ColorOutput -Message "Frontend is already at version $TAG" -Color Green -Prefix "✅"
+        } else {
+            Write-ColorOutput -Message "Frontend is at version $($deployedImageRef.Split(':')[1]) but local is $TAG" -Color Yellow -Prefix "⚠️"
+            Write-ColorOutput -Message "Use -ForceUpdate to update to latest version" -Color Yellow -Prefix "→"
+        }
     }
 }
 
 # Step 10: Deployment Summary
 Write-ColorOutput -Message "Deployment Summary" -Color Green -Prefix "📋"
+
+# Step 11: Configure Custom Domain for Frontend App
+Write-ColorOutput -Message "Configuring Custom Domain for Frontend" -Color Green -Prefix "🔗"
+
+# Define custom domain parameters
+$CUSTOM_DOMAIN = "demo.evelinaai.com"
+
+# Check if frontend exists for custom domain setup
+$frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($frontendExists) {
+    # Get the domain verification ID
+    $verificationId = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.customDomainVerificationId" -o tsv
+    
+    Write-ColorOutput -Message "Domain verification ID: $verificationId" -Color Yellow -Prefix "→"
+    Write-ColorOutput -Message "Before proceeding, ensure these DNS records are set up:" -Color Yellow -Prefix "⚠️"
+    Write-ColorOutput -Message "1. A CNAME record for 'demo' pointing to your container app FQDN" -Color White
+    Write-ColorOutput -Message "2. A TXT record for 'asuid.demo' with value '$verificationId'" -Color White
+    
+    # Prompt user to confirm DNS records are set up
+    $confirmDNS = Read-Host -Prompt "Have you configured the required DNS records? (Y/N)"
+    
+    if ($confirmDNS.ToLower() -eq "y") {
+        # Add the custom domain to the frontend container app
+        Write-ColorOutput -Message "Adding custom domain to frontend app" -Color Yellow -Prefix "→"
+        az containerapp hostname add --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_APP_NAME
+        
+        if (-not (Test-CommandSuccess -SuccessMessage "Custom domain added successfully" -ErrorMessage "Failed to add custom domain")) {
+            Write-ColorOutput -Message "Failed to add custom domain, check DNS records and try again" -Color Red -Prefix "❌"
+        } else {
+            # Bind a managed certificate to the custom domain
+            Write-ColorOutput -Message "Binding managed certificate to custom domain" -Color Yellow -Prefix "→"
+            az containerapp hostname bind --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_APP_NAME --environment $CONTAINER_ENV_NAME --validation-method CNAME
+            
+            if (-not (Test-CommandSuccess -SuccessMessage "Managed certificate bound successfully" -ErrorMessage "Failed to bind managed certificate")) {
+                Write-ColorOutput -Message "Failed to bind managed certificate, but domain may still be added" -Color Yellow -Prefix "⚠️"
+            } else {
+                Write-ColorOutput -Message "Custom domain and managed certificate configured successfully!" -Color Green -Prefix "✅"
+                Write-ColorOutput -Message "Custom domain URL: https://$CUSTOM_DOMAIN" -Color Cyan -Prefix "🔗"
+                
+                # Wait for certificate provisioning (this can take some time)
+                Write-ColorOutput -Message "Certificate provisioning in progress - this may take 5-15 minutes" -Color Yellow -Prefix "⏳"
+                Write-ColorOutput -Message "You can check status in Azure Portal while waiting" -Color Yellow -Prefix "→"
+            }
+        }
+    } else {
+        Write-ColorOutput -Message "Custom domain setup skipped. Configure DNS records and run script again." -Color Yellow -Prefix "⚠️"
+        Write-ColorOutput -Message "Required DNS records:" -Color White
+        Write-ColorOutput -Message "1. CNAME record: demo.evelinaai.com → $frontendAppUrl" -Color White
+        Write-ColorOutput -Message "2. TXT record: asuid.demo → $verificationId" -Color White
+    }
+} else {
+    Write-ColorOutput -Message "Frontend app does not exist, skipping custom domain setup" -Color Yellow -Prefix "⚠️"
+}
+
+# Step 12: Deployment Summary
 Write-Host ""
 Write-Host "Backend Application:" -ForegroundColor Cyan
 Write-Host "  URL: $backendAppUrl" -ForegroundColor White
@@ -776,6 +916,9 @@ if ($frontendExists) {
     
     Write-Host "Frontend Application:" -ForegroundColor Cyan
     Write-Host "  URL: $frontendAppUrl" -ForegroundColor White
+    if (az containerapp hostname list --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "[?hostname==''$CUSTOM_DOMAIN'']" -o tsv) {
+        Write-Host "  Custom Domain: https://$CUSTOM_DOMAIN" -ForegroundColor White
+    }
     Write-Host ""
 }
 
@@ -792,7 +935,7 @@ if ($CleanupLocalImages) {
     Write-ColorOutput -Message "Local Docker images cleanup complete" -Color Green -Prefix "✅"
 }
 
-# Step 11: Deployment Verification
+# Step 13: Deployment Verification
 Write-ColorOutput -Message "Verifying Application Deployment" -Color Green -Prefix "🔍"
 
 # Verify Backend Deployment
@@ -840,4 +983,36 @@ if ($frontendExists) {
     }
 }
 
-Write-ColorOutput -Message "Deployment Verification Complete" -Color Green -Prefix "🚀" 
+# Step 13: Version Verification
+Write-ColorOutput -Message "Verifying Application Versions" -Color Green -Prefix "🔍"
+
+# Check backend version
+$backendExists = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($backendExists) {
+    $backendDeployedImageRef = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $backendDeployedVersion = $backendDeployedImageRef.Split(':')[1]
+    
+    if ($backendDeployedVersion -eq $TAG) {
+        Write-ColorOutput -Message "Backend version verification: SUCCESS ($backendDeployedVersion)" -Color Green -Prefix "✅"
+    } else {
+        Write-ColorOutput -Message "Backend version verification: MISMATCH (Deployed: $backendDeployedVersion, Expected: $TAG)" -Color Red -Prefix "❌"
+        Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+    }
+}
+
+# Check frontend version
+$frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($frontendExists) {
+    $frontendDeployedImageRef = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $frontendDeployedVersion = $frontendDeployedImageRef.Split(':')[1]
+    
+    if ($frontendDeployedVersion -eq $TAG) {
+        Write-ColorOutput -Message "Frontend version verification: SUCCESS ($frontendDeployedVersion)" -Color Green -Prefix "✅"
+    } else {
+        Write-ColorOutput -Message "Frontend version verification: MISMATCH (Deployed: $frontendDeployedVersion, Expected: $TAG)" -Color Red -Prefix "❌"
+        Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+    }
+}
+
+# Step 14: Deployment Verification Complete
+Write-ColorOutput -Message "Deployment and Version Verification Complete" -Color Green -Prefix "🚀" 

@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, Container, Grid, Paper, Typography, Button, IconButton, Stack, LinearProgress, Breadcrumbs, Link, Divider } from '@mui/material';
+import { Box, Container, Grid, Paper, Typography, Button, IconButton, Stack, LinearProgress, Breadcrumbs, Link, Divider, Alert } from '@mui/material';
 import { 
   Notifications, 
   Person, 
@@ -13,8 +13,10 @@ import {
   Home as HomeIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { fetchPatientStatistics } from '@/lib/supabase/patientService';
 
-// Mock data - In real app, this would come from an API
+// Mock data - Will be replaced by Supabase data
 const mockData = {
   stats: {
     activeUsers: 148,
@@ -248,6 +250,36 @@ const QuickActions = () => (
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [stats, setStats] = useState(mockData.stats);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch dashboard statistics from Supabase
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        setLoading(true);
+        const patientStats = await fetchPatientStatistics();
+        
+        if (patientStats) {
+          setStats({
+            ...mockData.stats, // Keep other stats for now
+            activeUsers: patientStats.activeUsers,
+            pendingAppointments: patientStats.pendingAppointments,
+            criticalAlerts: patientStats.criticalAlerts,
+          });
+        }
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+        setError('Failed to load dashboard data');
+        // Keep using mock data as fallback
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboardData();
+  }, []);
 
   return (
     <Container maxWidth="xl">
@@ -276,49 +308,60 @@ export default function DashboardPage() {
 
         <Divider sx={{ mb: 4 }} />
 
-        <Grid container spacing={3}>
-          {/* Stats Section */}
-          <Grid item xs={12} md={4}>
-            <StatCard 
-              title="Active Patients"
-              value={mockData.stats.activeUsers}
-              icon={<Person sx={{ fontSize: 24 }} />}
-              color="primary"
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <StatCard 
-              title="Pending Appointments"
-              value={mockData.stats.pendingAppointments}
-              icon={<CalendarMonth sx={{ fontSize: 24 }} />}
-              color="warning"
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <StatCard 
-              title="Critical Alerts"
-              value={mockData.stats.criticalAlerts}
-              icon={<Notifications sx={{ fontSize: 24 }} />}
-              color="error"
-            />
-          </Grid>
+        {loading ? (
+          <Box sx={{ width: '100%', mt: 4 }}>
+            <LinearProgress />
+            <Typography sx={{ mt: 2, textAlign: 'center' }}>Loading dashboard data...</Typography>
+          </Box>
+        ) : error ? (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        ) : (
+          <Grid container spacing={3}>
+            {/* Stats Section */}
+            <Grid item xs={12} md={4}>
+              <StatCard 
+                title="Active Patients"
+                value={stats.activeUsers}
+                icon={<Person sx={{ fontSize: 24 }} />}
+                color="primary"
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <StatCard 
+                title="Pending Appointments"
+                value={stats.pendingAppointments}
+                icon={<CalendarMonth sx={{ fontSize: 24 }} />}
+                color="warning"
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <StatCard 
+                title="Critical Alerts"
+                value={stats.criticalAlerts}
+                icon={<Notifications sx={{ fontSize: 24 }} />}
+                color="error"
+              />
+            </Grid>
 
-          {/* Activity Section */}
-          <Grid item xs={12} md={8}>
-            <ActivityCard 
-              title="Recent Activity"
-              items={mockData.recentActivity}
-            />
-          </Grid>
+            {/* Activity Section */}
+            <Grid item xs={12} md={8}>
+              <ActivityCard 
+                title="Recent Activity"
+                items={mockData.recentActivity}
+              />
+            </Grid>
 
-          {/* Notifications Section */}
-          <Grid item xs={12} md={4}>
-            <Stack spacing={3}>
-              <NotificationsCard notifications={mockData.notifications} />
-              <QuickActions />
-            </Stack>
+            {/* Notifications Section */}
+            <Grid item xs={12} md={4}>
+              <Stack spacing={3}>
+                <NotificationsCard notifications={mockData.notifications} />
+                <QuickActions />
+              </Stack>
+            </Grid>
           </Grid>
-        </Grid>
+        )}
       </Box>
     </Container>
   );

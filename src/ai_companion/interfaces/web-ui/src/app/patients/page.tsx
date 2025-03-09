@@ -18,8 +18,9 @@ import {
 } from '@mui/icons-material';
 import { PatientTable } from '@/components/patients/patienttable';
 import { PatientFilter } from '@/components/patients/patientfilter';
-import { mockPatients, doctors } from '@/lib/mockData';
+import { doctors } from '@/lib/mockData';
 import { Patient, PatientStatus } from '@/lib/supabase/types';
+import { fetchAllPatients } from '@/lib/supabase/patientService';
 
 /**
  * Patients Page
@@ -29,15 +30,42 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load patient data
+  // Load patient data from Supabase
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setPatients(mockPatients);
-      setFilteredPatients(mockPatients);
-      setLoading(false);
-    }, 500);
+    async function loadPatients() {
+      try {
+        setLoading(true);
+        const data = await fetchAllPatients();
+        
+        if (data.length === 0) {
+          // If no data is returned from Supabase, use mock data as fallback
+          // This can be removed once the Supabase database is populated
+          import('@/lib/mockData').then(({ mockPatients }) => {
+            setPatients(mockPatients);
+            setFilteredPatients(mockPatients);
+            setLoading(false);
+          });
+        } else {
+          setPatients(data);
+          setFilteredPatients(data);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Error loading patients:', err);
+        setError('Failed to load patient data. Please try again later.');
+        
+        // Fall back to mock data in case of error
+        import('@/lib/mockData').then(({ mockPatients }) => {
+          setPatients(mockPatients);
+          setFilteredPatients(mockPatients);
+          setLoading(false);
+        });
+      }
+    }
+
+    loadPatients();
   }, []);
 
   // Handle filter changes
