@@ -16,9 +16,8 @@ import {
   Home as HomeIcon, 
   Person as PersonIcon 
 } from '@mui/icons-material';
-import { PatientTable } from '@/components/patients/PatientTable';
-import { PatientFilter } from '@/components/patients/PatientFilter';
-import { PatientAnalytics } from '@/components/patients/PatientAnalytics';
+import { PatientTable } from '@/components/patients/patienttable';
+import { PatientFilter } from '@/components/patients/patientfilter';
 import { mockPatients, doctors } from '@/lib/mockData';
 import { Patient, PatientStatus } from '@/lib/supabase/types';
 
@@ -114,9 +113,6 @@ export default function PatientsPage() {
         </Box>
 
         <Divider sx={{ mb: 4 }} />
-        
-        {/* Analytics section */}
-        <PatientAnalytics patients={filteredPatients} />
         
         {/* Filters */}
         <PatientFilter 

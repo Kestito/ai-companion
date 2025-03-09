@@ -4,7 +4,7 @@
  * Contains all components related to patient management
  */
 
-export * from './PatientStatusIndicator';
-export * from './PatientTable';
-export * from './PatientFilter';
-export * from './PatientAnalytics'; 
+export * from './patientstatusindicator';
+export * from './patienttable';
+export * from './patientfilter';
+export * from './patientanalytics'; 

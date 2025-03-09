@@ -6,7 +6,7 @@
 $RESOURCE_GROUP = "evelina-rg-20250308115110"
 $ACR_NAME = "evelinaacr8677"
 $BACKEND_CONTAINER_APP_NAME = "backend-app"
-$FRONTEND_CONTAINER_APP_NAME = "web-ui-container-app"
+$FRONTEND_CONTAINER_APP_NAME = "frontend-app"
 $CONTAINER_ENV_NAME = "production-env-20250308115110"
 
 # Color output function

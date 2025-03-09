@@ -35,7 +35,7 @@ import {
   ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
 import { useParams, useRouter } from 'next/navigation';
-import { PatientStatusIndicator } from '@/components/patients/PatientStatusIndicator';
+import { PatientStatusIndicator } from '@/components/patients/patientstatusindicator';
 import { mockPatients } from '@/lib/mockData';
 import { Patient } from '@/lib/supabase/types';
 

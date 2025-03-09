@@ -21,7 +21,7 @@ import {
   Edit as EditIcon,
   MoreVert as MoreVertIcon
 } from '@mui/icons-material';
-import { PatientStatusIndicator } from './PatientStatusIndicator';
+import { PatientStatusIndicator } from './patientstatusindicator';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 

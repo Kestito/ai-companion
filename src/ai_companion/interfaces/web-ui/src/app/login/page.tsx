@@ -97,19 +97,15 @@ function LoginForm() {
         }}
       >
         <Image
-          src="/logo.svg"
+          src="/evelinalogo.png"
           alt="Evelina AI Logo"
-          width={120}
-          height={120}
+          width={180}
+          height={180}
           priority
         />
 
-        <Typography component="h1" variant="h4" align="center" gutterBottom>
-          Evelina AI
-        </Typography>
-
         <Typography variant="subtitle1" align="center" color="text.secondary" gutterBottom>
-          Interaktyvios pacientų priežiūros informacinė sistema
+          Interactive patient care information system
         </Typography>
 
         {error && (
@@ -205,6 +201,7 @@ function LoginForm() {
               fullWidth
               variant="outlined"
               startIcon={<Google />}
+              disabled
             >
               Google Sign In
             </Button>
@@ -212,6 +209,7 @@ function LoginForm() {
               fullWidth
               variant="outlined"
               startIcon={<Microsoft />}
+              disabled
             >
               Microsoft Sign In
             </Button>
@@ -230,14 +228,14 @@ function LoginForm() {
             <Button
               size="small"
               variant={language === 'lt' ? 'contained' : 'text'}
-              onClick={() => handleLanguageChange('lt')}
+              disabled
             >
               LT
             </Button>
             <Button
               size="small"
               variant={language === 'en' ? 'contained' : 'text'}
-              onClick={() => handleLanguageChange('en')}
+              disabled
             >
               EN
             </Button>

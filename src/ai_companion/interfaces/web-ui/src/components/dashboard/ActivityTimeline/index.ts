@@ -1,1 +1,1 @@
-export * from './ActivityTimeline.tsx';
+export * from './activitytimeline';

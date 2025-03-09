@@ -1,8 +1,8 @@
 'use client';
 
 import { Box } from '@mui/material';
-import { ThemeProvider } from '../providers/ThemeProvider';
-import { NavigationProvider } from '../providers/NavigationProvider';
+import { ThemeProvider } from '../providers/themeprovider';
+import { NavigationProvider } from '../providers/navigationprovider';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { usePathname } from 'next/navigation';

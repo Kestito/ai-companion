@@ -6,12 +6,19 @@ interface StatusProps {
   status: UserStatus
 }
 
+type StatusConfig = {
+  label: string;
+  color: 'success' | 'error' | 'warning';
+}
+
 export const UserStatusIndicator = ({ status }: StatusProps) => {
-  const statusConfig = {
+  const statusMap: Record<UserStatus, StatusConfig> = {
     active: { label: 'Active', color: 'success' },
     inactive: { label: 'Inactive', color: 'error' },
     pending: { label: 'Pending', color: 'warning' }
-  }[status]
+  }
+
+  const statusConfig = statusMap[status]
 
   return (
     <Chip

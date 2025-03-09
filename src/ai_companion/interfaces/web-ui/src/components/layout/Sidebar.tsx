@@ -31,7 +31,7 @@ import {
 } from '@mui/icons-material';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { useNavigation } from '../providers/NavigationProvider';
+import { useNavigation } from '../providers/navigationprovider';
 
 const DRAWER_WIDTH = 280;
 
@@ -91,8 +91,8 @@ export default function Sidebar() {
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
         {isSidebarOpen && (
           <Image
-            src="/logo.svg"
-            alt="AI Companion Logo"
+            src="/evelinalogo.png"
+            alt="Evelina AI Logo"
             width={40}
             height={40}
             priority

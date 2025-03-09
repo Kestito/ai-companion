@@ -1,1 +1,1 @@
-export * from './MedicalIcon.tsx';
+export * from './medicalicon';

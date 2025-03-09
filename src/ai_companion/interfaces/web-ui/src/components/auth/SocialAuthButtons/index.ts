@@ -1,1 +1,1 @@
-export * from './SocialAuthButtons.tsx)';
+export * from './socialauthbuttons';

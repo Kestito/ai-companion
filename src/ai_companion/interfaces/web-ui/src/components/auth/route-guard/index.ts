@@ -1,1 +1,1 @@
-export * from './route-guard.tsx';
+export * from './route-guard';

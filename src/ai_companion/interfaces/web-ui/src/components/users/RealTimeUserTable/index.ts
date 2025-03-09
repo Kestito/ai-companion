@@ -1,1 +1,1 @@
-export * from './RealTimeUserTable.tsx';
+export * from './realtimeusertable';

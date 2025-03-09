@@ -94,7 +94,7 @@ export function PatientFilter({ onFilterChange, doctors }: PatientFilterProps) {
   };
 
   const clearFilters = () => {
-    const resetFilters = {
+    const resetFilters: FilterOptions = {
       search: '',
       status: '',
       doctor: '',

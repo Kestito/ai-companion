@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabase/client'
-// OR with the path alias (once configured):
-// import { supabase } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 
 interface User {

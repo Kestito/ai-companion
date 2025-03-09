@@ -1,1 +1,1 @@
-export * from './StatsOverview.tsx';
+export * from './statsoverview';

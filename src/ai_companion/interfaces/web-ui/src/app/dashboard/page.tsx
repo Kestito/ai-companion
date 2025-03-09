@@ -250,7 +250,7 @@ export default function DashboardPage() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4, mt: 2 }}>
-      <Box sx={{ mb: 5, pt: 1 }}>
+      <Box sx={{ mb: 8, pt: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom fontWeight="500">
           Dashboard
         </Typography>

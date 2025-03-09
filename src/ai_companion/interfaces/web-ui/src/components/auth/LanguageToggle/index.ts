@@ -1,1 +1,1 @@
-export * from './LanguageToggle.tsx)';
+export * from './languagetoggle';

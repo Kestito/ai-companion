@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '../../lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import { CircularProgress, Box } from '@mui/material'
 
 export const RouteGuard = ({ children }: { children: React.ReactNode }) => {

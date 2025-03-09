@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { Button, Stack } from '@mui/material'
 import GoogleIcon from '@mui/icons-material/Google'
-import MicrosoftIcon from '@mui/icons-material/Windows'
+import MicrosoftIcon from '@mui/icons-material/Microsoft'
 
 export const SocialAuthButtons = () => {
   const handleAuth = async (provider: 'google' | 'azure') => {

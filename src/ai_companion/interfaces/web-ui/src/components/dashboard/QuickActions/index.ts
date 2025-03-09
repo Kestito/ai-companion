@@ -1,1 +1,1 @@
-export * from './QuickActions.tsx';
+export * from './quickactions';

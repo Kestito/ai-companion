@@ -1,1 +1,1 @@
-export * from './UserStatusIndicator.tsx)';
+export * from './userstatusindicator';
