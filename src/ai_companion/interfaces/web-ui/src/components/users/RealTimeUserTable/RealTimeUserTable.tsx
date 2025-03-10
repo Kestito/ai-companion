@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import { getSupabaseClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
 
 interface User {
@@ -16,6 +16,7 @@ const RealTimeUserTable = () => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
+        const supabase = getSupabaseClient();
         const { data, error } = await supabase
           .from('users')
           .select('*')
@@ -32,6 +33,7 @@ const RealTimeUserTable = () => {
     
     fetchUsers()
     
+    const supabase = getSupabaseClient();
     const channel = supabase
       .channel('users')
       .on('postgres_changes', {

@@ -1,3 +1,5 @@
+"use client";
+
 import { PatientStatus } from '@/lib/supabase/types';
 import { Tooltip } from '@mui/material';
 
@@ -20,14 +22,8 @@ export function PatientStatusIndicator({ status, showLabel = true }: PatientStat
         return { color: 'bg-blue-500', label: 'Stable', description: 'Patient is in stable condition' };
       case 'critical':
         return { color: 'bg-red-600', label: 'Critical', description: 'Patient requires immediate attention' };
-      case 'moderate':
-        return { color: 'bg-yellow-500', label: 'Moderate', description: 'Patient requires regular monitoring' };
-      case 'recovering':
-        return { color: 'bg-blue-500', label: 'Recovering', description: 'Patient is recovering from treatment' };
       case 'discharged':
         return { color: 'bg-gray-400', label: 'Discharged', description: 'Patient has been discharged' };
-      case 'scheduled':
-        return { color: 'bg-purple-500', label: 'Scheduled', description: 'Patient is scheduled for admission/procedure' };
       default:
         return { color: 'bg-gray-500', label: status, description: 'Unknown status' };
     }

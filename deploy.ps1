@@ -5,7 +5,7 @@ param (
     [switch]$SkipChangeDetection = $false,  # Add parameter to skip change detection
     [switch]$AutoIncrement = $true,        # Auto-increment version by default
     [switch]$CleanupLocalImages = $false,    # Add parameter to clean up local images after deployment
-    [switch]$ForceUpdate = $true           # Force update container apps to latest image by default
+    [switch]$ForceUpdate = $false           # Force update container apps to latest image by default
 )
 
 # Set variables

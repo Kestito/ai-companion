@@ -1,3 +1,5 @@
+"use client";
+
 import { Patient, PatientStatus } from '@/lib/supabase/types';
 import { 
   Table, 
@@ -22,8 +24,9 @@ import {
   MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { PatientStatusIndicator } from './patientstatusindicator';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useLogger } from '@/hooks/useLogger';
 
 interface PatientTableProps {
   patients: Patient[];
@@ -39,17 +42,43 @@ interface PatientTableProps {
  */
 export function PatientTable({ patients, loading = false }: PatientTableProps) {
   const router = useRouter();
+  const logger = useLogger({ component: 'PatientTable' });
+  
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [selected, setSelected] = useState<string[]>([]);
 
+  // Log initial mount and patient data
+  useEffect(() => {
+    logger.debug('PatientTable mounted', {
+      totalPatients: patients.length,
+      loading,
+    });
+  }, []);
+
+  // Log when patient data changes
+  useEffect(() => {
+    logger.debug('Patient data updated', {
+      totalPatients: patients.length,
+      currentPage: page,
+      displayedPatients: Math.min(rowsPerPage, patients.length - page * rowsPerPage),
+    });
+  }, [patients, page, rowsPerPage]);
+
   const handleSelectAllClick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    logger.debug('Select all patients clicked', {
+      checked: event.target.checked,
+      totalPatients: patients.length,
+    });
+
     if (event.target.checked) {
       const newSelected = patients.map((p) => p.id);
       setSelected(newSelected);
+      logger.info('All patients selected', { count: newSelected.length });
       return;
     }
     setSelected([]);
+    logger.info('All patients deselected');
   };
 
   const handleClick = (event: React.MouseEvent<unknown>, id: string) => {
@@ -58,27 +87,55 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
 
     if (selectedIndex === -1) {
       newSelected = newSelected.concat(selected, id);
+      logger.debug('Patient selected', { patientId: id });
     } else if (selectedIndex === 0) {
       newSelected = newSelected.concat(selected.slice(1));
+      logger.debug('First patient deselected', { patientId: id });
     } else if (selectedIndex === selected.length - 1) {
       newSelected = newSelected.concat(selected.slice(0, -1));
+      logger.debug('Last patient deselected', { patientId: id });
     } else if (selectedIndex > 0) {
       newSelected = newSelected.concat(
         selected.slice(0, selectedIndex),
         selected.slice(selectedIndex + 1),
       );
+      logger.debug('Patient deselected', { patientId: id, index: selectedIndex });
     }
 
+    logger.info('Selection updated', {
+      previousCount: selected.length,
+      newCount: newSelected.length,
+    });
     setSelected(newSelected);
   };
 
   const handleChangePage = (event: unknown, newPage: number) => {
+    logger.info('Page changed', {
+      previousPage: page,
+      newPage,
+      rowsPerPage,
+    });
     setPage(newPage);
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
+    const newRowsPerPage = parseInt(event.target.value, 10);
+    logger.info('Rows per page changed', {
+      previousRowsPerPage: rowsPerPage,
+      newRowsPerPage,
+    });
+    setRowsPerPage(newRowsPerPage);
     setPage(0);
+  };
+
+  const handlePatientView = (patientId: string) => {
+    logger.info('Viewing patient details', { patientId });
+    router.push(`/patients/${patientId}`);
+  };
+
+  const handlePatientEdit = (patientId: string) => {
+    logger.info('Editing patient', { patientId });
+    router.push(`/patients/${patientId}/edit`);
   };
 
   const isSelected = (id: string) => selected.indexOf(id) !== -1;
@@ -90,6 +147,7 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
   );
 
   if (loading) {
+    logger.debug('Rendering loading state');
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <Typography>Loading patients...</Typography>
@@ -98,12 +156,21 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
   }
 
   if (patients.length === 0) {
+    logger.debug('Rendering empty state');
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <Typography>No patients found</Typography>
       </Box>
     );
   }
+
+  logger.debug('Rendering patient table', {
+    totalPatients: patients.length,
+    displayedPatients: displayedPatients.length,
+    page,
+    rowsPerPage,
+    selectedCount: selected.length,
+  });
 
   return (
     <Paper sx={{ width: '100%', mb: 2, overflow: 'hidden' }}>
@@ -146,7 +213,12 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
                       inputProps={{ 'aria-labelledby': `patient-${patient.id}` }}
                     />
                   </TableCell>
-                  <TableCell component="th" scope="row" onClick={() => router.push(`/patients/${patient.id}`)}>
+                  <TableCell 
+                    component="th" 
+                    scope="row" 
+                    onClick={() => handlePatientView(patient.id)}
+                    sx={{ cursor: 'pointer' }}
+                  >
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                       <Avatar sx={{ mr: 2, bgcolor: 'primary.main' }}>
                         {patient.name.charAt(0)}
@@ -173,17 +245,28 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
                   <TableCell>
                     <Box sx={{ display: 'flex' }}>
                       <Tooltip title="View Patient">
-                        <IconButton size="small" onClick={() => router.push(`/patients/${patient.id}`)}>
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handlePatientView(patient.id)}
+                        >
                           <VisibilityIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Edit Patient">
-                        <IconButton size="small" onClick={() => router.push(`/patients/${patient.id}/edit`)}>
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handlePatientEdit(patient.id)}
+                        >
                           <EditIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="More Options">
-                        <IconButton size="small">
+                        <IconButton 
+                          size="small"
+                          onClick={() => {
+                            logger.debug('More options clicked', { patientId: patient.id });
+                          }}
+                        >
                           <MoreVertIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

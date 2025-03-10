@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 export const RouteGuard = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
@@ -10,6 +10,7 @@ export const RouteGuard = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     setIsClient(true);
+    const supabase = getSupabaseClient();
     const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         router.push('/login');

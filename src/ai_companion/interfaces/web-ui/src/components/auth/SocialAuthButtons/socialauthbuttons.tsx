@@ -1,10 +1,11 @@
-import { supabase } from '@/lib/supabase/client'
+import { getSupabaseClient } from '@/lib/supabase/client'
 import { Button, Stack } from '@mui/material'
 import GoogleIcon from '@mui/icons-material/Google'
 import MicrosoftIcon from '@mui/icons-material/Microsoft'
 
 export const SocialAuthButtons = () => {
   const handleAuth = async (provider: 'google' | 'azure') => {
+    const supabase = getSupabaseClient();
     await supabase.auth.signInWithOAuth({
       provider,
       options: {

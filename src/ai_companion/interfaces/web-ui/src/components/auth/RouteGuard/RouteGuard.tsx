@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '@/lib/supabase/client'
+import { getSupabaseClient } from '@/lib/supabase/client'
 import { CircularProgress, Box } from '@mui/material'
 
 export const RouteGuard = ({ children }: { children: React.ReactNode }) => {
@@ -8,6 +8,7 @@ export const RouteGuard = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const supabase = getSupabaseClient();
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session && router.pathname !== '/login') {

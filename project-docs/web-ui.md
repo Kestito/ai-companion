@@ -12,6 +12,7 @@ The Web UI is a modern, responsive interface built with Next.js, TypeScript, and
 - Real-time chat with AI
 - History management and search
 - Document upload and management
+- Patient information display for Telegram and WhatsApp messages
 
 ## Technology Stack
 
@@ -81,6 +82,9 @@ web-ui/
 ├── src/
 │   ├── app/           # Next.js App Router pages
 │   ├── components/    # Reusable UI components
+│   │   ├── chat/      # Chat-related components including PatientInfo
+│   │   ├── patients/  # Patient management components
+│   │   └── ...        # Other component categories
 │   ├── hooks/         # Custom React hooks
 │   ├── lib/           # Utility libraries and clients
 │   ├── store/         # State management
@@ -102,6 +106,16 @@ When adding new features to the Web UI:
 2. Ensure components are properly typed with TypeScript
 3. Use Tailwind CSS for styling
 4. Add necessary translations to the localization files
+
+### Chat Interface Features
+
+The chat interface includes the following features:
+
+1. **Message Display**: Shows messages from both the user and the AI assistant with appropriate styling
+2. **Patient Information**: When messages come from Telegram or WhatsApp, patient information is displayed at the top of the chat
+3. **Message Source Indication**: Messages show their source (Telegram, WhatsApp, or Web)
+4. **Real-time Updates**: New messages are automatically scrolled into view
+5. **Message Input**: Users can type and send messages with keyboard shortcuts
 
 ### Building for Production
 

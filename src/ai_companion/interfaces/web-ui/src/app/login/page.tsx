@@ -2,10 +2,13 @@
 
 import { Box, Button, Checkbox, Container, FormControlLabel, IconButton, InputAdornment, Link, Stack, TextField, Typography, Alert } from '@mui/material';
 import { Visibility, VisibilityOff, Google, Microsoft } from '@mui/icons-material';
-import { useState, FormEvent, useEffect, Suspense } from 'react';
+import { useState, FormEvent } from 'react';
 import Image from 'next/image';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { getSupabaseClient } from '@/lib/supabase/client';
+import Cookies from 'js-cookie';
 
+// Demo user credentials
 const DEMO_USER = {
   email: 'demo@evelina.ai',
   password: 'demo123'
@@ -13,9 +16,8 @@ const DEMO_USER = {
 
 function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
-  const [language, setLanguage] = useState('en');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     email: '',
@@ -23,30 +25,7 @@ function LoginForm() {
     rememberMe: false
   });
 
-  useEffect(() => {
-    // Handle URL query parameters
-    const emailParam = searchParams.get('email');
-    const passwordParam = searchParams.get('password');
-    
-    if (emailParam || passwordParam) {
-      setFormData(prev => ({
-        ...prev,
-        email: emailParam || '',
-        password: passwordParam || ''
-      }));
-      
-      // Auto-submit if both email and password are provided
-      if (emailParam === 'demo' && passwordParam === 'demo') {
-        handleLogin({
-          email: DEMO_USER.email,
-          password: DEMO_USER.password
-        });
-      }
-    }
-  }, [searchParams]);
-
   const handleTogglePassword = () => setShowPassword(!showPassword);
-  const handleLanguageChange = (lang: string) => setLanguage(lang);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, checked } = e.target;
@@ -58,16 +37,24 @@ function LoginForm() {
 
   const handleLogin = async (credentials: { email: string; password: string }) => {
     setError('');
+    setLoading(true);
+    
     try {
-      // For demo purposes, we'll check against demo credentials
-      if (credentials.email === DEMO_USER.email && credentials.password === DEMO_USER.password) {
-        // In a real app, you would handle authentication here
-        router.push('/dashboard');
-      } else {
-        setError('Invalid credentials. Please use demo@evelina.ai / demo123 for demo access.');
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: credentials.email,
+        password: credentials.password,
+      });
+
+      if (error) {
+        throw error;
       }
-    } catch (err) {
-      setError('An error occurred during login. Please try again.');
+
+      // Successful login will be handled by middleware redirecting to dashboard
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during login. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -77,12 +64,61 @@ function LoginForm() {
   };
 
   const handleDemoLogin = () => {
-    setFormData({
+    // For demo purposes, we'll use a fake login without actually authenticating
+    setLoading(true);
+    
+    // Set a cookie for demo mode (will be checked by middleware)
+    Cookies.set('demo_mode', 'true', { expires: 1 }); // Expires in 1 day
+    
+    // Store demo user info in localStorage for client-side access
+    localStorage.setItem('demo_user', JSON.stringify({
+      id: 'demo-user-123',
       email: DEMO_USER.email,
-      password: DEMO_USER.password,
-      rememberMe: false
-    });
-    handleLogin(DEMO_USER);
+      name: 'Demo User',
+      role: 'user'
+    }));
+    
+    // Simulate authentication delay
+    setTimeout(() => {
+      // Redirect to dashboard
+      router.push('/dashboard');
+    }, 800);
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with Google');
+    }
+  };
+
+  const handleMicrosoftLogin = async () => {
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with Microsoft');
+    }
   };
 
   return (
@@ -126,6 +162,7 @@ function LoginForm() {
             autoFocus
             value={formData.email}
             onChange={handleInputChange}
+            disabled={loading}
           />
 
           <TextField
@@ -139,6 +176,7 @@ function LoginForm() {
             autoComplete="current-password"
             value={formData.password}
             onChange={handleInputChange}
+            disabled={loading}
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
@@ -162,11 +200,12 @@ function LoginForm() {
                   checked={formData.rememberMe}
                   onChange={handleInputChange}
                   color="primary"
+                  disabled={loading}
                 />
               }
               label="Remember me"
             />
-            <Link href="#" variant="body2" underline="hover">
+            <Link href="/reset-password" variant="body2" underline="hover">
               Forgot Password?
             </Link>
           </Box>
@@ -175,16 +214,19 @@ function LoginForm() {
             type="submit"
             fullWidth
             variant="contained"
+            disabled={loading}
             sx={{ mt: 2 }}
           >
-            SIGN IN
+            {loading ? 'Signing in...' : 'Sign In'}
           </Button>
 
           <Button
             fullWidth
             variant="outlined"
-            sx={{ mt: 2, mb: 3 }}
             onClick={handleDemoLogin}
+            disabled={loading}
+            sx={{ mt: 2, mb: 2 }}
+            color="success"
           >
             Use Demo Account
           </Button>
@@ -192,7 +234,7 @@ function LoginForm() {
           <Box sx={{ position: 'relative', my: 3 }}>
             <Box sx={{ position: 'absolute', top: '50%', width: '100%', borderBottom: '1px solid #e0e0e0' }} />
             <Typography variant="body2" align="center" sx={{ position: 'relative', bgcolor: 'background.paper', px: 2, display: 'inline-block' }}>
-              or
+              or continue with
             </Typography>
           </Box>
 
@@ -219,26 +261,9 @@ function LoginForm() {
             <Typography variant="body2" display="inline">
               Don't have an account?{' '}
             </Typography>
-            <Link href="#" variant="body2" underline="hover">
-              Register
+            <Link href="/signup" variant="body2" underline="hover">
+              Sign up
             </Link>
-          </Box>
-
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 1 }}>
-            <Button
-              size="small"
-              variant={language === 'lt' ? 'contained' : 'text'}
-              disabled
-            >
-              LT
-            </Button>
-            <Button
-              size="small"
-              variant={language === 'en' ? 'contained' : 'text'}
-              disabled
-            >
-              EN
-            </Button>
           </Box>
         </Box>
       </Box>
@@ -248,8 +273,6 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <LoginForm />
-    </Suspense>
+    <LoginForm />
   );
 } 

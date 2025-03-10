@@ -1,4 +1,6 @@
-import { useState } from 'react';
+"use client";
+
+import { useState, useEffect } from 'react';
 import { 
   Box, 
   TextField, 
@@ -14,6 +16,7 @@ import {
 } from '@mui/material';
 import { PatientStatus } from '@/lib/supabase/types';
 import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
+import { useLogger } from '@/hooks/useLogger';
 
 interface FilterOptions {
   search: string;
@@ -32,6 +35,8 @@ interface PatientFilterProps {
  * Allows filtering by name, status, doctor, and admission date
  */
 export function PatientFilter({ onFilterChange, doctors }: PatientFilterProps) {
+  const logger = useLogger({ component: 'PatientFilter' });
+
   const [filters, setFilters] = useState<FilterOptions>({
     search: '',
     status: '',
@@ -41,59 +46,99 @@ export function PatientFilter({ onFilterChange, doctors }: PatientFilterProps) {
 
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
+  // Log initial mount
+  useEffect(() => {
+    logger.debug('PatientFilter mounted', {
+      availableDoctors: doctors.length,
+    });
+  }, []);
+
+  // Log when filters change
+  useEffect(() => {
+    if (Object.values(filters).some(value => value !== '')) {
+      logger.debug('Filters updated', {
+        filters,
+        activeFilterCount: activeFilters.length,
+      });
+    }
+  }, [filters, activeFilters]);
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newFilters = { ...filters, search: e.target.value };
+    const searchValue = e.target.value;
+    logger.debug('Search input changed', { searchValue });
+    
+    const newFilters = { ...filters, search: searchValue };
     setFilters(newFilters);
   };
 
   const handleStatusChange = (e: SelectChangeEvent<string>) => {
     const status = e.target.value as PatientStatus | '';
+    logger.debug('Status filter changed', { status });
+    
     const newFilters = { ...filters, status };
     setFilters(newFilters);
 
     // Track active filters for the filter chips
     if (status) {
       if (!activeFilters.includes('status')) {
+        logger.debug('Adding status to active filters');
         setActiveFilters([...activeFilters, 'status']);
       }
     } else {
+      logger.debug('Removing status from active filters');
       setActiveFilters(activeFilters.filter(f => f !== 'status'));
     }
   };
 
   const handleDoctorChange = (e: SelectChangeEvent<string>) => {
-    const newFilters = { ...filters, doctor: e.target.value };
+    const doctor = e.target.value;
+    logger.debug('Doctor filter changed', { doctor });
+    
+    const newFilters = { ...filters, doctor };
     setFilters(newFilters);
 
     // Track active filters for the filter chips
-    if (e.target.value) {
+    if (doctor) {
       if (!activeFilters.includes('doctor')) {
+        logger.debug('Adding doctor to active filters');
         setActiveFilters([...activeFilters, 'doctor']);
       }
     } else {
+      logger.debug('Removing doctor from active filters');
       setActiveFilters(activeFilters.filter(f => f !== 'doctor'));
     }
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newFilters = { ...filters, dateAdmitted: e.target.value };
+    const date = e.target.value;
+    logger.debug('Date filter changed', { date });
+    
+    const newFilters = { ...filters, dateAdmitted: date };
     setFilters(newFilters);
 
     // Track active filters for the filter chips
-    if (e.target.value) {
+    if (date) {
       if (!activeFilters.includes('dateAdmitted')) {
+        logger.debug('Adding admission date to active filters');
         setActiveFilters([...activeFilters, 'dateAdmitted']);
       }
     } else {
+      logger.debug('Removing admission date from active filters');
       setActiveFilters(activeFilters.filter(f => f !== 'dateAdmitted'));
     }
   };
 
   const applyFilters = () => {
+    logger.info('Applying filters', {
+      filters,
+      activeFilterCount: activeFilters.length,
+    });
     onFilterChange(filters);
   };
 
   const clearFilters = () => {
+    logger.info('Clearing all filters');
+    
     const resetFilters: FilterOptions = {
       search: '',
       status: '',
@@ -106,6 +151,8 @@ export function PatientFilter({ onFilterChange, doctors }: PatientFilterProps) {
   };
 
   const removeFilter = (filterName: string) => {
+    logger.debug('Removing specific filter', { filterName });
+    
     const newFilters = { ...filters, [filterName]: '' };
     setFilters(newFilters);
     setActiveFilters(activeFilters.filter(f => f !== filterName));
@@ -142,7 +189,10 @@ export function PatientFilter({ onFilterChange, doctors }: PatientFilterProps) {
               endAdornment: (
                 <IconButton
                   size="small"
-                  onClick={() => setFilters({ ...filters, search: '' })}
+                  onClick={() => {
+                    logger.debug('Clearing search input');
+                    setFilters({ ...filters, search: '' });
+                  }}
                   sx={{ visibility: filters.search ? 'visible' : 'hidden' }}
                 >
                   <ClearIcon fontSize="small" />

@@ -1,39 +1,86 @@
-import { Component, ErrorInfo, ReactNode } from 'react'
-import { Alert, Box } from '@mui/material'
+import React from 'react';
+import { Alert, Button, Container, Typography } from '@mui/material';
+import { useLogger } from '@/hooks/useLogger';
 
-interface Props {
-  children: ReactNode
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
 }
 
-interface State {
-  hasError: boolean
-  error?: Error
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  public state: State = { hasError: false }
+/**
+ * Error Boundary component that catches and logs errors in the component tree
+ */
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  private logger = useLogger({ component: 'ErrorBoundary' });
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error }
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+    };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo)
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return {
+      hasError: true,
+      error,
+    };
   }
 
-  public render() {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    // Log the error
+    this.logger.error('Uncaught error in component tree', error, {
+      componentStack: errorInfo.componentStack,
+    });
+  }
+
+  handleReset = (): void => {
+    this.logger.info('Resetting error boundary state');
+    this.setState({
+      hasError: false,
+      error: null,
+    });
+  };
+
+  render(): React.ReactNode {
     if (this.state.hasError) {
+      // You can render any custom fallback UI
       return (
-        <Box p={4}>
-          <Alert severity="error">
-            {this.state.error?.message || 'Something went wrong'}
-          </Alert>
-        </Box>
-      )
+        this.props.fallback || (
+          <Container maxWidth="sm" sx={{ py: 4 }}>
+            <Alert
+              severity="error"
+              action={
+                <Button color="inherit" size="small" onClick={this.handleReset}>
+                  Try Again
+                </Button>
+              }
+            >
+              <Typography variant="h6" gutterBottom>
+                Something went wrong
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                {this.state.error?.message || 'An unexpected error occurred'}
+              </Typography>
+              {process.env.NODE_ENV !== 'production' && (
+                <Typography variant="caption" component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {this.state.error?.stack}
+                </Typography>
+              )}
+            </Alert>
+          </Container>
+        )
+      );
     }
 
-    return this.props.children
+    return this.props.children;
   }
 }
 
-export default ErrorBoundary 
+export default ErrorBoundary; 
