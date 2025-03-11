@@ -21,6 +21,8 @@ from ai_companion.graph.nodes import (
     web_search_node,
     rag_node,
     rag_retry_node,
+    patient_registration_node,
+    schedule_message_node,
 )
 from ai_companion.graph.state import AICompanionState
 
@@ -64,6 +66,8 @@ def create_workflow_graph() -> StateGraph:
     graph_builder.add_node("image_node", image_node)
     graph_builder.add_node("audio_node", audio_node)
     graph_builder.add_node("summarize_conversation_node", summarize_conversation_node)
+    graph_builder.add_node("patient_registration_node", patient_registration_node)
+    graph_builder.add_node("schedule_message_node", schedule_message_node)
 
     # Set up the graph flow
     # 1. Start with memory extraction
@@ -95,12 +99,14 @@ def create_workflow_graph() -> StateGraph:
         {
             "conversation_node": "conversation_node",
             "image_node": "image_node",
-            "audio_node": "audio_node"
+            "audio_node": "audio_node",
+            "patient_registration_node": "patient_registration_node",
+            "schedule_message_node": "schedule_message_node"
         }
     )
 
     # 5. Check for summarization directly after response nodes
-    for node in ["conversation_node", "image_node", "audio_node"]:
+    for node in ["conversation_node", "image_node", "audio_node", "patient_registration_node", "schedule_message_node"]:
         graph_builder.add_conditional_edges(
             node,
             should_summarize_conversation,

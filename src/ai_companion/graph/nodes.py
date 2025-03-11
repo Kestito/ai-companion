@@ -4,6 +4,9 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import re
+import random
+import asyncio
+import json
 
 from langchain_core.messages import HumanMessage, RemoveMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -23,6 +26,8 @@ from ai_companion.modules.schedules.context_generation import ScheduleContextGen
 from ai_companion.settings import settings
 from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager
 from ai_companion.modules.rag.core.vector_store import get_vector_store_instance
+from ai_companion.modules.memory.conversation.conversation_memory import ConversationMemory
+from ai_companion.utils.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,34 @@ async def router_node(state: AICompanionState) -> Dict[str, str]:
             r'(?i)i[sš]mok[oa]',             # Benefits/payments
             r'(?i)savanor[ií]',              # Volunteer-related terms
         ]
+        
+        # Patient registration patterns
+        patient_registration_patterns = [
+            r'(?i)new patient',              # English patterns
+            r'(?i)register patient',
+            r'(?i)add patient',
+            r'(?i)create patient',
+            r'(?i)naujas pacientas',         # Lithuanian patterns
+            r'(?i)registruoti pacient[aąą]',
+            r'(?i)sukurti pacient[aąą]',
+            r'(?i)pridėti pacient[aąą]',
+        ]
+        
+        # Schedule message patterns
+        schedule_patterns = [
+            r'(?i)^/schedule',               # Telegram command format
+            r'(?i)^schedule\s+',             # WhatsApp format
+        ]
+        
+        # Check for schedule message request
+        if any(re.search(pattern, last_message) for pattern in schedule_patterns):
+            logger.info(f"Detected schedule message request: '{last_message[:50]}...'")
+            return {"workflow": "schedule_message_node"}
+        
+        # Check for patient registration request
+        if any(re.search(pattern, last_message) for pattern in patient_registration_patterns):
+            logger.info(f"Detected patient registration request: '{last_message[:50]}...'")
+            return {"workflow": "patient_registration_node"}
         
         # Check for pattern matches that would trigger RAG node
         if any(re.search(pattern, last_message) for pattern in pola_patterns):
@@ -624,4 +657,286 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
                 "metrics": {}
             },
             "rag_retry_count": state.get("rag_retry_count", 0) + 1
+        }
+
+
+async def patient_registration_node(state: AICompanionState, config: RunnableConfig) -> Dict[str, Any]:
+    """Handle patient registration requests from messaging platforms.
+    
+    This node extracts patient information from conversation messages and creates
+    a new patient record in the Supabase database.
+    
+    Args:
+        state: AICompanionState containing conversation and context
+        config: Configuration for the runnable
+        
+    Returns:
+        Dict with registration result and response message
+    """
+    logger.debug("Starting patient registration node processing")
+    try:
+        # Get the latest message content
+        last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
+        
+        # Extract conversation info to determine source platform (telegram/whatsapp)
+        platform = "unknown"
+        user_id = None
+        
+        if hasattr(state["messages"][-1], "metadata"):
+            metadata = state["messages"][-1].metadata
+            platform = metadata.get("platform", "unknown")
+            user_id = metadata.get("user_id")
+        
+        logger.info(f"Processing patient registration request from {platform} by user {user_id}")
+        
+        # Initialize Supabase client
+        supabase = get_supabase_client()
+        
+        # Extract basic patient information from the message
+        # Improved regex patterns for better extraction
+        name_match = re.search(r'name[:\s]+([^,\n:]*?)(?=\s*(?:phone|$|,))', last_message, re.IGNORECASE)
+        name = name_match.group(1).strip() if name_match else "Unknown"
+        
+        phone_match = re.search(r'phone[:\s]+([0-9+\s\-()]+)(?=$|\s|,|\n)', last_message, re.IGNORECASE)
+        phone = phone_match.group(1).strip() if phone_match else None
+        
+        # If platform is Telegram and no phone is provided, use the Telegram user ID
+        if platform.lower() == "telegram" and user_id and not phone:
+            phone = f"telegram:{user_id}"
+            logger.info(f"Using Telegram user ID as phone identifier: {phone}")
+        
+        # Create timestamp for registration
+        now = datetime.now().isoformat()
+        
+        # Create patient record in Supabase with fields matching the actual table structure
+        patient_data = {
+            "name": name,
+            "phone": phone,
+            "status": "Active",
+            "risk_level": "Low",
+            "last_contact": now,
+            "created_at": now
+        }
+        
+        # Add platform and user_id to metadata stored in the email field
+        # This is a temporary solution until we have a proper metadata field
+        platform_metadata = {
+            "platform": platform,
+            "user_id": user_id
+        }
+        patient_data["email"] = json.dumps(platform_metadata) if platform and user_id else None
+        
+        logger.debug(f"Creating patient with data: {patient_data}")
+        
+        # Insert the new patient into the patients table - non-async version
+        result = supabase.table("patients").insert(patient_data).execute()
+        logger.debug(f"Insert result: {result}")
+        
+        # Get the generated patient ID from the result
+        new_patient_id = None
+        if result and hasattr(result, 'data') and len(result.data) > 0:
+            new_patient_id = result.data[0].get('id')
+            logger.debug(f"New patient ID from result: {new_patient_id}")
+        
+        # Try to store in conversation memory if it exists
+        conversation_storage_result = False
+        try:
+            if "conversation_memory" in state and state["conversation_memory"] is not None:
+                # Use existing conversation memory
+                if hasattr(state["conversation_memory"], "metadata"):
+                    if new_patient_id:
+                        if asyncio.iscoroutinefunction(state["conversation_memory"].store_metadata):
+                            await state["conversation_memory"].store_metadata({
+                                "patient_id": new_patient_id,
+                                "registration_time": now,
+                                "platform": platform,
+                                "platform_user_id": user_id
+                            })
+                        else:
+                            state["conversation_memory"].metadata["patient_id"] = new_patient_id
+                            state["conversation_memory"].metadata["registration_time"] = now
+                            state["conversation_memory"].metadata["platform"] = platform
+                            state["conversation_memory"].metadata["platform_user_id"] = user_id
+                        
+                        logger.debug(f"Stored patient ID {new_patient_id} in existing conversation memory")
+                        conversation_storage_result = True
+        except Exception as mem_error:
+            logger.warning(f"Failed to store patient data in conversation memory: {mem_error}")
+        
+        # Create response message
+        response_message = f"Patient {name} has been registered successfully with ID: {new_patient_id or 'unknown'}"
+        if platform.lower() == "telegram" and phone and phone.startswith("telegram:"):
+            response_message += f"\nUsing your Telegram ID ({user_id}) as contact information."
+        
+        if not conversation_storage_result:
+            response_message += "\nNote: Patient ID could not be saved to conversation context."
+        
+        # Add this registration to the conversation
+        if "messages" in state:
+            state["messages"].append(AIMessage(content=response_message))
+            logger.debug("Added response message to conversation")
+        
+        return {
+            "registration_result": "success",
+            "patient_id": new_patient_id,
+            "patient_name": name,
+            "response": response_message,
+            "platform": platform,
+            "platform_user_id": user_id
+        }
+    
+    except Exception as e:
+        logger.error(f"Error in patient registration node: {e}", exc_info=True)
+        error_message = "Sorry, there was an error processing your patient registration request. Please try again."
+        
+        # Add error message to conversation
+        if "messages" in state:
+            state["messages"].append(AIMessage(content=error_message))
+        
+        return {
+            "registration_result": "error",
+            "error": str(e),
+            "response": error_message
+        }
+
+
+async def schedule_message_node(state: AICompanionState, config: RunnableConfig) -> Dict[str, Any]:
+    """Process message scheduling requests.
+    
+    This node handles requests to schedule messages for delivery via Telegram or
+    WhatsApp at specified times, either once or on a recurring schedule.
+    
+    Args:
+        state: Current conversation state
+        config: Runnable configuration
+        
+    Returns:
+        Dict containing scheduling results
+    """
+    logger.debug("Starting schedule message node processing")
+    
+    try:
+        # Get the latest message content and platform metadata
+        last_message_data = state["messages"][-1]
+        platform = last_message_data.metadata.get("platform", "unknown")
+        user_id = last_message_data.metadata.get("user_id", "")
+        
+        logger.info(f"Processing schedule message request from {platform} by user {user_id}")
+        
+        # Get patient ID - first try direct metadata, then check conversation memory
+        patient_id = None
+        
+        # Check if patient ID is in the user metadata
+        if "patient_id" in last_message_data.metadata:
+            patient_id = last_message_data.metadata.get("patient_id")
+            logger.debug(f"Found patient ID in message metadata: {patient_id}")
+        
+        # Check if patient ID is in conversation memory
+        if not patient_id and "metadata" in state.get("conversation_memory", {}):
+            memory_metadata = state["conversation_memory"]["metadata"]
+            if "patient_id" in memory_metadata:
+                patient_id = memory_metadata["patient_id"]
+                logger.debug(f"Found patient ID in conversation memory: {patient_id}")
+        
+        # If still no patient ID, check if there's a link in the context
+        if not patient_id:
+            for doc in state.get("context", []):
+                if isinstance(doc, dict) and "metadata" in doc and "patient_id" in doc["metadata"]:
+                    patient_id = doc["metadata"]["patient_id"]
+                    logger.debug(f"Found patient ID in context metadata: {patient_id}")
+                    break
+        
+        # Verify we have a patient ID
+        if not patient_id:
+            logger.warning(f"Cannot schedule message: Missing patient ID for user {user_id}")
+            return {
+                "schedule_result": "error",
+                "error": "Missing patient ID",
+                "response": "I need to know which patient this message is for. Please register a patient first or provide a patient ID."
+            }
+        
+        # Parse the scheduling command based on platform
+        message_text = last_message_data.content
+        parsed_command = None
+        
+        if platform.lower() == "telegram":
+            # Use Telegram handler to parse command
+            from ai_companion.modules.scheduled_messaging.handlers.telegram_handler import TelegramHandler
+            handler = TelegramHandler()
+            parsed_command = await handler.parse_command(message_text)
+        elif platform.lower() == "whatsapp":
+            # Use WhatsApp handler to parse command
+            from ai_companion.modules.scheduled_messaging.handlers.whatsapp_handler import WhatsAppHandler
+            handler = WhatsAppHandler()
+            parsed_command = await handler.parse_command(message_text)
+        else:
+            logger.warning(f"Unsupported platform for scheduling: {platform}")
+            return {
+                "schedule_result": "error",
+                "error": "Unsupported platform",
+                "response": f"Scheduling is not supported for {platform} platform. Please use Telegram or WhatsApp."
+            }
+        
+        # Check if parsing was successful
+        if not parsed_command or not parsed_command.get("success", False):
+            error_message = parsed_command.get("error", "Invalid format") if parsed_command else "Invalid format"
+            logger.warning(f"Failed to parse scheduling command: {error_message}")
+            return {
+                "schedule_result": "error",
+                "error": error_message,
+                "response": f"I couldn't understand your scheduling request. {error_message}"
+            }
+        
+        # Schedule the message
+        from ai_companion.modules.scheduled_messaging.scheduler import ScheduleManager
+        scheduler = ScheduleManager()
+        
+        schedule_args = {
+            "patient_id": patient_id,
+            "recipient_id": user_id,
+            "platform": platform.lower(),
+            "message_content": parsed_command.get("message", ""),
+            "scheduled_time": parsed_command.get("time", ""),
+        }
+        
+        # Add recurrence pattern if this is a recurring schedule
+        if parsed_command.get("type") == "recurring" and "recurrence" in parsed_command:
+            schedule_args["recurrence_pattern"] = parsed_command["recurrence"]
+        
+        # Add template information if provided
+        if "template_key" in parsed_command:
+            schedule_args["template_key"] = parsed_command["template_key"]
+            if "parameters" in parsed_command:
+                schedule_args["parameters"] = parsed_command["parameters"]
+        
+        # Schedule the message
+        result = await scheduler.schedule_message(**schedule_args)
+        
+        if result.get("status") == "scheduled":
+            # Successfully scheduled
+            if parsed_command.get("type") == "recurring":
+                response = f"I've scheduled this message to recur {parsed_command.get('recurrence', {}).get('type', 'regularly')}."
+            else:
+                scheduled_time = result.get("scheduled_time", "").replace("T", " at ").split(".")[0]
+                response = f"I've scheduled your message for {scheduled_time}."
+            
+            return {
+                "schedule_result": "success",
+                "schedule_id": result.get("schedule_id"),
+                "response": response
+            }
+        else:
+            # Failed to schedule
+            logger.error(f"Failed to schedule message: {result.get('error')}")
+            return {
+                "schedule_result": "error",
+                "error": result.get("error", "Unknown error"),
+                "response": f"I couldn't schedule your message. {result.get('error', 'An error occurred.')}"
+            }
+    except Exception as e:
+        logger.exception(f"Error in schedule_message_node: {e}")
+        return {
+            "schedule_result": "error",
+            "error": str(e),
+            "response": "I encountered an error while trying to schedule your message. Please try again later."
         }

@@ -32,7 +32,7 @@ def should_summarize_conversation(
 
 def select_workflow(
     state: AICompanionState,
-) -> Literal["conversation_node", "image_node", "audio_node"]:
+) -> Literal["conversation_node", "image_node", "audio_node", "patient_registration_node", "schedule_message_node"]:
     """Select the appropriate workflow based on router's decision.
     
     Args:
@@ -42,6 +42,14 @@ def select_workflow(
         The appropriate node to route to
     """
     workflow = state.get("workflow", "conversation")  # Default to conversation if not set
+    
+    # Handle patient registration workflow
+    if workflow == "patient_registration_node":
+        return "patient_registration_node"
+        
+    # Handle schedule message workflow
+    if workflow == "schedule_message_node":
+        return "schedule_message_node"
     
     # Ensure we have RAG information
     if "rag_response" not in state:

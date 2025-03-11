@@ -1,22 +1,20 @@
 'use client';
 
-import { Box, Container, Grid, Paper, Typography, Button, IconButton, Stack, LinearProgress, Breadcrumbs, Link, Divider, Alert } from '@mui/material';
+import { Box, Container, Grid, Paper, Typography, Button, IconButton, Stack, Divider, Alert, Card, CardContent, Badge } from '@mui/material';
 import { 
-  Notifications, 
-  Person, 
-  Message, 
-  Assessment,
-  CalendarMonth,
-  TrendingUp,
-  MoreVert,
-  Add,
+  Notifications as NotificationsIcon, 
+  Person as PersonIcon, 
+  Message as MessageIcon, 
+  CalendarToday as CalendarIcon,
+  TrendingUp as TrendingUpIcon,
+  MoreVert as MoreVertIcon,
+  Add as AddIcon,
   Home as HomeIcon,
-  Check as CheckIcon,
-  Warning as WarningIcon,
-  Info as InfoIcon
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { fetchPatientStatistics } from '@/lib/supabase/patientService';
 import { fetchRecentActivity, ActivityItem } from '@/lib/supabase/activityService';
 import { fetchNotifications, Notification } from '@/lib/supabase/notificationService';
@@ -32,19 +30,12 @@ const defaultStats = {
   responseRate: 0
 };
 
-const StatCard = ({ title, value, subtitle, icon, color = 'primary' }: { 
+const StatCard = ({ title, value, icon, color = 'primary' }: { 
   title: string; 
   value: number | string; 
-  subtitle?: string;
   icon?: React.ReactNode;
   color?: 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success';
 }) => {
-  const logger = useLogger({ component: 'StatCard' });
-  
-  useEffect(() => {
-    logger.debug('StatCard rendered', { title, value, color });
-  }, []);
-
   return (
     <Paper
       elevation={0}
@@ -76,11 +67,6 @@ const StatCard = ({ title, value, subtitle, icon, color = 'primary' }: {
           <Typography variant="h3" component="div" gutterBottom fontWeight="500">
             {value}
           </Typography>
-          {subtitle && (
-            <Typography variant="body2" color="text.secondary">
-              {subtitle}
-            </Typography>
-          )}
         </Box>
         {icon && (
           <Box sx={{ 
@@ -112,7 +98,7 @@ const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }
     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
       <Typography variant="h6">{title}</Typography>
       <IconButton size="small">
-        <MoreVert />
+        <MoreVertIcon />
       </IconButton>
     </Box>
     <Stack spacing={2}>
@@ -121,13 +107,18 @@ const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }
           key={item.id} 
           sx={{ 
             display: 'flex', 
-            alignItems: 'center', 
+            alignItems: 'flex-start', 
             gap: 2,
             p: 1.5,
             borderRadius: 1,
             bgcolor: 'background.default',
             '&:hover': {
               bgcolor: 'action.hover',
+            },
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            '&:last-child': {
+              borderBottom: 'none'
             }
           }}
         >
@@ -137,7 +128,8 @@ const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }
               height: 8, 
               borderRadius: '50%', 
               bgcolor: `${item.severity}.main`,
-              flexShrink: 0
+              flexShrink: 0,
+              mt: 1
             }} 
           />
           <Box sx={{ flexGrow: 1 }}>
@@ -145,7 +137,7 @@ const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }
               {item.time}
             </Typography>
             <Typography variant="body1">
-              <strong>{item.user}</strong> • {item.action}
+              <Box component="span" fontWeight="fontWeightMedium">{item.user}</Box> • {item.action}
             </Typography>
           </Box>
         </Box>
@@ -154,57 +146,65 @@ const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }
   </Paper>
 );
 
-const NotificationsCard = ({ notifications }: { notifications: Notification[] }) => (
-  <Paper
-    elevation={0}
-    sx={{
-      p: 3,
-      height: '100%',
-      bgcolor: 'background.paper',
-      borderRadius: 2,
-      border: '1px solid',
-      borderColor: 'divider',
-    }}
-  >
-    <Typography variant="h6" gutterBottom>
-      Notifications
-    </Typography>
-    <Stack spacing={2}>
-      {notifications.map((notification) => (
-        <Box 
-          key={notification.id} 
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 2,
-            p: 2,
-            borderRadius: 1,
-            bgcolor: `${notification.type}.lighter`,
-            color: `${notification.type}.main`,
-            border: 1,
-            borderColor: `${notification.type}.light`
-          }}
-        >
-          {notification.icon === 'warning' && <WarningIcon />}
-          {notification.icon === 'event' && <CalendarMonth />}
-          {notification.icon === 'update' && <InfoIcon />}
-          {notification.icon === 'check_circle' && <CheckIcon />}
-          <Typography variant="body2" color="inherit">
-            {notification.message}
-          </Typography>
-        </Box>
-      ))}
-    </Stack>
-    <Button
-      fullWidth
-      variant="outlined"
-      sx={{ mt: 3 }}
-      color="primary"
+const NotificationsCard = ({ notifications }: { notifications: Notification[] }) => {
+  const getIconForType = (icon: string) => {
+    switch(icon) {
+      case 'warning': return <WarningIcon color="error" />;
+      case 'event': return <CalendarIcon color="warning" />;
+      case 'update': return <TrendingUpIcon color="info" />;
+      default: return <NotificationsIcon color="primary" />;
+    }
+  };
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 3,
+        height: '100%',
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+      }}
     >
-      View All Notifications
-    </Button>
-  </Paper>
-);
+      <Typography variant="h6" gutterBottom>
+        Notifications
+      </Typography>
+      <Stack spacing={2}>
+        {notifications.map((notification) => (
+          <Box 
+            key={notification.id} 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 2,
+              p: 2,
+              borderRadius: 1,
+              bgcolor: `${notification.type}.lighter`,
+              color: `${notification.type}.main`,
+              border: 1,
+              borderColor: `${notification.type}.light`
+            }}
+          >
+            {getIconForType(notification.icon)}
+            <Typography variant="body2" color="inherit">
+              {notification.message}
+            </Typography>
+          </Box>
+        ))}
+      </Stack>
+      <Button
+        fullWidth
+        variant="outlined"
+        sx={{ mt: 3 }}
+        color="primary"
+      >
+        View All Notifications
+      </Button>
+    </Paper>
+  );
+};
 
 const QuickActions = () => (
   <Paper
@@ -223,34 +223,27 @@ const QuickActions = () => (
     </Typography>
     <Stack spacing={2}>
       <Button 
-        startIcon={<Add />} 
+        startIcon={<AddIcon />} 
         variant="contained" 
         color="primary"
         fullWidth
+        size="large"
       >
         New Patient
       </Button>
       <Button 
-        startIcon={<Message />} 
+        startIcon={<MessageIcon />} 
         variant="outlined" 
         color="primary"
         fullWidth
+        size="large"
       >
         Send Message
-      </Button>
-      <Button 
-        startIcon={<Assessment />} 
-        variant="outlined" 
-        color="secondary"
-        fullWidth
-      >
-        Generate Report
       </Button>
     </Stack>
   </Paper>
 );
 
-// Add this new component for skeleton loaders
 const StatCardSkeleton = () => (
   <Paper
     elevation={0}
@@ -269,7 +262,6 @@ const StatCardSkeleton = () => (
       <Box width="100%">
         <Box sx={{ bgcolor: 'action.hover', height: 20, width: '50%', borderRadius: 1, mb: 2 }} />
         <Box sx={{ bgcolor: 'action.hover', height: 40, width: '40%', borderRadius: 1, mb: 2 }} />
-        <Box sx={{ bgcolor: 'action.hover', height: 16, width: '60%', borderRadius: 1 }} />
       </Box>
       <Box sx={{ 
         p: 1, 
@@ -309,6 +301,11 @@ const ActivityCardSkeleton = () => (
             p: 1.5,
             borderRadius: 1,
             bgcolor: 'background.default',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            '&:last-child': {
+              borderBottom: 'none'
+            }
           }}
         >
           <Box 
@@ -383,21 +380,28 @@ export default function DashboardPage() {
       logger.info('Loading dashboard data');
       setIsLoading(true);
 
-      // Fetch all data in parallel
+      // Add a slight delay for loading state to be visible (for demo purposes)
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      await delay(500);
+
+      // Fetch all data in parallel with error handling for each request
       const [statistics, activity, notifs] = await Promise.all([
-        logger.logMethodExecution('fetchPatientStatistics', async () => {
-          return await fetchPatientStatistics();
+        fetchPatientStatistics().catch(err => {
+          logger.error('Failed to fetch patient statistics', err);
+          return defaultStats;
         }),
-        logger.logMethodExecution('fetchRecentActivity', async () => {
-          return await fetchRecentActivity(5);
+        fetchRecentActivity(5).catch(err => {
+          logger.error('Failed to fetch recent activity', err);
+          return [];
         }),
-        logger.logMethodExecution('fetchNotifications', async () => {
-          return await fetchNotifications(3);
+        fetchNotifications(3).catch(err => {
+          logger.error('Failed to fetch notifications', err);
+          return [];
         })
       ]);
 
       logger.debug('Dashboard data loaded', { 
-        stats: statistics,
+        statsLoaded: Object.keys(statistics).length > 0,
         activityCount: activity.length,
         notificationsCount: notifs.length
       });
@@ -414,51 +418,95 @@ export default function DashboardPage() {
     }
   }
 
-  // Log navigation events
   const handleNavigation = (path: string) => {
     logger.info('User navigating', { from: 'dashboard', to: path });
     router.push(path);
   };
 
-  if (error) {
-    logger.warn('Rendering error state', { error: error.message });
-    return (
-      <Container>
-        <Alert severity="error">
-          Failed to load dashboard data. Please try again later.
-        </Alert>
-      </Container>
-    );
-  }
-
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      {isLoading ? (
-        <>
-          <Box sx={{ mb: 4 }}>
-            <Breadcrumbs aria-label="breadcrumb">
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <HomeIcon sx={{ fontSize: 16 }} />
-                <Box sx={{ bgcolor: 'action.hover', height: 16, width: 40, borderRadius: 1 }} />
-              </Box>
-              <Box sx={{ bgcolor: 'action.hover', height: 16, width: 80, borderRadius: 1 }} />
-            </Breadcrumbs>
-          </Box>
-          
-          <Grid container spacing={3}>
-            {[1, 2, 3, 4].map((index) => (
-              <Grid item key={index} xs={12} md={3}>
-                <StatCardSkeleton />
-              </Grid>
-            ))}
-          </Grid>
-          
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={8}>
-              <ActivityCardSkeleton />
+      <Box sx={{ mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Link 
+            href="/"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              color: 'inherit',
+              textDecoration: 'none',
+              marginRight: '8px'
+            }}
+          >
+            <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+            Home
+          </Link>
+          <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+          <Typography color="text.primary">Dashboard</Typography>
+        </Box>
+        
+        <Typography variant="h4" component="h1" gutterBottom>
+          Dashboard
+        </Typography>
+        <Typography variant="body1" color="text.secondary" paragraph>
+          Welcome back! Here's an overview of your medical practice.
+        </Typography>
+      </Box>
+
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        {isLoading ? (
+          <>
+            <Grid item xs={12} md={4}>
+              <StatCardSkeleton />
             </Grid>
             <Grid item xs={12} md={4}>
-              <Stack spacing={3}>
+              <StatCardSkeleton />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <StatCardSkeleton />
+            </Grid>
+          </>
+        ) : (
+          <>
+            <Grid item xs={12} md={4}>
+              <StatCard
+                title="Active Patients"
+                value={stats.activePatients}
+                icon={<PersonIcon />}
+                color="primary"
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <StatCard
+                title="Pending Appointments"
+                value={stats.pendingAppointments}
+                icon={<CalendarIcon />}
+                color="warning"
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <StatCard
+                title="Critical Alerts"
+                value={stats.criticalPatients}
+                icon={<NotificationsIcon />}
+                color="error"
+              />
+            </Grid>
+          </>
+        )}
+      </Grid>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={8}>
+          {isLoading ? (
+            <ActivityCardSkeleton />
+          ) : (
+            <ActivityCard title="Recent Activity" items={recentActivity} />
+          )}
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <Stack spacing={3}>
+            {isLoading ? (
+              <>
                 <NotificationsCardSkeleton />
                 <Paper
                   elevation={0}
@@ -473,86 +521,26 @@ export default function DashboardPage() {
                 >
                   <Box sx={{ bgcolor: 'action.hover', height: 24, width: '40%', borderRadius: 1, mb: 3 }} />
                   <Stack spacing={2}>
-                    {[1, 2, 3].map((index) => (
-                      <Box key={index} sx={{ bgcolor: 'action.hover', height: 36, width: '100%', borderRadius: 1 }} />
+                    {[1, 2].map((index) => (
+                      <Box key={index} sx={{ bgcolor: 'action.hover', height: 40, width: '100%', borderRadius: 1 }} />
                     ))}
                   </Stack>
                 </Paper>
-              </Stack>
-            </Grid>
-          </Grid>
-        </>
-      ) : (
-        <>
-          <Box sx={{ mb: 4 }}>
-            <Breadcrumbs aria-label="breadcrumb">
-              <Link
-                color="inherit"
-                href="/"
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleNavigation('/');
-                }}
-                sx={{ display: 'flex', alignItems: 'center' }}
-              >
-                <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
-                Home
-              </Link>
-              <Typography color="text.primary">Dashboard</Typography>
-            </Breadcrumbs>
-          </Box>
-
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={3}>
-              <StatCard
-                title="Total Patients"
-                value={stats.totalPatients}
-                subtitle="Registered patients"
-                icon={<Person />}
-                color="primary"
-              />
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <StatCard
-                title="Active Patients"
-                value={stats.activePatients}
-                subtitle="Currently active"
-                icon={<Person />}
-                color="info"
-              />
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <StatCard
-                title="New Patients"
-                value={stats.newPatients}
-                subtitle="Added in last 24h"
-                icon={<Add />}
-                color="success"
-              />
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <StatCard
-                title="Critical Patients"
-                value={stats.criticalPatients}
-                subtitle="Need attention"
-                icon={<Notifications />}
-                color="error"
-              />
-            </Grid>
-          </Grid>
-
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={8}>
-              <ActivityCard title="Recent Activity" items={recentActivity} />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Stack spacing={3}>
+              </>
+            ) : (
+              <>
                 <NotificationsCard notifications={notifications} />
                 <QuickActions />
-              </Stack>
-            </Grid>
-          </Grid>
-        </>
+              </>
+            )}
+          </Stack>
+        </Grid>
+      </Grid>
+
+      {error && (
+        <Alert severity="error" sx={{ mt: 3 }}>
+          There was an error loading some dashboard data. The page may show partial information.
+        </Alert>
       )}
     </Container>
   );

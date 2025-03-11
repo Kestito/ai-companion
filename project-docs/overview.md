@@ -69,6 +69,19 @@ The AI Companion addresses several key challenges:
 
 ## Recent Fixes and Improvements
 
+### Scheduled Messaging Implementation
+We have implemented a robust scheduled messaging system that enables healthcare providers to send automated reminders and messages to patients through Telegram and WhatsApp. The system supports:
+
+1. One-time and recurring message scheduling with flexible timing options
+2. Platform-specific message delivery for Telegram and WhatsApp
+3. Natural language command parsing for easy scheduling
+4. Template-based messaging for common healthcare communications
+5. Background processing to ensure reliable message delivery
+6. Secure storage of scheduled messages in Supabase
+7. Integration with the existing patient registration system
+
+This new functionality enhances patient engagement, improves medication adherence, and streamlines appointment management by enabling healthcare providers to maintain continuous communication with patients through their preferred messaging platforms.
+
 ### Parallel Search Implementation
 We have implemented a robust parallel search system that significantly improves retrieval performance and result quality. The system now performs simultaneous vector and keyword searches, combining results for optimal relevance.
 
