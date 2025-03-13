@@ -24,6 +24,7 @@ import {
   MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { PatientStatusIndicator } from './patientstatusindicator';
+import { PatientPlatformIndicator } from './patientplatformindicator';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLogger } from '@/hooks/useLogger';
@@ -146,6 +147,20 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
     page * rowsPerPage + rowsPerPage
   );
 
+  // Add a helper function to determine platform from phone number if platform is not explicitly set
+  const getPlatformFromPhone = (phone?: string): string => {
+    if (!phone) return 'unknown';
+    
+    // Check if the phone number contains any platform identifiers
+    if (phone.includes('telegram')) return 'telegram';
+    if (phone.includes('whatsapp')) return 'whatsapp';
+    
+    // If the phone number starts with a specific format, it might be a WhatsApp number
+    if (phone.startsWith('+')) return 'phone';
+    
+    return 'unknown';
+  };
+
   if (loading) {
     logger.debug('Rendering loading state');
     return (
@@ -187,6 +202,7 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
                 />
               </TableCell>
               <TableCell>Patient</TableCell>
+              <TableCell>Platform</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Doctor</TableCell>
               <TableCell>Admission Date</TableCell>
@@ -232,6 +248,9 @@ export function PatientTable({ patients, loading = false }: PatientTableProps) {
                         </Typography>
                       </Box>
                     </Box>
+                  </TableCell>
+                  <TableCell>
+                    <PatientPlatformIndicator platform={patient.platform || getPlatformFromPhone(patient.phone)} />
                   </TableCell>
                   <TableCell>
                     <PatientStatusIndicator status={patient.status} />

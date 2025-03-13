@@ -21,8 +21,14 @@ logger.configureLogger({
 
 // Define metadata for the application
 export const metadata: Metadata = {
-  title: "AI Companion - Healthcare Assistance",
+  title: "Evelina AI",
   description: "Interactive AI companion for healthcare assistance",
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.ico', sizes: 'any' }
+    ],
+  },
 };
 
 /**
@@ -64,6 +70,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
       <body className={`${inter.variable} font-sans antialiased min-h-screen bg-gray-50`} suppressHydrationWarning>
         {/* Wrap the entire application with our providers */}

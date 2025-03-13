@@ -2,7 +2,6 @@
 
 ## Connection Setup
 
-
 ### Supabase Client Configuration
 ```typescript
 import { createClient } from '@supabase/supabase-js';
@@ -21,6 +20,23 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     }
   }
 });
+```
+
+## Schema Usage
+
+When querying tables, explicitly specify the schema in one of the following ways:
+
+```typescript
+// Method 1: Using the schema parameter
+const { data } = await supabase
+  .from('users')
+  .select('*')
+  .schema('evelinaai');
+
+// Method 2: Using the from parameter with schema prefix
+const { data } = await supabase
+  .from('evelinaai.users')
+  .select('*');
 ```
 
 ## Type Definitions
@@ -65,6 +81,7 @@ type DbAppointment = {
 const { data: users } = await supabase
   .from('users')
   .select('id, status, name, type')
+  .schema('evelinaai')
   .eq('status', 'active');
 
 // Get user with risk assessments
@@ -74,6 +91,7 @@ const { data: user } = await supabase
     *,
     risk_assessments(*)
   `)
+  .schema('evelinaai')
   .eq('id', userId)
   .single();
 ```
@@ -85,11 +103,11 @@ const { data: appointments } = await supabase
   .from('scheduled_appointments')
   .select(`
     *,
-    users!scheduled_appointments_user_id_fkey(name),
-    users!scheduled_appointments_doctor_id_fkey(name)
+    users!scheduled_appointments_user_id_fkey(name)
   `)
+  .schema('evelinaai')
   .eq('status', 'scheduled')
-  .gte('appointment_date', new Date().toISOString());
+  .gte('scheduled_time', new Date().toISOString());
 ```
 
 ### Conversations
@@ -102,6 +120,7 @@ const { data: conversations } = await supabase
     conversation_details(*),
     users!conversations_user_id_fkey(name)
   `)
+  .schema('evelinaai')
   .order('created_at', { ascending: false })
   .limit(10);
 ```
@@ -109,7 +128,11 @@ const { data: conversations } = await supabase
 ## Error Handling
 ```typescript
 try {
-  const { data, error } = await supabase.from('table').select();
+  const { data, error } = await supabase
+    .from('table')
+    .select()
+    .schema('evelinaai');
+    
   if (error) {
     console.error('Database error:', error);
     throw new Error(`Failed to fetch data: ${error.message}`);
@@ -119,6 +142,16 @@ try {
   console.error('Error:', err);
   throw err;
 }
+```
+
+## Raw SQL Queries
+
+For more complex queries, you can use raw SQL with the appropriate schema:
+
+```typescript
+const { data, error } = await supabase.rpc('execute_sql', {
+  query: "SELECT * FROM evelinaai.users WHERE status = 'active'"
+});
 ```
 
 ## Best Practices
@@ -142,3 +175,8 @@ try {
    - Keep types in sync with schema
    - Document schema changes
    - Use migrations for schema updates 
+   
+5. **Schema Consistency**
+   - Always specify the 'evelinaai' schema in queries
+   - Use the .schema() method in the query builder
+   - For raw SQL, prefix table names with 'evelinaai.' 

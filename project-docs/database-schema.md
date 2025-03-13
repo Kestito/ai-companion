@@ -1,92 +1,119 @@
 # EvelinaAI Database Schema Documentation
 
 ## Overview
-The EvelinaAI database consists of 8 main tables in the `evelinaai` schema, designed to support a medical AI companion system.
+The EvelinaAI database consists of multiple tables in the `evelinaai` schema, designed to support a medical AI companion system. This document reflects the current structure based on the Supabase database.
+
+## Schema Information
+
+- **Schema Name**: `evelinaai`
+- **Database**: Supabase
+- **Schema Version**: Current as of March 2024
 
 ## Tables
 
-### 1. users (9 columns)
-Primary table for storing user information
-- `id`: UUID (Primary Key)
-- `created_at`: Timestamp
-- `email`: String
-- `name`: String
-- `status`: Enum ('active', 'inactive')
-- `type`: Enum ('patient', 'doctor', 'admin')
-- `last_active`: Timestamp
-- `risk_level`: Enum ('low', 'medium', 'high')
-- Additional metadata
-
-### 2. conversations (7 columns)
-Stores main conversation records
-- `id`: UUID (Primary Key)
-- `created_at`: Timestamp
-- `user_id`: UUID (Foreign Key → users.id)
-- `type`: String
-- `details`: JSONB
-- Additional metadata
-
-### 3. conversation_details (7 columns)
-Stores detailed conversation information
+### 1. conversation_details
 - `id`: UUID (Primary Key)
 - `conversation_id`: UUID (Foreign Key → conversations.id)
-- `created_at`: Timestamp
-- `content`: Text
-- Additional metadata
+- `message_content`: Text
+- `message_type`: Text
+- `sent_at`: Timestamp
+- `sender`: Text
+- `metadata`: JSONB
 
-### 4. risk_assessments (7 columns)
-Stores patient risk assessment data
-- `id`: UUID (Primary Key)
-- `created_at`: Timestamp
+### 2. conversations
+- `id`: UUID (Primary Key)  
 - `user_id`: UUID (Foreign Key → users.id)
-- `risk_level`: Enum ('low', 'medium', 'high')
-- `assessment_details`: JSONB
-- Additional metadata
+- `conversation_type`: Text
+- `platform`: Text
+- `status`: Text
 
-### 5. scheduled_appointments (6 columns)
-Manages medical appointments
+### 3. long_term_memory
 - `id`: UUID (Primary Key)
-- `created_at`: Timestamp
 - `user_id`: UUID (Foreign Key → users.id)
-- `doctor_id`: UUID (Foreign Key → users.id)
-- `appointment_date`: Timestamp
-- `status`: Enum ('scheduled', 'completed', 'cancelled')
+- `conversation_id`: UUID (Foreign Key → conversations.id)
+- `memory_type`: Text
+- `content`: Text
+- `recorded_at`: Timestamp
 
-### 6. reports (7 columns)
-Stores medical reports and analysis
+### 4. patients
 - `id`: UUID (Primary Key)
+- `name`: Text
+- `email`: Text
+- `phone`: Text
+- `gender`: Text
+- `preferred_language`: Text
 - `created_at`: Timestamp
+- `support_status`: Text
+
+### 5. reports
+- `id`: UUID (Primary Key)
+- `generated_by`: UUID
+- `report_type`: Text
+- `generated_at`: Timestamp
+- `report_format`: Text
+- `storage_path`: Text
+
+### 6. risk_assessments
+- `id`: UUID (Primary Key)
 - `user_id`: UUID (Foreign Key → users.id)
-- Additional metadata
+- `risk_type`: Text
+- `risk_level`: Text ('low', 'medium', 'high')
+- `trigger_criteria`: Text
+- `detected_at`: Timestamp
 
-### 7. long_term_memory (5 columns)
-Stores persistent AI memory data
+### 7. scheduled_appointments
 - `id`: UUID (Primary Key)
-- `created_at`: Timestamp
-- `content`: Text
-- Additional metadata
+- `user_id`: UUID (Foreign Key → users.id)
+- `scheduled_time`: Timestamp
+- `contact_method`: Text
+- `purpose`: Text
+- `status`: Text
 
-### 8. short_term_memory (5 columns)
-Stores temporary AI memory data
+### 8. short_term_memory
 - `id`: UUID (Primary Key)
-- `created_at`: Timestamp
+- `user_id`: UUID (Foreign Key → users.id)
+- `conversation_id`: UUID (Foreign Key → conversations.id)
 - `content`: Text
-- Additional metadata
+- `expires_at`: Timestamp
 
 ## Relationships
 ```mermaid
 erDiagram
     users ||--o{ conversations : has
     users ||--o{ risk_assessments : has
-    users ||--o{ scheduled_appointments : has_patient
-    users ||--o{ scheduled_appointments : has_doctor
+    users ||--o{ scheduled_appointments : has
     conversations ||--o{ conversation_details : contains
     users ||--o{ reports : has
+    users ||--o{ long_term_memory : has
+    users ||--o{ short_term_memory : has
+    conversations ||--o{ long_term_memory : references
+    conversations ||--o{ short_term_memory : references
+```
+
+## Supabase Client Configuration
+
+When connecting to the database, the Supabase client should be configured to use the `evelinaai` schema:
+
+```typescript
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  },
+  global: {
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      'Accept-Profile': 'evelinaai'
+    }
+  }
+});
 ```
 
 ## Key Features
 1. User Management
-   - Multi-role support (patient, doctor, admin)
+   - Multi-role support (patient, doctor)
    - Activity tracking
    - Risk level monitoring
 
@@ -104,12 +131,21 @@ erDiagram
 - All tables include created_at timestamps for audit trails
 - Foreign key constraints ensure data integrity
 - JSONB fields allow flexible metadata storage while maintaining structure
-- Enum types enforce data validation for status and type fields
 
 ## Performance Notes
 - Indexes are recommended on:
   - users(email)
   - users(status)
   - conversations(user_id)
-  - scheduled_appointments(appointment_date)
+  - scheduled_appointments(scheduled_time)
   - risk_assessments(user_id, risk_level) 
+
+## Schema Access Verification
+
+To verify access to the schema, use the verification script:
+
+```bash
+node src/ai_companion/interfaces/web-ui/scripts/verify-evelinaai-schema.js
+```
+
+This script will test connectivity to all tables in the `evelinaai` schema and confirm schema existence. 

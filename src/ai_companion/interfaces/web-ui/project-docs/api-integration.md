@@ -4,18 +4,53 @@
 
 This document outlines the standard approach for integrating with backend API services in the web-ui frontend. We use a combination of custom hooks and service classes to create a clean separation of concerns and reusable API interaction patterns.
 
+## Recommended API Structure
+
+Our API structure follows a clean separation between:
+
+1. **API Routes** in `/src/ai_companion/interfaces/web-ui/src/app/api/` 
+   - These handle HTTP requests and interact with the database
+   - Implement RESTful endpoints (GET, POST, PUT, DELETE)
+   - Handle authentication and authorization
+   - Perform data validation
+   - Return standardized responses
+
+2. **API Services** in `/src/ai_companion/interfaces/web-ui/src/lib/api/services/` 
+   - These provide a clean interface for components to interact with the API
+   - Abstract away HTTP request details
+   - Handle data transformation between frontend and API
+   - Provide type safety with TypeScript interfaces
+   - Centralize error handling
+
+This separation provides several benefits:
+- Better security by keeping database interactions server-side
+- Improved maintainability with clear separation of concerns
+- Enhanced flexibility to change the underlying data source without affecting components
+- Consistent error handling and response formatting
+
 ## Directory Structure
 
 ```
 src/
+├── app/
+│   └── api/                      # Next.js API Routes (server-side)
+│       ├── scheduled-checks/     # Scheduled checks API endpoints
+│       │   ├── route.ts          # GET/POST handlers for collection
+│       │   └── [id]/             # Dynamic route for individual items
+│       │       └── route.ts      # GET/PUT/DELETE handlers for item
+│       └── scheduled-messages/   # Scheduled messages API endpoints
+│           ├── route.ts
+│           └── [id]/
+│               └── route.ts
 ├── lib/
 │   └── api/
 │       ├── client.ts             # Base API client configuration
 │       ├── endpoints.ts          # API endpoint constants
 │       ├── types.ts              # API request/response types
-│       └── services/
+│       └── services/             # Client-side service layer
 │           ├── auth.service.ts   # Authentication-related API calls
 │           ├── chat.service.ts   # Chat-related API calls
+│           ├── scheduledChecks.service.ts # Scheduled checks API calls
 │           └── user.service.ts   # User-related API calls
 ├── hooks/
 │   └── api/
@@ -249,10 +284,8 @@ export const ChatComponent = ({ chatId }: { chatId: string }) => {
 
 ## Error Handling
 
-All API interactions should include proper error handling:
-
-1. **Service Layer**: Transforms HTTP errors into ApiError instances
-2. **Hook Layer**: Captures and exposes errors to components
+1. **API Layer**: Returns appropriate HTTP status codes and error messages
+2. **Service Layer**: Transforms API errors into application-specific errors
 3. **Component Layer**: Displays appropriate error messages to users
 
 ## Best Practices
@@ -263,3 +296,138 @@ All API interactions should include proper error handling:
 4. Implement proper error handling at all levels
 5. Maintain a consistent naming convention
 6. Document expected request and response formats 
+
+## Migration from Direct Database Access
+
+### Previous Approach: Direct Supabase Access
+
+Previously, some parts of the application used direct Supabase client calls from components or service files:
+
+```typescript
+// Old approach in patientService.ts
+export async function fetchScheduledChecks(patientId: string): Promise<ScheduledCheck[]> {
+  const supabase = getSupabaseClient();
+  try {
+    const { data, error } = await supabase
+      .from('scheduled_checks')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('next_scheduled', { ascending: true });
+    
+    if (error) {
+      throw error;
+    }
+    
+    return (data || []).map((check) => ({
+      id: check.id,
+      title: check.title,
+      // ... mapping other fields
+    }));
+  } catch (err) {
+    console.error('Error fetching scheduled checks:', err);
+    return [];
+  }
+}
+```
+
+### New Approach: API Service Layer
+
+The recommended approach is to use the API service layer that interacts with Next.js API routes:
+
+1. **API Route (Server-side)**:
+```typescript
+// app/api/scheduled-checks/route.ts
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const patientId = searchParams.get('patientId');
+    
+    if (!patientId) {
+      return NextResponse.json(
+        { error: 'Patient ID is required' },
+        { status: 400 }
+      );
+    }
+    
+    const supabase = createClient();
+    
+    const { data, error } = await supabase
+      .from('scheduled_checks')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('next_scheduled', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching scheduled checks:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch scheduled checks' },
+        { status: 500 }
+      );
+    }
+    
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error in scheduled checks API:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+2. **API Service (Client-side)**:
+```typescript
+// lib/api/services/scheduledChecks.service.ts
+export async function fetchScheduledChecks(patientId: string): Promise<ScheduledCheck[]> {
+  try {
+    const response = await fetch(API_ENDPOINTS.SCHEDULED_CHECKS.BY_PATIENT(patientId));
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch scheduled checks');
+    }
+    
+    const data = await response.json();
+    
+    return (data || []).map((check: any) => ({
+      id: check.id,
+      title: check.title,
+      // ... mapping other fields
+    }));
+  } catch (err) {
+    console.error('Error fetching scheduled checks:', err);
+    return [];
+  }
+}
+```
+
+3. **Component Usage**:
+```typescript
+import { scheduledChecksService } from '@/lib/api';
+
+function ScheduledChecksTab({ patientId }: { patientId: string }) {
+  const [scheduledChecks, setScheduledChecks] = useState<ScheduledCheck[]>([]);
+  
+  useEffect(() => {
+    const loadScheduledChecks = async () => {
+      const data = await scheduledChecksService.fetchScheduledChecks(patientId);
+      setScheduledChecks(data);
+    };
+    
+    loadScheduledChecks();
+  }, [patientId]);
+  
+  // ... rest of component
+}
+```
+
+### Benefits of the New Approach
+
+1. **Security**: Database credentials are only used server-side
+2. **Separation of Concerns**: Clear distinction between data access and UI logic
+3. **Maintainability**: Easier to update database schema without affecting components
+4. **Consistency**: Standardized error handling and response formats
+5. **Scalability**: Better support for caching, middleware, and other API features
+
+When implementing new features or refactoring existing ones, always prefer the API service approach over direct database access. 

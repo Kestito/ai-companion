@@ -24,6 +24,7 @@ $LOG_ANALYTICS_WORKSPACE = "la-evelina-rg-20250308115110-167"  # Use existing wo
 $BACKEND_SRC_PATH = "./src/ai_companion"  # Path to backend source
 $FRONTEND_SRC_PATH = "./src/ai_companion/interfaces/web-ui"  # Path to frontend source
 $BACKEND_DOCKERFILE_PATH = "./Dockerfile"  # Path to backend Dockerfile (in root directory)
+$FRONTEND_DOCKERFILE_PATH = "$FRONTEND_SRC_PATH/Dockerfile"  # Correctly define the path to frontend Dockerfile
 $FORCE_REBUILD = $false  # Set to true to force rebuilding images even if they exist in ACR
 $BACKEND_HASH_FILE = "./.backend-hash"  # File to store hash of backend code
 $FRONTEND_HASH_FILE = "./.frontend-hash"  # File to store hash of frontend code
@@ -203,8 +204,8 @@ function Test-SourceDirectoriesExist {
         Write-ColorOutput -Message "Frontend source path exists: $FRONTEND_SRC_PATH" -Color Green -Prefix "✅"
         
         # Check frontend Dockerfile
-        if (-not (Test-Path "$FRONTEND_SRC_PATH/Dockerfile")) {
-            Write-ColorOutput -Message "Frontend Dockerfile not found at $FRONTEND_SRC_PATH/Dockerfile" -Color Yellow -Prefix "⚠️"
+        if (-not (Test-Path $FRONTEND_DOCKERFILE_PATH)) {
+            Write-ColorOutput -Message "Frontend Dockerfile not found at $FRONTEND_DOCKERFILE_PATH" -Color Yellow -Prefix "⚠️"
             # We don't fail the overall check for missing Dockerfile if directory exists
         } else {
             Write-ColorOutput -Message "Frontend Dockerfile exists" -Color Green -Prefix "✅"
@@ -218,7 +219,7 @@ function Test-SourceDirectoriesExist {
         Write-ColorOutput -Message "Backend source path is missing, but frontend exists" -Color Yellow -Prefix "⚠️"
     } elseif (-not $frontendExists) {
         Write-ColorOutput -Message "Frontend source path is missing, but backend exists" -Color Yellow -Prefix "⚠️"
-    } elseif (-not (Test-Path $BACKEND_DOCKERFILE_PATH) -or -not (Test-Path "$FRONTEND_SRC_PATH/Dockerfile")) {
+    } elseif (-not (Test-Path $BACKEND_DOCKERFILE_PATH) -or -not (Test-Path $FRONTEND_DOCKERFILE_PATH)) {
         Write-ColorOutput -Message "Source paths exist but one or more Dockerfiles are missing" -Color Yellow -Prefix "⚠️"
     } else {
         Write-ColorOutput -Message "All source paths and Dockerfiles exist" -Color Green -Prefix "✅"
@@ -339,7 +340,7 @@ if (-not $sourcePathsResult) {
         Write-ColorOutput -Message "Backend Dockerfile is missing. Will attempt to use existing image from ACR." -Color Yellow -Prefix "⚠️"
     }
     
-    if (-not (Test-Path "$FRONTEND_SRC_PATH/Dockerfile")) {
+    if (-not (Test-Path $FRONTEND_DOCKERFILE_PATH)) {
         Write-ColorOutput -Message "Frontend Dockerfile is missing. Will attempt to use existing image from ACR." -Color Yellow -Prefix "⚠️"
     }
 }
@@ -449,7 +450,7 @@ if (-not $needToBuildFrontend) {
     Write-ColorOutput -Message "Skipping frontend build as image already exists in ACR" -Color Green -Prefix "✅"
 } else {
     # Check if Dockerfile exists in frontend path
-    if (Test-Path "$FRONTEND_SRC_PATH/Dockerfile") {
+    if (Test-Path $FRONTEND_DOCKERFILE_PATH) {
         # Build the frontend image - FIXED COMMAND
         Write-ColorOutput -Message "Building frontend Docker image with tag $TAG" -Color Yellow -Prefix "→"
         
@@ -493,7 +494,7 @@ if (-not $needToBuildFrontend) {
             }
         }
     } else {
-        Write-ColorOutput -Message "Frontend Dockerfile not found at $FRONTEND_SRC_PATH/Dockerfile" -Color Yellow -Prefix "⚠️"
+        Write-ColorOutput -Message "Frontend Dockerfile not found at $FRONTEND_DOCKERFILE_PATH" -Color Yellow -Prefix "⚠️"
         Write-ColorOutput -Message "Cannot build frontend Docker image" -Color Red -Prefix "❌"
     }
 }
@@ -860,41 +861,46 @@ if ($frontendExists) {
     $verificationId = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.customDomainVerificationId" -o tsv
     
     Write-ColorOutput -Message "Domain verification ID: $verificationId" -Color Yellow -Prefix "→"
-    Write-ColorOutput -Message "Before proceeding, ensure these DNS records are set up:" -Color Yellow -Prefix "⚠️"
+    Write-ColorOutput -Message "Important DNS requirements (automatic setup in progress):" -Color Yellow -Prefix "⚠️"
     Write-ColorOutput -Message "1. A CNAME record for 'demo' pointing to your container app FQDN" -Color White
     Write-ColorOutput -Message "2. A TXT record for 'asuid.demo' with value '$verificationId'" -Color White
     
-    # Prompt user to confirm DNS records are set up
-    $confirmDNS = Read-Host -Prompt "Have you configured the required DNS records? (Y/N)"
+    # First check if the custom domain is already bound
+    $existingDomain = az containerapp hostname list --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "[?hostname=='$CUSTOM_DOMAIN']" -o tsv
     
-    if ($confirmDNS.ToLower() -eq "y") {
+    if ($existingDomain) {
+        Write-ColorOutput -Message "Custom domain $CUSTOM_DOMAIN is already configured" -Color Green -Prefix "✅"
+    } else {
+        # Automatically attempt to add the custom domain without prompting
+        Write-ColorOutput -Message "Automatically adding custom domain to frontend app" -Color Yellow -Prefix "→"
+        
         # Add the custom domain to the frontend container app
-        Write-ColorOutput -Message "Adding custom domain to frontend app" -Color Yellow -Prefix "→"
         az containerapp hostname add --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_APP_NAME
         
         if (-not (Test-CommandSuccess -SuccessMessage "Custom domain added successfully" -ErrorMessage "Failed to add custom domain")) {
-            Write-ColorOutput -Message "Failed to add custom domain, check DNS records and try again" -Color Red -Prefix "❌"
+            Write-ColorOutput -Message "Failed to add custom domain. Please verify your DNS records:" -Color Red -Prefix "❌"
+            Write-ColorOutput -Message "1. CNAME record: demo.evelinaai.com → $frontendAppUrl" -Color White
+            Write-ColorOutput -Message "2. TXT record: asuid.demo → $verificationId" -Color White
+            Write-ColorOutput -Message "Once DNS is properly configured, run this script again." -Color Yellow -Prefix "→"
         } else {
-            # Bind a managed certificate to the custom domain
+            # Automatically bind a managed certificate to the custom domain
             Write-ColorOutput -Message "Binding managed certificate to custom domain" -Color Yellow -Prefix "→"
             az containerapp hostname bind --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_APP_NAME --environment $CONTAINER_ENV_NAME --validation-method CNAME
             
             if (-not (Test-CommandSuccess -SuccessMessage "Managed certificate bound successfully" -ErrorMessage "Failed to bind managed certificate")) {
-                Write-ColorOutput -Message "Failed to bind managed certificate, but domain may still be added" -Color Yellow -Prefix "⚠️"
+                Write-ColorOutput -Message "Failed to bind managed certificate, but domain may still be added." -Color Yellow -Prefix "⚠️"
+                Write-ColorOutput -Message "Please check DNS records and try again if needed:" -Color Yellow
+                Write-ColorOutput -Message "1. CNAME record: demo.evelinaai.com → $frontendAppUrl" -Color White
+                Write-ColorOutput -Message "2. TXT record: asuid.demo → $verificationId" -Color White
             } else {
                 Write-ColorOutput -Message "Custom domain and managed certificate configured successfully!" -Color Green -Prefix "✅"
                 Write-ColorOutput -Message "Custom domain URL: https://$CUSTOM_DOMAIN" -Color Cyan -Prefix "🔗"
                 
-                # Wait for certificate provisioning (this can take some time)
+                # Inform about certificate provisioning time
                 Write-ColorOutput -Message "Certificate provisioning in progress - this may take 5-15 minutes" -Color Yellow -Prefix "⏳"
-                Write-ColorOutput -Message "You can check status in Azure Portal while waiting" -Color Yellow -Prefix "→"
+                Write-ColorOutput -Message "The site will be accessible when certificate provisioning completes" -Color Yellow -Prefix "→"
             }
         }
-    } else {
-        Write-ColorOutput -Message "Custom domain setup skipped. Configure DNS records and run script again." -Color Yellow -Prefix "⚠️"
-        Write-ColorOutput -Message "Required DNS records:" -Color White
-        Write-ColorOutput -Message "1. CNAME record: demo.evelinaai.com → $frontendAppUrl" -Color White
-        Write-ColorOutput -Message "2. TXT record: asuid.demo → $verificationId" -Color White
     }
 } else {
     Write-ColorOutput -Message "Frontend app does not exist, skipping custom domain setup" -Color Yellow -Prefix "⚠️"

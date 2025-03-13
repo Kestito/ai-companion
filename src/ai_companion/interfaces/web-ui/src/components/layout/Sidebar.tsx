@@ -100,7 +100,7 @@ export default function Sidebar() {
         )}
         {isSidebarOpen && (
           <Typography variant="h6" noWrap>
-            AI Companion
+            Evelina AI
           </Typography>
         )}
         <IconButton 

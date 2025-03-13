@@ -35,18 +35,24 @@ import {
   HealthAndSafety as HealthAndSafetyIcon,
   ArrowBack as ArrowBackIcon,
   ArrowDropUp as ArrowDropUpIcon,
-  ArrowDropDown as ArrowDropDownIcon
+  ArrowDropDown as ArrowDropDownIcon,
+  CheckCircle as CheckCircleIcon,
+  Schedule as ScheduleIcon,
+  Repeat as RepeatIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import { useParams, useRouter } from 'next/navigation';
 import { PatientStatusIndicator } from '@/components/patients/patientstatusindicator';
 import { Patient } from '@/lib/supabase/types';
+import { ScheduledCheck } from '@/lib/supabase/types';
 import { 
   fetchPatientById, 
-  fetchPatientConversations, 
-  fetchConversationMessages, 
   fetchPatientRiskAssessments,
-  fetchPatientAppointments
+  fetchPatientAppointments,
 } from '@/lib/supabase/patientService';
+import { scheduledChecksService } from '@/lib/api';
+import ScheduledCheckForm, { ScheduledCheckFormData } from '@/components/patients/scheduledcheckform';
+import { ConversationsTab } from '@/components/patients/conversationstab';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -82,94 +88,63 @@ function a11yProps(index: number) {
 }
 
 /**
- * Component to display conversation messages
+ * Component to display scheduled checks for a patient
  */
-function ConversationMessages({ conversationId }: { conversationId: string }) {
-  const [messages, setMessages] = useState<any[]>([]);
+function ScheduledChecksTab({ patientId }: { patientId: string }) {
+  const [scheduledChecks, setScheduledChecks] = useState<ScheduledCheck[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  
+  const loadScheduledChecks = async () => {
+    try {
+      setLoading(true);
+      // Fetch scheduled checks from the API
+      const data = await scheduledChecksService.fetchScheduledChecks(patientId);
+      setScheduledChecks(data);
+    } catch (err) {
+      console.error('Error loading scheduled checks:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   useEffect(() => {
-    const loadMessages = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchConversationMessages(conversationId);
-        setMessages(data);
-      } catch (err) {
-        console.error('Error loading messages:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadMessages();
-  }, [conversationId]);
-  
-  if (loading) return <Skeleton variant="rectangular" height={200} />;
-  
-  if (messages.length === 0) {
-    return <Typography>No messages found for this conversation.</Typography>;
-  }
-  
-  return (
-    <Paper sx={{ p: 2, mb: 2, maxHeight: 300, overflow: 'auto' }}>
-      {messages.map((message) => (
-        <Box 
-          key={message.id} 
-          sx={{
-            py: 1,
-            px: 2,
-            mb: 1,
-            borderRadius: 2,
-            backgroundColor: message.sender === 'user' ? 'primary.light' : 'secondary.light',
-            color: message.sender === 'user' ? 'primary.contrastText' : 'secondary.contrastText',
-            alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start',
-            maxWidth: '80%',
-            position: 'relative',
-            ml: message.sender === 'user' ? 'auto' : 0
-          }}
-        >
-          <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-            {message.sender === 'user' ? 'Patient' : 'Evelina AI'}
-          </Typography>
-          <Typography variant="body1">{message.message_content}</Typography>
-          <Typography variant="caption" sx={{ display: 'block', textAlign: 'right', mt: 1 }}>
-            {new Date(message.sent_at).toLocaleString()}
-          </Typography>
-        </Box>
-      ))}
-    </Paper>
-  );
-}
-
-/**
- * Component to display all conversations for a patient
- */
-function ConversationsTab({ patientId }: { patientId: string }) {
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [expandedConversation, setExpandedConversation] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  
-  useEffect(() => {
-    const loadConversations = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchPatientConversations(patientId);
-        setConversations(data);
-      } catch (err) {
-        console.error('Error loading conversations:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadConversations();
+    loadScheduledChecks();
   }, [patientId]);
   
-  const handleExpandConversation = (conversationId: string) => {
-    if (expandedConversation === conversationId) {
-      setExpandedConversation(null);
-    } else {
-      setExpandedConversation(conversationId);
+  const handleAddCheck = async (formData: ScheduledCheckFormData) => {
+    try {
+      setFormSubmitting(true);
+      await scheduledChecksService.createScheduledCheck({
+        title: formData.title,
+        description: formData.description,
+        frequency: formData.frequency,
+        nextScheduled: formData.nextScheduled.toISOString(),
+        platform: formData.platform,
+        patientId: formData.patientId
+      });
+      setShowForm(false);
+      // Reload the scheduled checks
+      await loadScheduledChecks();
+    } catch (err) {
+      console.error('Error creating scheduled check:', err);
+      alert('Failed to create scheduled check. Please try again.');
+    } finally {
+      setFormSubmitting(false);
+    }
+  };
+  
+  const getFrequencyIcon = (frequency: string) => {
+    switch (frequency.toLowerCase()) {
+      case 'daily':
+        return <RepeatIcon fontSize="small" sx={{ color: '#1976d2' }} />;
+      case 'weekly':
+        return <RepeatIcon fontSize="small" sx={{ color: '#9c27b0' }} />;
+      case 'monthly':
+        return <RepeatIcon fontSize="small" sx={{ color: '#ed6c02' }} />;
+      default:
+        return <ScheduleIcon fontSize="small" />;
     }
   };
   
@@ -179,8 +154,10 @@ function ConversationsTab({ patientId }: { patientId: string }) {
         return <Icon className="fa-brands fa-whatsapp" sx={{ color: '#25D366' }} />;
       case 'telegram':
         return <Icon className="fa-brands fa-telegram" sx={{ color: '#0088cc' }} />;
-      case 'chainlit':
-        return <Icon className="fa-solid fa-comments" />;
+      case 'sms':
+        return <Icon className="fa-solid fa-sms" sx={{ color: '#5C5C5C' }} />;
+      case 'email':
+        return <Icon className="fa-solid fa-envelope" sx={{ color: '#DB4437' }} />;
       default:
         return <Icon className="fa-solid fa-comment" />;
     }
@@ -196,64 +173,100 @@ function ConversationsTab({ patientId }: { patientId: string }) {
     );
   }
   
-  if (conversations.length === 0) {
+  if (scheduledChecks.length === 0) {
     return (
       <Box sx={{ pt: 2, textAlign: 'center' }}>
-        <Typography variant="h6" color="text.secondary">No conversations found</Typography>
+        <Typography variant="h6" color="text.secondary">No scheduled checks found</Typography>
+        <Button 
+          variant="contained" 
+          startIcon={<AddIcon />} 
+          sx={{ mt: 2 }}
+          onClick={() => setShowForm(true)}
+        >
+          Add Scheduled Check
+        </Button>
+        
+        <ScheduledCheckForm
+          open={showForm}
+          onClose={() => setShowForm(false)}
+          onSubmit={handleAddCheck}
+          patientId={patientId}
+        />
       </Box>
     );
   }
   
   return (
     <Box sx={{ pt: 2 }}>
-      <Typography variant="h6" gutterBottom>Patient Conversations</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h6">Scheduled Health Checks</Typography>
+        <Button 
+          variant="contained" 
+          startIcon={<AddIcon />}
+          onClick={() => setShowForm(true)}
+        >
+          Add Check
+        </Button>
+      </Box>
       
-      {conversations.map((conversation) => (
-        <Paper key={conversation.id} sx={{ mb: 2, overflow: 'hidden' }}>
+      {scheduledChecks.map((check) => (
+        <Paper key={check.id} sx={{ mb: 2, overflow: 'hidden' }}>
           <Box 
             sx={{
               p: 2,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              cursor: 'pointer',
-              '&:hover': { bgcolor: 'action.hover' }
             }}
-            onClick={() => handleExpandConversation(conversation.id)}
           >
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              {getPlatformIcon(conversation.platform)}
-              <Box sx={{ ml: 2 }}>
+              <Avatar sx={{ bgcolor: 'primary.light', mr: 2 }}>
+                <ScheduleIcon />
+              </Avatar>
+              <Box>
                 <Typography variant="subtitle1">
-                  {conversation.platform.charAt(0).toUpperCase() + conversation.platform.slice(1)} Conversation
+                  {check.title}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Started: {new Date(conversation.start_time).toLocaleString()}
+                  {check.description}
                 </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
+                    {getFrequencyIcon(check.frequency)}
+                    <Typography variant="caption" sx={{ ml: 0.5 }}>
+                      {check.frequency.charAt(0).toUpperCase() + check.frequency.slice(1)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    {getPlatformIcon(check.platform)}
+                    <Typography variant="caption" sx={{ ml: 0.5 }}>
+                      {check.platform.charAt(0).toUpperCase() + check.platform.slice(1)}
+                    </Typography>
+                  </Box>
+                </Box>
               </Box>
             </Box>
-            <Box>
+            <Box sx={{ textAlign: 'right' }}>
               <Chip 
-                label={conversation.status} 
-                color={conversation.status === 'active' ? 'success' : 'default'}
+                label={check.status} 
+                color={check.status === 'completed' ? 'success' : 'primary'}
                 size="small"
+                sx={{ mb: 1 }}
               />
-              <IconButton size="small" sx={{ ml: 1 }}>
-                {expandedConversation === conversation.id ? 
-                  <ArrowDropUpIcon /> : <ArrowDropDownIcon />
-                }
-              </IconButton>
+              <Typography variant="caption" display="block">
+                Next: {new Date(check.nextScheduled).toLocaleDateString()}
+              </Typography>
             </Box>
           </Box>
-          
-          {expandedConversation === conversation.id && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <Divider sx={{ mb: 2 }} />
-              <ConversationMessages conversationId={conversation.id} />
-            </Box>
-          )}
         </Paper>
       ))}
+      
+      <ScheduledCheckForm
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        onSubmit={handleAddCheck}
+        patientId={patientId}
+      />
     </Box>
   );
 }
@@ -272,19 +285,28 @@ export default function PatientDetailPage() {
     async function loadPatient() {
       try {
         setLoading(true);
+        console.log(`Attempting to fetch patient with ID: ${patientId}`);
+        
         const data = await fetchPatientById(patientId);
         
         if (data) {
+          console.log(`Successfully loaded patient: ${data.name}`);
           setPatient(data);
         } else {
+          console.log(`No patient found with ID: ${patientId}, trying mock data`);
           // If patient not found in Supabase, try to use mock data as fallback
           import('@/lib/mockData').then(({ mockPatients }) => {
             const mockPatient = mockPatients.find(p => p.id === patientId);
             if (mockPatient) {
+              console.log(`Found mock patient: ${mockPatient.name}`);
               setPatient(mockPatient);
             } else {
+              console.log(`No mock patient found with ID: ${patientId}`);
               setError('Patient not found.');
             }
+          }).catch(err => {
+            console.error('Error loading mock data:', err);
+            setError('Patient not found and mock data unavailable.');
           });
         }
       } catch (err) {
@@ -295,8 +317,11 @@ export default function PatientDetailPage() {
         import('@/lib/mockData').then(({ mockPatients }) => {
           const mockPatient = mockPatients.find(p => p.id === patientId);
           if (mockPatient) {
+            console.log(`Found mock patient after error: ${mockPatient.name}`);
             setPatient(mockPatient);
           }
+        }).catch(mockErr => {
+          console.error('Error loading mock data after fetch error:', mockErr);
         });
       } finally {
         setLoading(false);
@@ -444,6 +469,7 @@ export default function PatientDetailPage() {
               <Tab label="Overview" {...a11yProps(0)} />
               <Tab label="Medical Records" {...a11yProps(1)} />
               <Tab label="Conversations" {...a11yProps(2)} />
+              <Tab label="Scheduled Checks" {...a11yProps(3)} />
             </Tabs>
           </Box>
           
@@ -626,6 +652,10 @@ export default function PatientDetailPage() {
           
           <TabPanel value={activeTab} index={2}>
             <ConversationsTab patientId={patientId} />
+          </TabPanel>
+          
+          <TabPanel value={activeTab} index={3}>
+            <ScheduledChecksTab patientId={patientId} />
           </TabPanel>
         </Box>
       </Box>

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { getSupabaseClient } from '@/lib/supabase/client'
+import { getSupabaseClient, getSchemaTable } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
+
+// Table name with schema
+const USERS_TABLE = getSchemaTable('users');
 
 interface User {
   id: string;
@@ -18,7 +21,7 @@ const RealTimeUserTable = () => {
       try {
         const supabase = getSupabaseClient();
         const { data, error } = await supabase
-          .from('users')
+          .from(USERS_TABLE)
           .select('*')
         
         if (error) throw error
@@ -38,7 +41,7 @@ const RealTimeUserTable = () => {
       .channel('users')
       .on('postgres_changes', {
         event: '*',
-        schema: 'public',
+        schema: 'evelinaai',
         table: 'users'
       }, (payload) => {
         console.log('Change received:', payload)
@@ -64,32 +67,39 @@ const RealTimeUserTable = () => {
     }
   }, [])
 
+  if (loading) {
+    return <div>Loading users...</div>
+  }
+
+  if (error) {
+    return <div className="text-red-500">{error}</div>
+  }
+
   return (
     <div>
-      {loading ? (
-        <p>Loading users...</p>
-      ) : error ? (
-        <p>Error: {error}</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Email</th>
-              <th>Last Active</th>
+      <h2 className="text-xl font-semibold mb-4">Active Users ({users.length})</h2>
+      <table className="min-w-full bg-white">
+        <thead>
+          <tr>
+            <th className="py-2 px-4 border-b">ID</th>
+            <th className="py-2 px-4 border-b">Email</th>
+            <th className="py-2 px-4 border-b">Last Active</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(user => (
+            <tr key={user.id}>
+              <td className="py-2 px-4 border-b">{user.id}</td>
+              <td className="py-2 px-4 border-b">{user.email || 'N/A'}</td>
+              <td className="py-2 px-4 border-b">
+                {user.last_active 
+                  ? new Date(user.last_active).toLocaleString() 
+                  : 'Never'}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {users.map(user => (
-              <tr key={user.id}>
-                <td>{user.id}</td>
-                <td>{user.email}</td>
-                <td>{user.last_active ? new Date(user.last_active).toLocaleString() : 'Never'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

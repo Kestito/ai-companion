@@ -25,7 +25,13 @@ def get_supabase_client() -> Client:
     try:
         client = create_client(
             settings.SUPABASE_URL,
-            settings.SUPABASE_KEY
+            settings.SUPABASE_KEY,
+            options={
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Accept-Profile": "evelinaai"
+                }
+            }
         )
         logger.info("Supabase client initialized successfully")
         return client

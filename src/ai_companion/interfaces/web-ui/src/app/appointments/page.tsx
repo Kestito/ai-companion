@@ -1,23 +1,254 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { 
+  Button, 
+  Box, 
+  Typography, 
+  Paper, 
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Container,
+  CircularProgress,
+  Alert,
+  Chip,
+  Grid
+} from '@mui/material';
+import Link from 'next/link';
+import { CalendarMonth, Schedule, Add, Home as HomeIcon } from '@mui/icons-material';
+import { getSupabaseClient, TABLE_NAMES } from '@/lib/supabase/client';
+
+// Define appointment type
+type Appointment = {
+  id: string;
+  user_id: string;
+  scheduled_time: string;
+  contact_method: string;
+  purpose: string;
+  status: string;
+};
 
 export default function AppointmentsPage() {
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchAppointments() {
+      try {
+        setLoading(true);
+        const supabase = getSupabaseClient();
+
+        const { data, error } = await supabase
+          .from(TABLE_NAMES.SCHEDULED_APPOINTMENTS)
+          .select(`
+            id,
+            user_id,
+            scheduled_time,
+            contact_method,
+            purpose,
+            status
+          `)
+          .order('scheduled_time', { ascending: true });
+
+        if (error) {
+          throw error;
+        }
+
+        // Type assertion to help TypeScript
+        setAppointments(data as Appointment[] || []);
+      } catch (err: any) {
+        console.error('Error fetching appointments:', err);
+        setError(err.message || 'Failed to load appointments');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchAppointments();
+  }, []);
+
+  if (loading) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <Link 
+              href="/"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+            <Typography color="text.primary">Appointments</Typography>
+          </Box>
+          
+          <Typography variant="h4" component="h1" gutterBottom>
+            Scheduled Appointments
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+          <CircularProgress />
+        </Box>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <Link 
+              href="/"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+            <Typography color="text.primary">Appointments</Typography>
+          </Box>
+          
+          <Typography variant="h4" component="h1" gutterBottom>
+            Scheduled Appointments
+          </Typography>
+        </Box>
+        
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <Typography variant="subtitle1" component="div" fontWeight="bold">Error!</Typography>
+          <Typography variant="body2">{error}</Typography>
+        </Alert>
+      </Container>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6">
-      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-8 max-w-2xl w-full text-center">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Appointments</h1>
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-6">Schedule Management</h2>
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Box sx={{ mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Link 
+            href="/"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              color: 'inherit',
+              textDecoration: 'none',
+              marginRight: '8px'
+            }}
+          >
+            <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+            Home
+          </Link>
+          <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+          <Typography color="text.primary">Appointments</Typography>
+        </Box>
         
-        <div className="p-4 mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
-          <p className="text-amber-700 dark:text-amber-400 font-medium">
-            ⚠️ This feature is currently under development
-          </p>
-        </div>
-        
-        <p className="text-gray-600 dark:text-gray-300">
-          The appointments scheduling system will allow you to manage patient appointments, 
-          view calendars, and send appointment reminders.
-        </p>
-      </div>
-    </div>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Scheduled Appointments
+          </Typography>
+
+          <Button 
+            variant="contained" 
+            color="primary" 
+            startIcon={<Add />}
+            component={Link}
+            href="/appointments/new"
+          >
+            Create Appointment
+          </Button>
+        </Box>
+        <Typography variant="body1" color="text.secondary" paragraph>
+          Manage and schedule appointments for patients.
+        </Typography>
+      </Box>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>User ID</TableCell>
+                  <TableCell>Date & Time</TableCell>
+                  <TableCell>Contact Method</TableCell>
+                  <TableCell>Purpose</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {appointments.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center">
+                      No appointments found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  appointments.map((appointment) => (
+                    <TableRow key={appointment.id} hover>
+                      <TableCell>{appointment.user_id}</TableCell>
+                      <TableCell>{new Date(appointment.scheduled_time).toLocaleString()}</TableCell>
+                      <TableCell>{appointment.contact_method}</TableCell>
+                      <TableCell>{appointment.purpose}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={appointment.status}
+                          color={
+                            appointment.status === 'confirmed' ? 'success' : 
+                            appointment.status === 'pending' ? 'warning' : 
+                            'error'
+                          }
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button 
+                            variant="text" 
+                            color="primary"
+                            component={Link} 
+                            href={`/appointments/${appointment.id}`}
+                            size="small"
+                          >
+                            View
+                          </Button>
+                          <Button 
+                            variant="text" 
+                            color="error"
+                            size="small"
+                          >
+                            Cancel
+                          </Button>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Grid>
+      </Grid>
+    </Container>
   );
 } 

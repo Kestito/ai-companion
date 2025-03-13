@@ -695,7 +695,17 @@ async def patient_registration_node(state: AICompanionState, config: RunnableCon
         # Extract basic patient information from the message
         # Improved regex patterns for better extraction
         name_match = re.search(r'name[:\s]+([^,\n:]*?)(?=\s*(?:phone|$|,))', last_message, re.IGNORECASE)
-        name = name_match.group(1).strip() if name_match else "Unknown"
+        
+        # Check if name is found in the message
+        if name_match:
+            name = name_match.group(1).strip()
+        else:
+            # If no name is found and platform is Telegram, use a default name
+            if platform.lower() == "telegram" and user_id:
+                name = f"Telegram User {user_id}"
+                logger.info(f"No name provided. Using default name for Telegram user: {name}")
+            else:
+                name = "Unknown"
         
         phone_match = re.search(r'phone[:\s]+([0-9+\s\-()]+)(?=$|\s|,|\n)', last_message, re.IGNORECASE)
         phone = phone_match.group(1).strip() if phone_match else None
@@ -767,6 +777,10 @@ async def patient_registration_node(state: AICompanionState, config: RunnableCon
         response_message = f"Patient {name} has been registered successfully with ID: {new_patient_id or 'unknown'}"
         if platform.lower() == "telegram" and phone and phone.startswith("telegram:"):
             response_message += f"\nUsing your Telegram ID ({user_id}) as contact information."
+        
+        # Add note about default name if it was used
+        if platform.lower() == "telegram" and user_id and name.startswith(f"Telegram User {user_id}"):
+            response_message += f"\nNo name was provided, so I used '{name}' as your default name."
         
         if not conversation_storage_result:
             response_message += "\nNote: Patient ID could not be saved to conversation context."
