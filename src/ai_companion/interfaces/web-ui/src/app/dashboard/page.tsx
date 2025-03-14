@@ -10,7 +10,8 @@ import {
   MoreVert as MoreVertIcon,
   Add as AddIcon,
   Home as HomeIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -19,6 +20,7 @@ import { fetchPatientStatistics } from '@/lib/supabase/patientService';
 import { fetchRecentActivity, ActivityItem } from '@/lib/supabase/activityService';
 import { fetchNotifications, Notification } from '@/lib/supabase/notificationService';
 import { useLogger } from '@/hooks/useLogger';
+import { AlertTitle } from '@mui/material';
 
 // Default stats for initial render
 const defaultStats = {
@@ -370,6 +372,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(defaultStats);
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
   useEffect(() => {
     loadDashboardData();
@@ -379,24 +382,21 @@ export default function DashboardPage() {
     try {
       logger.info('Loading dashboard data');
       setIsLoading(true);
-
-      // Add a slight delay for loading state to be visible (for demo purposes)
-      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-      await delay(500);
+      setError(null);
 
       // Fetch all data in parallel with error handling for each request
       const [statistics, activity, notifs] = await Promise.all([
         fetchPatientStatistics().catch(err => {
           logger.error('Failed to fetch patient statistics', err);
-          return defaultStats;
+          throw new Error(`Failed to load statistics: ${err.message}`);
         }),
         fetchRecentActivity(5).catch(err => {
           logger.error('Failed to fetch recent activity', err);
-          return [];
+          throw new Error(`Failed to load activity: ${err.message}`);
         }),
         fetchNotifications(3).catch(err => {
           logger.error('Failed to fetch notifications', err);
-          return [];
+          throw new Error(`Failed to load notifications: ${err.message}`);
         })
       ]);
 
@@ -409,6 +409,7 @@ export default function DashboardPage() {
       setStats(statistics);
       setRecentActivity(activity);
       setNotifications(notifs);
+      setLastRefreshed(new Date());
       setIsLoading(false);
     } catch (err) {
       const error = err as Error;
@@ -418,6 +419,11 @@ export default function DashboardPage() {
     }
   }
 
+  const handleRefresh = () => {
+    logger.info('User manually refreshing dashboard data');
+    loadDashboardData();
+  };
+
   const handleNavigation = (path: string) => {
     logger.info('User navigating', { from: 'dashboard', to: path });
     router.push(path);
@@ -425,8 +431,8 @@ export default function DashboardPage() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Link 
             href="/"
             style={{
@@ -444,12 +450,30 @@ export default function DashboardPage() {
           <Typography color="text.primary">Dashboard</Typography>
         </Box>
         
-        <Typography variant="h4" component="h1" gutterBottom>
-          Dashboard
-        </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
-          Welcome back! Here's an overview of your medical practice.
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3, mb: 2 }}>
+          <Typography variant="h4" component="h1">
+            Dashboard
+          </Typography>
+          <Button 
+            startIcon={<RefreshIcon />} 
+            onClick={handleRefresh}
+            disabled={isLoading}
+            variant="outlined"
+            size="small"
+          >
+            Refresh
+          </Button>
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Typography variant="body1" color="text.secondary">
+            Welcome back! Here's an overview of your medical practice.
+          </Typography>
+          {!isLoading && (
+            <Typography variant="caption" color="text.secondary">
+              Last updated: {lastRefreshed.toLocaleTimeString()}
+            </Typography>
+          )}
+        </Box>
       </Box>
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -538,8 +562,25 @@ export default function DashboardPage() {
       </Grid>
 
       {error && (
-        <Alert severity="error" sx={{ mt: 3 }}>
-          There was an error loading some dashboard data. The page may show partial information.
+        <Alert 
+          severity="error" 
+          sx={{ mt: 3 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={handleRefresh}
+              startIcon={<RefreshIcon />}
+            >
+              Retry
+            </Button>
+          }
+        >
+          <AlertTitle>Error Loading Data</AlertTitle>
+          {error.message || 'There was an error loading dashboard data. The page may show partial information.'}
+          <Typography variant="caption" component="div" sx={{ mt: 1 }}>
+            Some data might be shown from local cache or fallback values.
+          </Typography>
         </Alert>
       )}
     </Container>

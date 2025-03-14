@@ -23,7 +23,23 @@ The Patient Registration module enables the AI Companion to create new patient r
    - Patient records are stored in the `patients` table
    - Table schema includes: id, name, phone, email, status, platform, and timestamps
 
-4. **Graph Integration**
+4. **Important Implementation Notes**
+   - The `patients` table uses UUID format for the primary key (`id` field)
+   - Telegram/WhatsApp user IDs are numeric and cannot be directly used as UUIDs
+   - User identifiers from messaging platforms are stored in the `email` field as JSON metadata
+   - When looking up patients by platform user ID, always use a LIKE query on the email field:
+     ```python
+     # Correct way to find a patient by Telegram user ID
+     metadata_search = f'%"user_id": "{user_id}"%'
+     result = supabase.table("patients").select("id").like("email", metadata_search).execute()
+     ```
+   - Never attempt to query directly by messaging platform ID in the UUID field:
+     ```python
+     # INCORRECT - will cause "invalid input syntax for type uuid" error
+     result = supabase.table("patients").select("id").eq("id", str(user_id)).execute()
+     ```
+
+5. **Graph Integration**
    - The node is properly integrated into the processing graph
    - Edge definitions ensure proper routing to the node
    - Conversation flow is maintained after registration

@@ -55,6 +55,36 @@ async def router_node(state: AICompanionState) -> Dict[str, str]:
         # Get the message content, normalize the case for pattern matching
         last_message = get_message_content(state["messages"][-1]).lower() if state["messages"] else ""
         
+        # Extract user ID and platform from message metadata
+        platform = "unknown"
+        user_id = None
+        
+        if hasattr(state["messages"][-1], "metadata"):
+            metadata = state["messages"][-1].metadata
+            platform = metadata.get("platform", "unknown")
+            user_id = metadata.get("user_id")
+            
+        # Check if this is a new user from Telegram that needs registration
+        if platform.lower() == "telegram" and user_id:
+            # Try to find an existing patient with this Telegram user ID
+            try:
+                supabase = get_supabase_client()
+                
+                # Don't try to query by ID directly since user_id is not a UUID
+                # Instead, always search in the email field for the platform metadata
+                metadata_search = f'%"user_id": "{user_id}"%'
+                result = supabase.table("patients").select("id").like("email", metadata_search).execute()
+                
+                if not result.data:
+                    # No existing patient found - route to registration
+                    logger.info(f"No existing patient found for Telegram user {user_id}. Routing to registration.")
+                    return {"workflow": "patient_registration_node"}
+                    
+                logger.debug(f"Found existing patient for Telegram user {user_id}.")
+            except Exception as e:
+                logger.error(f"Error checking for existing patient: {e}", exc_info=True)
+                # On error, continue with normal routing
+        
         # Enhanced detection of POLA card related questions - handling misspellings
         pola_patterns = [
             r'(?i)pola',                     # Basic mention of POLA
@@ -681,16 +711,51 @@ async def patient_registration_node(state: AICompanionState, config: RunnableCon
         # Extract conversation info to determine source platform (telegram/whatsapp)
         platform = "unknown"
         user_id = None
+        user_name = None
         
         if hasattr(state["messages"][-1], "metadata"):
             metadata = state["messages"][-1].metadata
             platform = metadata.get("platform", "unknown")
             user_id = metadata.get("user_id")
+            user_name = metadata.get("username")  # Try to get username if available
+            
+            # If using Telegram, try to get more user data if available
+            if platform.lower() == "telegram" and "telegram_user" in metadata:
+                telegram_user = metadata.get("telegram_user", {})
+                if not user_name and "username" in telegram_user:
+                    user_name = telegram_user.get("username")
+                if "first_name" in telegram_user:
+                    first_name = telegram_user.get("first_name")
+                    last_name = telegram_user.get("last_name", "")
+                    # Combine for a full name
+                    user_name = f"{first_name} {last_name}".strip()
         
         logger.info(f"Processing patient registration request from {platform} by user {user_id}")
         
         # Initialize Supabase client
         supabase = get_supabase_client()
+        
+        # First check if this patient already exists
+        existing_patient = None
+        
+        if platform.lower() == "telegram" and user_id:
+            # Check for existing patient with this Telegram user ID
+            metadata_search = f'%"user_id": "{user_id}"%'
+            result = supabase.table("patients").select("id").like("email", metadata_search).execute()
+            
+            if result.data:
+                existing_patient = result.data[0]
+                logger.info(f"Found existing patient with ID {existing_patient.get('id')} for Telegram user {user_id}")
+                
+                # Return success with existing patient ID
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Welcome back! You're already registered in our system.",
+                        )
+                    ],
+                    "patient_id": existing_patient.get('id')
+                }
         
         # Extract basic patient information from the message
         # Improved regex patterns for better extraction
@@ -700,10 +765,10 @@ async def patient_registration_node(state: AICompanionState, config: RunnableCon
         if name_match:
             name = name_match.group(1).strip()
         else:
-            # If no name is found and platform is Telegram, use a default name
-            if platform.lower() == "telegram" and user_id:
-                name = f"Telegram User {user_id}"
-                logger.info(f"No name provided. Using default name for Telegram user: {name}")
+            # If no name is found and platform is Telegram, use available user info
+            if platform.lower() == "telegram" and (user_name or user_id):
+                name = user_name if user_name else f"Telegram User {user_id}"
+                logger.info(f"No name provided. Using name from Telegram: {name}")
             else:
                 name = "Unknown"
         
@@ -720,19 +785,21 @@ async def patient_registration_node(state: AICompanionState, config: RunnableCon
         
         # Create patient record in Supabase with fields matching the actual table structure
         patient_data = {
-            "name": name,
+            "first_name": name.split(" ")[0] if " " in name else name,
+            "last_name": " ".join(name.split(" ")[1:]) if " " in name else "",
             "phone": phone,
-            "status": "Active",
-            "risk_level": "Low",
-            "last_contact": now,
-            "created_at": now
+            "created_at": now,
+            "last_active": now,
+            "preferred_language": "lt",  # Default language
+            "support_status": "active"  # Default status
         }
         
         # Add platform and user_id to metadata stored in the email field
         # This is a temporary solution until we have a proper metadata field
         platform_metadata = {
             "platform": platform,
-            "user_id": user_id
+            "user_id": user_id,
+            "username": user_name
         }
         patient_data["email"] = json.dumps(platform_metadata) if platform and user_id else None
         
@@ -758,59 +825,47 @@ async def patient_registration_node(state: AICompanionState, config: RunnableCon
                         if asyncio.iscoroutinefunction(state["conversation_memory"].store_metadata):
                             await state["conversation_memory"].store_metadata({
                                 "patient_id": new_patient_id,
-                                "registration_time": now,
-                                "platform": platform,
-                                "platform_user_id": user_id
                             })
+                            conversation_storage_result = True
                         else:
-                            state["conversation_memory"].metadata["patient_id"] = new_patient_id
-                            state["conversation_memory"].metadata["registration_time"] = now
-                            state["conversation_memory"].metadata["platform"] = platform
-                            state["conversation_memory"].metadata["platform_user_id"] = user_id
-                        
-                        logger.debug(f"Stored patient ID {new_patient_id} in existing conversation memory")
-                        conversation_storage_result = True
-        except Exception as mem_error:
-            logger.warning(f"Failed to store patient data in conversation memory: {mem_error}")
+                            state["conversation_memory"].store_metadata({
+                                "patient_id": new_patient_id,
+                            })
+                            conversation_storage_result = True
+        except Exception as e:
+            logger.error(f"Error storing patient ID in conversation memory: {e}", exc_info=True)
         
-        # Create response message
-        response_message = f"Patient {name} has been registered successfully with ID: {new_patient_id or 'unknown'}"
-        if platform.lower() == "telegram" and phone and phone.startswith("telegram:"):
-            response_message += f"\nUsing your Telegram ID ({user_id}) as contact information."
-        
-        # Add note about default name if it was used
-        if platform.lower() == "telegram" and user_id and name.startswith(f"Telegram User {user_id}"):
-            response_message += f"\nNo name was provided, so I used '{name}' as your default name."
-        
-        if not conversation_storage_result:
-            response_message += "\nNote: Patient ID could not be saved to conversation context."
-        
-        # Add this registration to the conversation
-        if "messages" in state:
-            state["messages"].append(AIMessage(content=response_message))
-            logger.debug("Added response message to conversation")
-        
-        return {
-            "registration_result": "success",
-            "patient_id": new_patient_id,
-            "patient_name": name,
-            "response": response_message,
-            "platform": platform,
-            "platform_user_id": user_id
-        }
+        # Build a success message
+        if new_patient_id:
+            response_message = "Thank you! I've registered you as a new patient in our system."
+            if platform.lower() == "telegram":
+                response_message += " You can now use our services through this Telegram chat."
+            
+            return {
+                "messages": [
+                    AIMessage(
+                        content=response_message,
+                    )
+                ],
+                "patient_id": new_patient_id
+            }
+        else:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="I'm sorry, but I encountered an issue while trying to register you. Please try again later or contact support.",
+                    )
+                ]
+            }
     
     except Exception as e:
         logger.error(f"Error in patient registration node: {e}", exc_info=True)
-        error_message = "Sorry, there was an error processing your patient registration request. Please try again."
-        
-        # Add error message to conversation
-        if "messages" in state:
-            state["messages"].append(AIMessage(content=error_message))
-        
         return {
-            "registration_result": "error",
-            "error": str(e),
-            "response": error_message
+            "messages": [
+                AIMessage(
+                    content="I apologize, but I encountered an error while trying to process your registration. Please try again or contact our support team if the issue persists.",
+                )
+            ]
         }
 
 

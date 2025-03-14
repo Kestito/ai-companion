@@ -647,12 +647,16 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
     } elseif ($backendAppRunning -and $ForceUpdate) {
         # Update the existing container app instead of deleting and recreating
         Write-ColorOutput -Message "Updating existing backend container app to image version: $TAG" -Color Yellow -Prefix "→"
-        az containerapp update `
-            --name $BACKEND_CONTAINER_APP_NAME `
-            --resource-group $RESOURCE_GROUP `
-            --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
         
-        if (-not (Test-CommandSuccess -SuccessMessage "Backend container app updated successfully" -ErrorMessage "Failed to update backend container app")) {
+        # Execute command with detailed error handling
+        $updateCmd = "az containerapp update --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --image ${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+        Write-Host "Executing command: $updateCmd" -ForegroundColor Gray
+        
+        $updateResult = Invoke-Expression $updateCmd
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-ColorOutput -Message "Backend update failed with exit code: $LASTEXITCODE" -Color Red -Prefix "❌"
+            Write-ColorOutput -Message "Error details: $updateResult" -Color Red -Prefix "❌"
             Write-ColorOutput -Message "Failed to update backend, will attempt to recreate" -Color Yellow -Prefix "⚠️"
             
             # If update fails, delete and recreate
@@ -761,13 +765,17 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
         } elseif ($frontendAppRunning -and $ForceUpdate) {
             # Update the existing container app instead of deleting and recreating
             Write-ColorOutput -Message "Updating existing frontend container app to image version: $TAG" -Color Yellow -Prefix "→"
-            az containerapp update `
-                --name $FRONTEND_CONTAINER_APP_NAME `
-                --resource-group $RESOURCE_GROUP `
-                --image "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG}" `
-                --env-vars NEXT_PUBLIC_API_URL=$backendAppUrl
-
-            if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app updated successfully" -ErrorMessage "Failed to update frontend container app")) {
+            Write-ColorOutput -Message "Setting API URL to: $backendAppUrl" -Color Yellow -Prefix "→"
+            
+            # Execute command with detailed error handling
+            $updateCmd = "az containerapp update --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --image ${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG} --set-env-vars NEXT_PUBLIC_API_URL=$backendAppUrl"
+            Write-Host "Executing command: $updateCmd" -ForegroundColor Gray
+            
+            $updateResult = Invoke-Expression $updateCmd
+            
+            if ($LASTEXITCODE -ne 0) {
+                Write-ColorOutput -Message "Frontend update failed with exit code: $LASTEXITCODE" -Color Red -Prefix "❌"
+                Write-ColorOutput -Message "Error details: $updateResult" -Color Red -Prefix "❌"
                 Write-ColorOutput -Message "Failed to update frontend, will attempt to recreate" -Color Yellow -Prefix "⚠️"
                 
                 # If update fails, delete and recreate
@@ -777,7 +785,7 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
                 }
                 $frontendAppRunning = $false
             } else {
-                # Get URL of updated app
+                # Get updated URL
                 $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
                 $frontendAppUrl = "https://$frontendAppUrl"
                 Write-ColorOutput -Message "Frontend App updated to version $TAG" -Color Green -Prefix "✅"

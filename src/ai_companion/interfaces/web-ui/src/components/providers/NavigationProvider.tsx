@@ -1,17 +1,27 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { useMediaQuery, useTheme } from '@mui/material';
 
 interface NavigationContextType {
   isSidebarOpen: boolean;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  closeSidebar: () => void;
+  openSidebar: () => void;
 }
 
 const NavigationContext = createContext<NavigationContextType | undefined>(undefined);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [isSidebarOpen, setIsSidebarOpen] = useState(!isMobile);
+
+  // Update sidebar state based on screen size changes
+  useEffect(() => {
+    setIsSidebarOpen(!isMobile);
+  }, [isMobile]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -21,8 +31,22 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     setIsSidebarOpen(open);
   };
 
+  const closeSidebar = () => {
+    setIsSidebarOpen(false);
+  };
+
+  const openSidebar = () => {
+    setIsSidebarOpen(true);
+  };
+
   return (
-    <NavigationContext.Provider value={{ isSidebarOpen, toggleSidebar, setSidebarOpen }}>
+    <NavigationContext.Provider value={{ 
+      isSidebarOpen, 
+      toggleSidebar, 
+      setSidebarOpen,
+      closeSidebar,
+      openSidebar
+    }}>
       {children}
     </NavigationContext.Provider>
   );

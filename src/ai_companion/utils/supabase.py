@@ -6,6 +6,7 @@ This module provides a singleton Supabase client for interacting with the Supaba
 import logging
 from functools import lru_cache
 from supabase import create_client, Client
+from supabase.client import ClientOptions
 from ai_companion.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -26,12 +27,13 @@ def get_supabase_client() -> Client:
         client = create_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_KEY,
-            options={
-                "headers": {
+            options=ClientOptions(
+                schema="public",
+                headers={
                     "Content-Type": "application/json",
-                    "Accept-Profile": "evelinaai"
+                    "Accept-Profile": "public"
                 }
-            }
+            )
         )
         logger.info("Supabase client initialized successfully")
         return client

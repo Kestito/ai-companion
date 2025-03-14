@@ -25,7 +25,7 @@ import { getSupabaseClient, TABLE_NAMES } from '@/lib/supabase/client';
 // Define appointment type
 type Appointment = {
   id: string;
-  user_id: string;
+  patient_id: string;
   scheduled_time: string;
   contact_method: string;
   purpose: string;
@@ -47,7 +47,7 @@ export default function AppointmentsPage() {
           .from(TABLE_NAMES.SCHEDULED_APPOINTMENTS)
           .select(`
             id,
-            user_id,
+            patient_id,
             scheduled_time,
             contact_method,
             purpose,
@@ -75,8 +75,8 @@ export default function AppointmentsPage() {
   if (loading) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Link 
               href="/"
               style={{
@@ -94,7 +94,7 @@ export default function AppointmentsPage() {
             <Typography color="text.primary">Appointments</Typography>
           </Box>
           
-          <Typography variant="h4" component="h1" gutterBottom>
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
             Scheduled Appointments
           </Typography>
         </Box>
@@ -109,8 +109,8 @@ export default function AppointmentsPage() {
   if (error) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Link 
               href="/"
               style={{
@@ -128,7 +128,7 @@ export default function AppointmentsPage() {
             <Typography color="text.primary">Appointments</Typography>
           </Box>
           
-          <Typography variant="h4" component="h1" gutterBottom>
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
             Scheduled Appointments
           </Typography>
         </Box>
@@ -143,8 +143,8 @@ export default function AppointmentsPage() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Link 
             href="/"
             style={{
@@ -162,8 +162,8 @@ export default function AppointmentsPage() {
           <Typography color="text.primary">Appointments</Typography>
         </Box>
         
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h4" component="h1" gutterBottom>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
             Scheduled Appointments
           </Typography>
 
@@ -177,7 +177,7 @@ export default function AppointmentsPage() {
             Create Appointment
           </Button>
         </Box>
-        <Typography variant="body1" color="text.secondary" paragraph>
+        <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 4 }}>
           Manage and schedule appointments for patients.
         </Typography>
       </Box>
@@ -188,7 +188,7 @@ export default function AppointmentsPage() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>User ID</TableCell>
+                  <TableCell>Patient ID</TableCell>
                   <TableCell>Date & Time</TableCell>
                   <TableCell>Contact Method</TableCell>
                   <TableCell>Purpose</TableCell>
@@ -206,7 +206,7 @@ export default function AppointmentsPage() {
                 ) : (
                   appointments.map((appointment) => (
                     <TableRow key={appointment.id} hover>
-                      <TableCell>{appointment.user_id}</TableCell>
+                      <TableCell>{appointment.patient_id}</TableCell>
                       <TableCell>{new Date(appointment.scheduled_time).toLocaleString()}</TableCell>
                       <TableCell>{appointment.contact_method}</TableCell>
                       <TableCell>{appointment.purpose}</TableCell>

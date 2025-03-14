@@ -164,6 +164,26 @@ class TelegramBot:
 
             content, message_type = content_result
             
+            # Extract user information to include in message metadata
+            user_metadata = {
+                "platform": "telegram",
+                "user_id": str(message["from"]["id"]) if "from" in message else None,
+                "chat_id": str(chat_id)
+            }
+            
+            # Add more user details if available
+            if "from" in message:
+                user = message["from"]
+                # Store full user object for reference
+                user_metadata["telegram_user"] = user
+                # Extract common fields individually
+                if "username" in user:
+                    user_metadata["username"] = user["username"]
+                if "first_name" in user:
+                    user_metadata["first_name"] = user["first_name"]
+                if "last_name" in user:
+                    user_metadata["last_name"] = user["last_name"]
+            
             # Process message through the graph agent
             async with AsyncSqliteSaver.from_conn_string(
                 settings.SHORT_TERM_MEMORY_DB_PATH
@@ -176,9 +196,12 @@ class TelegramBot:
                     checkpointer=short_term_memory
                 )
                 
+                # Create HumanMessage with metadata
+                human_message = HumanMessage(content=content, metadata=user_metadata)
+                
                 # Invoke the graph with the message
                 result = await graph.ainvoke(
-                    {"messages": [HumanMessage(content=content)]}
+                    {"messages": [human_message]}
                 )
 
                 # Debug the result type

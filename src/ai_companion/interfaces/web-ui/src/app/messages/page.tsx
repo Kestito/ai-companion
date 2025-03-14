@@ -76,8 +76,8 @@ export default function MessagesPage() {
   if (loading) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Link 
               href="/"
               style={{
@@ -95,7 +95,7 @@ export default function MessagesPage() {
             <Typography color="text.primary">Messages</Typography>
           </Box>
           
-          <Typography variant="h4" component="h1" gutterBottom>
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
             Scheduled Messages
           </Typography>
         </Box>
@@ -110,8 +110,8 @@ export default function MessagesPage() {
   if (error) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Link 
               href="/"
               style={{
@@ -129,7 +129,7 @@ export default function MessagesPage() {
             <Typography color="text.primary">Messages</Typography>
           </Box>
           
-          <Typography variant="h4" component="h1" gutterBottom>
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
             Scheduled Messages
           </Typography>
         </Box>
@@ -144,8 +144,8 @@ export default function MessagesPage() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Link 
             href="/"
             style={{
@@ -163,8 +163,8 @@ export default function MessagesPage() {
           <Typography color="text.primary">Messages</Typography>
         </Box>
         
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h4" component="h1" gutterBottom>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
             Scheduled Messages
           </Typography>
           
@@ -178,7 +178,7 @@ export default function MessagesPage() {
             Create New Message
           </Button>
         </Box>
-        <Typography variant="body1" color="text.secondary" paragraph>
+        <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 4 }}>
           Manage and schedule messages to be sent to patients.
         </Typography>
       </Box>

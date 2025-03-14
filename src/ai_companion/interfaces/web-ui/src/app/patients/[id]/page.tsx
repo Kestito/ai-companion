@@ -95,15 +95,19 @@ function ScheduledChecksTab({ patientId }: { patientId: string }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const loadScheduledChecks = async () => {
     try {
       setLoading(true);
+      setErrorMessage(null);
       // Fetch scheduled checks from the API
       const data = await scheduledChecksService.fetchScheduledChecks(patientId);
       setScheduledChecks(data);
     } catch (err) {
       console.error('Error loading scheduled checks:', err);
+      setErrorMessage('Unable to load scheduled checks. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -116,7 +120,13 @@ function ScheduledChecksTab({ patientId }: { patientId: string }) {
   const handleAddCheck = async (formData: ScheduledCheckFormData) => {
     try {
       setFormSubmitting(true);
-      await scheduledChecksService.createScheduledCheck({
+      setErrorMessage(null);
+      
+      // Add a small delay to show loading state
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Create the scheduled check
+      const result = await scheduledChecksService.createScheduledCheck({
         title: formData.title,
         description: formData.description,
         frequency: formData.frequency,
@@ -124,12 +134,27 @@ function ScheduledChecksTab({ patientId }: { patientId: string }) {
         platform: formData.platform,
         patientId: formData.patientId
       });
+      
+      // Show success message
+      setSuccessMessage('Scheduled check created successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 3000);
+      
       setShowForm(false);
+      
       // Reload the scheduled checks
       await loadScheduledChecks();
     } catch (err) {
       console.error('Error creating scheduled check:', err);
-      alert('Failed to create scheduled check. Please try again.');
+      setErrorMessage('Failed to create scheduled check. Please try again.');
+      
+      // Clear error message after 5 seconds
+      setTimeout(() => {
+        setErrorMessage(null);
+      }, 5000);
     } finally {
       setFormSubmitting(false);
     }
@@ -176,14 +201,61 @@ function ScheduledChecksTab({ patientId }: { patientId: string }) {
   if (scheduledChecks.length === 0) {
     return (
       <Box sx={{ pt: 2, textAlign: 'center' }}>
+        {errorMessage && (
+          <Paper 
+            sx={{ 
+              mb: 2, 
+              p: 2, 
+              bgcolor: 'error.light', 
+              color: 'error.contrastText',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between' 
+            }}
+          >
+            {errorMessage}
+            <IconButton 
+              size="small" 
+              color="inherit" 
+              onClick={() => setErrorMessage(null)}
+            >
+              <Icon>close</Icon>
+            </IconButton>
+          </Paper>
+        )}
+        
+        {successMessage && (
+          <Paper 
+            sx={{ 
+              mb: 2, 
+              p: 2, 
+              bgcolor: 'success.light', 
+              color: 'success.contrastText',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between' 
+            }}
+          >
+            {successMessage}
+            <IconButton 
+              size="small" 
+              color="inherit" 
+              onClick={() => setSuccessMessage(null)}
+            >
+              <Icon>close</Icon>
+            </IconButton>
+          </Paper>
+        )}
+        
         <Typography variant="h6" color="text.secondary">No scheduled checks found</Typography>
         <Button 
           variant="contained" 
           startIcon={<AddIcon />} 
           sx={{ mt: 2 }}
           onClick={() => setShowForm(true)}
+          disabled={formSubmitting}
         >
-          Add Scheduled Check
+          {formSubmitting ? "Adding..." : "Add Scheduled Check"}
         </Button>
         
         <ScheduledCheckForm
@@ -198,14 +270,61 @@ function ScheduledChecksTab({ patientId }: { patientId: string }) {
   
   return (
     <Box sx={{ pt: 2 }}>
+      {errorMessage && (
+        <Paper 
+          sx={{ 
+            mb: 2, 
+            p: 2, 
+            bgcolor: 'error.light', 
+            color: 'error.contrastText',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between' 
+          }}
+        >
+          {errorMessage}
+          <IconButton 
+            size="small" 
+            color="inherit" 
+            onClick={() => setErrorMessage(null)}
+          >
+            <Icon>close</Icon>
+          </IconButton>
+        </Paper>
+      )}
+      
+      {successMessage && (
+        <Paper 
+          sx={{ 
+            mb: 2, 
+            p: 2, 
+            bgcolor: 'success.light', 
+            color: 'success.contrastText',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between' 
+          }}
+        >
+          {successMessage}
+          <IconButton 
+            size="small" 
+            color="inherit" 
+            onClick={() => setSuccessMessage(null)}
+          >
+            <Icon>close</Icon>
+          </IconButton>
+        </Paper>
+      )}
+      
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h6">Scheduled Health Checks</Typography>
         <Button 
           variant="contained" 
           startIcon={<AddIcon />}
           onClick={() => setShowForm(true)}
+          disabled={formSubmitting}
         >
-          Add Check
+          {formSubmitting ? 'Adding...' : 'Add Check'}
         </Button>
       </Box>
       
@@ -287,9 +406,10 @@ export default function PatientDetailPage() {
         setLoading(true);
         console.log(`Attempting to fetch patient with ID: ${patientId}`);
         
-        const data = await fetchPatientById(patientId);
+        // First try to fetch from database
+        let data = await fetchPatientById(patientId);
         
-        if (data) {
+        if (data && data.name) {
           console.log(`Successfully loaded patient: ${data.name}`);
           setPatient(data);
         } else {
@@ -297,12 +417,40 @@ export default function PatientDetailPage() {
           // If patient not found in Supabase, try to use mock data as fallback
           import('@/lib/mockData').then(({ mockPatients }) => {
             const mockPatient = mockPatients.find(p => p.id === patientId);
-            if (mockPatient) {
+            if (mockPatient && mockPatient.name) {
               console.log(`Found mock patient: ${mockPatient.name}`);
-              setPatient(mockPatient);
+              // Ensure proper gender type conversion
+              const validPatient: Patient = {
+                ...mockPatient,
+                gender: mockPatient.gender as any, // Cast to PatientGender type
+                status: mockPatient.status as any, // Cast to PatientStatus type
+                platform: mockPatient.platform as any // Cast to MessagePlatform type
+              };
+              setPatient(validPatient);
+              setError(null); // Clear any error if we found a mock patient
             } else {
-              console.log(`No mock patient found with ID: ${patientId}`);
-              setError('Patient not found.');
+              // Try looking for a UUID match in any patient (database formatting issue)
+              // This handles the case where the ID format might be different
+              const formattedId = patientId.toLowerCase().replace(/-/g, '');
+              const altMatch = mockPatients.find(p => 
+                p.id.toLowerCase().replace(/-/g, '') === formattedId
+              );
+              
+              if (altMatch) {
+                console.log(`Found alternative match: ${altMatch.name}`);
+                // Ensure proper gender type conversion
+                const validPatient: Patient = {
+                  ...altMatch,
+                  gender: altMatch.gender as any, // Cast to PatientGender type
+                  status: altMatch.status as any, // Cast to PatientStatus type
+                  platform: altMatch.platform as any // Cast to MessagePlatform type
+                };
+                setPatient(validPatient);
+                setError(null);
+              } else {
+                console.log(`No mock patient found with ID: ${patientId}`);
+                setError('Patient not found. The patient you are looking for does not exist or has been removed.');
+              }
             }
           }).catch(err => {
             console.error('Error loading mock data:', err);
@@ -316,9 +464,17 @@ export default function PatientDetailPage() {
         // Try to fall back to mock data
         import('@/lib/mockData').then(({ mockPatients }) => {
           const mockPatient = mockPatients.find(p => p.id === patientId);
-          if (mockPatient) {
+          if (mockPatient && mockPatient.name) {
             console.log(`Found mock patient after error: ${mockPatient.name}`);
-            setPatient(mockPatient);
+            // Ensure proper gender type conversion
+            const validPatient: Patient = {
+              ...mockPatient,
+              gender: mockPatient.gender as any, // Cast to PatientGender type
+              status: mockPatient.status as any, // Cast to PatientStatus type
+              platform: mockPatient.platform as any // Cast to MessagePlatform type
+            };
+            setPatient(validPatient);
+            setError(null); // Clear the error since we found a fallback
           }
         }).catch(mockErr => {
           console.error('Error loading mock data after fetch error:', mockErr);
@@ -353,20 +509,405 @@ export default function PatientDetailPage() {
     );
   }
 
+  if (error) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 6 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Link
+            href="/patients"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              color: 'inherit',
+              textDecoration: 'none',
+              marginRight: '8px'
+            }}
+          >
+            <ArrowBackIcon sx={{ fontSize: 18, mr: 0.5 }} />
+            Back to Patients
+          </Link>
+        </Box>
+        
+        <Paper sx={{ p: 4, textAlign: 'center', maxWidth: 600, mx: 'auto', mt: 6 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Patient Not Found
+          </Typography>
+          
+          <Typography color="text.secondary" paragraph>
+            {error}
+          </Typography>
+          
+          <Button 
+            variant="contained" 
+            startIcon={<ArrowBackIcon />} 
+            onClick={handleBack}
+            sx={{ mt: 2 }}
+          >
+            Return to Patient List
+          </Button>
+        </Paper>
+      </Container>
+    );
+  }
+
   if (!patient) {
     return (
-      <Container maxWidth="lg">
-        <Box sx={{ py: 6 }}>
-          <Button startIcon={<ArrowBackIcon />} onClick={handleBack}>
+      <Container maxWidth="lg" sx={{ py: 6 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Link
+            href="/patients"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              color: 'inherit',
+              textDecoration: 'none',
+              marginRight: '8px'
+            }}
+          >
+            <ArrowBackIcon sx={{ fontSize: 18, mr: 0.5 }} />
             Back to Patients
+          </Link>
+        </Box>
+        
+        <Paper sx={{ p: 4, textAlign: 'center', maxWidth: 600, mx: 'auto', mt: 6 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Patient Not Found
+          </Typography>
+          
+          <Typography color="text.secondary" paragraph>
+            The patient you are looking for does not exist or has been removed.
+          </Typography>
+          
+          <Button 
+            variant="contained" 
+            startIcon={<ArrowBackIcon />} 
+            onClick={handleBack}
+            sx={{ mt: 2 }}
+          >
+            Return to Patient List
           </Button>
-          <Box sx={{ my: 4, textAlign: 'center' }}>
-            <Typography variant="h5" gutterBottom>
-              Patient Not Found
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              The patient you are looking for does not exist or has been removed.
-            </Typography>
+        </Paper>
+      </Container>
+    );
+  }
+
+  if (!loading && patient) {
+    return (
+      <Container maxWidth="lg">
+        <Box sx={{ py: 4 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Button 
+              startIcon={<ArrowBackIcon />} 
+              onClick={handleBack}
+              sx={{ mr: 2 }}
+            >
+              Back to Patients
+            </Button>
+            <Breadcrumbs aria-label="breadcrumb">
+              <Link href="/">
+                <Typography 
+                  color="inherit" 
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center',
+                    textDecoration: 'none',
+                    '&:hover': { textDecoration: 'underline' }
+                  }}
+                >
+                  <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+                  Home
+                </Typography>
+              </Link>
+              <Link href="/patients">
+                <Typography 
+                  color="inherit"
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center',
+                    textDecoration: 'none',
+                    '&:hover': { textDecoration: 'underline' }
+                  }}
+                >
+                  <PersonIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+                  Patients
+                </Typography>
+              </Link>
+              <Typography color="text.primary" sx={{ display: 'flex', alignItems: 'center' }}>
+                {patient?.name || 'Patient Details'}
+              </Typography>
+            </Breadcrumbs>
+          </Box>
+          
+          <Paper sx={{ p: 3, mb: 4 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Avatar 
+                  sx={{ 
+                    width: 80, 
+                    height: 80, 
+                    bgcolor: 'primary.main',
+                    fontSize: '2rem',
+                    mr: 3
+                  }}
+                >
+                  {patient?.name ? patient.name.charAt(0) : 'P'}
+                </Avatar>
+                <Box>
+                  <Typography variant="h4" component="h1" gutterBottom>
+                    {patient?.name || 'Unknown Patient'}
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <PatientStatusIndicator status={patient?.status || 'unknown'} />
+                    <Typography variant="body1" sx={{ ml: 1 }}>
+                      Patient ID: {patient?.id ? patient.id.substring(0, 8) : 'Unknown'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <EmailIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary' }} />
+                    <Typography variant="body2" color="text.secondary">
+                      {patient?.email || 'No email available'}
+                    </Typography>
+                    {patient?.phone && (
+                      <>
+                        <Box component="span" sx={{ mx: 1 }}>•</Box>
+                        <PhoneIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary' }} />
+                        <Typography variant="body2" color="text.secondary">
+                          {patient.phone}
+                        </Typography>
+                      </>
+                    )}
+                  </Box>
+                </Box>
+              </Box>
+              
+              <Box>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<EditIcon />}
+                  component={Link}
+                  href={`/patients/${patient?.id}/edit`}
+                  sx={{ mr: 1 }}
+                >
+                  Edit
+                </Button>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<PrintIcon />}
+                  sx={{ mr: 1 }}
+                >
+                  Print
+                </Button>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<ShareIcon />}
+                >
+                  Share
+                </Button>
+              </Box>
+            </Box>
+          </Paper>
+          
+          {/* Patient Information Tabs */}
+          <Box sx={{ width: '100%' }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+              <Tabs 
+                value={activeTab} 
+                onChange={handleChangeTab} 
+                aria-label="patient tabs"
+                variant="scrollable"
+                scrollButtons="auto"
+              >
+                <Tab label="Overview" {...a11yProps(0)} />
+                <Tab label="Medical Records" {...a11yProps(1)} />
+                <Tab label="Conversations" {...a11yProps(2)} />
+                <Tab label="Scheduled Checks" {...a11yProps(3)} />
+              </Tabs>
+            </Box>
+            
+            {/* Overview Tab */}
+            <TabPanel value={activeTab} index={0}>
+              <Grid container spacing={3}>
+                {/* Patient details card */}
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="h6" gutterBottom>
+                      Patient Details
+                    </Typography>
+                    <Divider sx={{ mb: 2 }} />
+                    
+                    <List disablePadding>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Full Name" 
+                          secondary={patient.name} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Patient ID" 
+                          secondary={patient.id} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Age & Gender" 
+                          secondary={`${patient.age} years, ${patient.gender ? (patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)) : 'Not specified'}`} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Admission Date" 
+                          secondary={new Date(patient.admissionDate).toLocaleDateString()} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Room Number" 
+                          secondary={patient.roomNumber || 'Not assigned'} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                    </List>
+                    
+                    <Divider sx={{ my: 2 }} />
+                    
+                    <Typography variant="subtitle2" gutterBottom>
+                      Contact Information
+                    </Typography>
+                    
+                    <Box sx={{ mt: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <EmailIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                        <Typography variant="body2">
+                          {patient.email}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <PhoneIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                        <Typography variant="body2">
+                          {patient.contactNumber}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+                </Grid>
+                
+                {/* Medical Info Card */}
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="h6" gutterBottom>
+                      Medical Information
+                    </Typography>
+                    <Divider sx={{ mb: 2 }} />
+                    
+                    <List disablePadding>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Status" 
+                          secondary={<PatientStatusIndicator status={patient.status} />} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Diagnosis" 
+                          secondary={patient.diagnosis} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Doctor" 
+                          secondary={patient.doctor} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                      <ListItem disablePadding sx={{ pb: 1 }}>
+                        <ListItemText 
+                          primary="Last Updated" 
+                          secondary={new Date(patient.updated_at || Date.now()).toLocaleDateString()} 
+                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
+                        />
+                      </ListItem>
+                    </List>
+                    
+                    {/* Medical history section - commented out until data is available
+                    {patient.medicalHistory && patient.medicalHistory.length > 0 && (
+                      <>
+                        <Divider sx={{ my: 2 }} />
+                        <Typography variant="subtitle2" gutterBottom>
+                          Medical History
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                          {patient.medicalHistory.map((item: string, index: number) => (
+                            <Chip 
+                              key={index} 
+                              label={item} 
+                              size="small" 
+                              variant="outlined" 
+                            />
+                          ))}
+                        </Box>
+                      </>
+                    )}
+                    
+                    {patient.currentMedications && patient.currentMedications.length > 0 && (
+                      <>
+                        <Divider sx={{ my: 2 }} />
+                        <Typography variant="subtitle2" gutterBottom>
+                          Current Medications
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                          {patient.currentMedications.map((item, index) => (
+                            <Chip 
+                              key={index} 
+                              label={item} 
+                              size="small" 
+                              color="primary"
+                              variant="outlined" 
+                            />
+                          ))}
+                        </Box>
+                      </>
+                    )}
+                    */}
+                  </Paper>
+                </Grid>
+              </Grid>
+            </TabPanel>
+            
+            {/* Other tabs would be implemented similarly */}
+            <TabPanel value={activeTab} index={1}>
+              <Paper sx={{ p: 3, textAlign: 'center' }}>
+                <LocalHospitalIcon sx={{ fontSize: 60, color: 'primary.light', mb: 2 }} />
+                <Typography variant="h6" gutterBottom>
+                  Medical Records
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  The medical records for this patient will be displayed here.
+                </Typography>
+              </Paper>
+            </TabPanel>
+            
+            <TabPanel value={activeTab} index={2}>
+              <ConversationsTab patientId={patientId} />
+            </TabPanel>
+            
+            <TabPanel value={activeTab} index={3}>
+              <ScheduledChecksTab patientId={patientId} />
+            </TabPanel>
           </Box>
         </Box>
       </Container>
@@ -421,9 +962,6 @@ export default function PatientDetailPage() {
                     <PatientStatusIndicator status={patient.status} />
                     <Typography variant="body1" color="text.secondary" sx={{ ml: 2 }}>
                       ID: {patient.id}
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary" sx={{ ml: 2 }}>
-                      {patient.age} years, {patient.gender ? (patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)) : 'Not specified'}
                     </Typography>
                   </Box>
                 </Box>

@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
+    "chalk": "^5.4.1",
     "dotenv": "^16.4.7",
     "node-fetch": "^3.3.2",
     "punycode": "^2.3.1"

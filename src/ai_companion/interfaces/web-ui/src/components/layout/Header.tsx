@@ -25,10 +25,13 @@ import {
   Search,
   Help,
   NightsStay,
-  LightMode
+  LightMode,
+  Menu as MenuIcon
 } from '@mui/icons-material';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import { useNavigation } from '../providers/navigationprovider';
 
 /**
  * Application header component
@@ -37,6 +40,18 @@ import { useRouter } from 'next/navigation';
 export default function Header() {
   const router = useRouter();
   const theme = useTheme();
+  
+  // Safe access to navigation context
+  let toggleSidebar = () => {};
+  try {
+    // This will throw an error during static generation but work during client rendering
+    const navigation = useNavigation();
+    toggleSidebar = navigation.toggleSidebar;
+  } catch (error) {
+    // During static generation/build, we'll just use a no-op function
+    console.log('Navigation context not available, using fallback');
+  }
+  
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState<null | HTMLElement>(null);
   const [searchValue, setSearchValue] = useState('');
@@ -78,214 +93,224 @@ export default function Header() {
       position="fixed" 
       color="inherit" 
       elevation={0}
-      sx={{ 
-        zIndex: (theme) => theme.zIndex.drawer + 1,
+      sx={{
+        zIndex: theme.zIndex.drawer + 1,
         borderBottom: '1px solid',
         borderColor: 'divider',
-        height: '64px',
+        height: { xs: '64px', sm: '72px' }, // Responsive height
       }}
     >
-      <Toolbar sx={{ justifyContent: 'space-between', minHeight: '64px', px: 2 }}>
-        {/* Search bar */}
-        <Box
-          component="form"
+      <Toolbar sx={{ 
+        minHeight: { xs: '64px', sm: '72px' } // Match AppBar height
+      }}>
+        {/* Left section - Logo and menu toggle */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          mr: 2
+        }}>
+          <IconButton
+            color="inherit"
+            aria-label="toggle sidebar"
+            edge="start"
+            onClick={toggleSidebar}
+            sx={{ mr: 1 }}
+          >
+            <MenuIcon />
+          </IconButton>
+          
+          <Box 
+            sx={{ 
+              display: { xs: 'none', sm: 'flex' },
+              alignItems: 'center'
+            }}
+          >
+            <Box sx={{ width: 32, height: 32, position: 'relative', mr: 1 }}>
+              <Image
+                src="/logo.svg"
+                alt="Evelina AI Logo"
+                layout="fill"
+                objectFit="contain"
+              />
+            </Box>
+            <Typography variant="h6" noWrap component="div">
+              Evelina AI
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Center section - Search bar */}
+        <Box 
+          component="form" 
           onSubmit={handleSearch}
-          sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            backgroundColor: theme.palette.grey[100],
-            borderRadius: 2,
-            px: 2,
-            maxWidth: 400,
-            width: { xs: '100%', sm: 300, md: 400 },
-            mx: { xs: 0, md: 2 }
+          sx={{
+            display: { xs: 'none', md: 'flex' },
+            flexGrow: 1,
+            mx: 2,
+            position: 'relative',
+            borderRadius: 1,
+            backgroundColor: 'action.hover',
+            maxWidth: '600px',
           }}
         >
-          <InputBase
-            placeholder="Search patients, records..."
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            sx={{ flexGrow: 1 }}
-            inputProps={{ 'aria-label': 'search' }}
-          />
-          <IconButton type="submit" aria-label="search">
+          <IconButton type="submit" sx={{ p: '10px' }} aria-label="search">
             <Search />
           </IconButton>
+          <InputBase
+            sx={{ ml: 1, flex: 1 }}
+            placeholder="Search patients, appointments, messages..."
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+          />
         </Box>
-        
-        {/* Right-side actions */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Tooltip title="Help & Resources">
+
+        {/* Right section - Actions and profile */}
+        <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
+          {/* Mobile search icon */}
+          <IconButton 
+            sx={{ 
+              display: { xs: 'flex', md: 'none' },
+              mr: 1
+            }}
+            onClick={() => {
+              // Implement mobile search overlay/dialog
+              console.log('Mobile search opened');
+            }}
+          >
+            <Search />
+          </IconButton>
+
+          {/* Theme toggle */}
+          <Tooltip title="Toggle dark mode">
+            <IconButton sx={{ mr: 1 }} onClick={() => {
+              // Toggle theme logic here
+            }}>
+              {theme.palette.mode === 'dark' ? <LightMode /> : <NightsStay />}
+            </IconButton>
+          </Tooltip>
+
+          {/* Help button */}
+          <Tooltip title="Help">
             <IconButton 
-              color="inherit"
+              sx={{ 
+                mr: 1, 
+                display: { xs: 'none', sm: 'flex' } 
+              }}
               onClick={() => router.push('/help')}
-              size="medium"
             >
               <Help />
             </IconButton>
           </Tooltip>
 
+          {/* Notifications */}
           <Tooltip title="Notifications">
             <IconButton 
-              size="medium" 
-              color="inherit"
+              sx={{ mr: 1 }}
               onClick={handleNotificationClick}
-              aria-controls={notificationsOpen ? 'notification-menu' : undefined}
-              aria-haspopup="true"
-              aria-expanded={notificationsOpen ? 'true' : undefined}
             >
-              <Badge badgeContent={3} color="error">
+              <Badge badgeContent={4} color="error">
                 <Notifications />
               </Badge>
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="User Account">
-            <IconButton
-              onClick={handleClick}
-              size="small"
-              aria-controls={open ? 'account-menu' : undefined}
-              aria-haspopup="true"
-              aria-expanded={open ? 'true' : undefined}
-            >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>A</Avatar>
-            </IconButton>
-          </Tooltip>
-        </Box>
-      </Toolbar>
-
-      {/* Notifications Menu */}
-      <Menu
-        anchorEl={notificationAnchorEl}
-        id="notification-menu"
-        open={notificationsOpen}
-        onClose={handleNotificationClose}
-        onClick={handleNotificationClose}
-        PaperProps={{
-          elevation: 0,
-          sx: {
-            overflow: 'visible',
-            filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.08))',
-            mt: 1.5,
-            width: 320,
-            '& .MuiMenuItem-root': {
-              px: 2,
-              py: 1,
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-            },
-          },
-        }}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-      >
-        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="subtitle1" fontWeight="bold">Notifications</Typography>
-        </Box>
-        
-        <MenuItem onClick={() => router.push('/alerts/1')}>
-          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="body2" fontWeight="bold">
-              Patient Alert: Critical Condition
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              John Smith - Blood pressure critical - 10 min ago
-            </Typography>
-          </Box>
-        </MenuItem>
-        
-        <MenuItem onClick={() => router.push('/appointments')}>
-          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="body2" fontWeight="bold">
-              Upcoming Appointment
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              In 15 minutes with Dr. Johnson - Room 302
-            </Typography>
-          </Box>
-        </MenuItem>
-        
-        <MenuItem onClick={() => router.push('/messages')}>
-          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="body2" fontWeight="bold">
-              New Message
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              From: Dr. Wilson - Regarding patient #12345
-            </Typography>
-          </Box>
-        </MenuItem>
-        
-        <Box sx={{ p: 2, textAlign: 'center' }}>
-          <Button 
-            onClick={() => router.push('/notifications')}
-            size="small"
-            sx={{ width: '100%' }}
+          {/* User profile */}
+          <IconButton
+            onClick={handleClick}
+            aria-controls={open ? 'account-menu' : undefined}
+            aria-haspopup="true"
+            aria-expanded={open ? 'true' : undefined}
           >
-            View All Notifications
-          </Button>
+            <Avatar 
+              alt="User Profile" 
+              src="/avatar-placeholder.jpg"
+              sx={{ width: 32, height: 32 }}
+            />
+          </IconButton>
         </Box>
-      </Menu>
 
-      {/* User Account Menu */}
-      <Menu
-        anchorEl={anchorEl}
-        id="account-menu"
-        open={open}
-        onClose={handleClose}
-        onClick={handleClose}
-        PaperProps={{
-          elevation: 0,
-          sx: {
-            overflow: 'visible',
-            filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.08))',
-            mt: 1.5,
-            '& .MuiMenuItem-root': {
-              px: 2,
-              py: 1,
-            },
-          },
-        }}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-      >
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="subtitle2">Admin User</Typography>
-          <Typography variant="body2" color="text.secondary">
-            admin@example.com
-          </Typography>
-        </Box>
-        <Divider />
-        <MenuItem onClick={() => router.push('/profile')}>
-          <ListItemIcon>
-            <Person fontSize="small" />
-          </ListItemIcon>
-          Profile
-        </MenuItem>
-        <MenuItem onClick={() => router.push('/settings')}>
-          <ListItemIcon>
-            <Settings fontSize="small" />
-          </ListItemIcon>
-          Settings
-        </MenuItem>
-        <MenuItem>
-          <ListItemIcon>
-            {theme.palette.mode === 'dark' ? (
-              <LightMode fontSize="small" />
-            ) : (
-              <NightsStay fontSize="small" />
-            )}
-          </ListItemIcon>
-          {theme.palette.mode === 'dark' ? 'Light' : 'Dark'} Mode
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={handleLogout}>
-          <ListItemIcon>
-            <Logout fontSize="small" />
-          </ListItemIcon>
-          Logout
-        </MenuItem>
-      </Menu>
+        {/* User Menu */}
+        <Menu
+          anchorEl={anchorEl}
+          id="account-menu"
+          open={open}
+          onClose={handleClose}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        >
+          <MenuItem onClick={() => { router.push('/profile'); handleClose(); }}>
+            <ListItemIcon><Person fontSize="small" /></ListItemIcon>
+            Profile
+          </MenuItem>
+          <MenuItem onClick={() => { router.push('/settings'); handleClose(); }}>
+            <ListItemIcon><Settings fontSize="small" /></ListItemIcon>
+            Settings
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={handleLogout}>
+            <ListItemIcon><Logout fontSize="small" /></ListItemIcon>
+            Logout
+          </MenuItem>
+        </Menu>
+
+        {/* Notifications Menu */}
+        <Menu
+          anchorEl={notificationAnchorEl}
+          id="notifications-menu"
+          open={notificationsOpen}
+          onClose={handleNotificationClose}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+          PaperProps={{
+            sx: { 
+              minWidth: { xs: '300px', sm: '350px' },
+              maxWidth: { xs: 'calc(100vw - 32px)', sm: '400px' },
+              maxHeight: '400px',
+              overflow: 'auto'
+            }
+          }}
+        >
+          {/* Notifications header */}
+          <Box sx={{ p: 2 }}>
+            <Typography variant="subtitle1" fontWeight="bold">Notifications</Typography>
+          </Box>
+          <Divider />
+          
+          {/* Example notifications */}
+          <MenuItem onClick={handleNotificationClose} sx={{ py: 1.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="body2" fontWeight="medium">New patient registered</Typography>
+              <Typography variant="caption" color="text.secondary">5 minutes ago</Typography>
+            </Box>
+          </MenuItem>
+          <MenuItem onClick={handleNotificationClose} sx={{ py: 1.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="body2" fontWeight="medium">Appointment reminder: Patient #1234</Typography>
+              <Typography variant="caption" color="text.secondary">15 minutes ago</Typography>
+            </Box>
+          </MenuItem>
+          <MenuItem onClick={handleNotificationClose} sx={{ py: 1.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="body2" fontWeight="medium">System update available</Typography>
+              <Typography variant="caption" color="text.secondary">1 hour ago</Typography>
+            </Box>
+          </MenuItem>
+          
+          {/* View all link */}
+          <Divider />
+          <Box sx={{ p: 1, textAlign: 'center' }}>
+            <Button 
+              size="small" 
+              onClick={() => { 
+                router.push('/notifications'); 
+                handleNotificationClose(); 
+              }}
+            >
+              View all notifications
+            </Button>
+          </Box>
+        </Menu>
+      </Toolbar>
     </AppBar>
   );
 } 

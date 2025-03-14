@@ -6,6 +6,10 @@ An AI companion application using LangChain and modern AI technologies.
 
 - WhatsApp integration
 - Telegram integration
+  - Patient registration on first contact
+  - Conversation capabilities with context memory
+  - Command-based scheduling functionality
+  - Complete user journey testing
 - RAG capabilities
 - Speech-to-text and text-to-speech
 - Image analysis
@@ -15,10 +19,29 @@ An AI companion application using LangChain and modern AI technologies.
 1. Clone the repository
 2. Install dependencies with `uv sync`
 3. Run the application with `fastapi run ai_companion/interfaces/whatsapp/webhook_endpoint.py`
+4. For Telegram bot, run `fastapi run ai_companion/interfaces/telegram/bot.py`
 
 ## Environment Variables
 
 See the `.env` file for required environment variables.
+
+## Testing
+
+### Telegram Interface
+
+The Telegram interface includes standalone tests that simulate user interactions:
+
+```bash
+# Run complete Telegram user flow test
+python src/ai_companion/interfaces/telegram/test_full_user_flow.py
+
+# Run individual component tests
+python src/ai_companion/interfaces/telegram/test_patient_creation.py
+python src/ai_companion/interfaces/telegram/test_existing_patient.py
+python src/ai_companion/interfaces/telegram/test_schedule_message.py
+```
+
+See [Telegram Interface Documentation](project-docs/interfaces/telegram.md) and [Telegram Test Guide](project-docs/testing/telegram_tests.md) for more details.
 
 <p align="center">
         <img alt="logo" src="img/project_overview_diagram.gif" width=600 />

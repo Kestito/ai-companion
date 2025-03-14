@@ -80,8 +80,8 @@ export default function PatientsPage() {
   if (loading) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Link 
               href="/"
               style={{
@@ -99,7 +99,7 @@ export default function PatientsPage() {
             <Typography color="text.primary">Patients</Typography>
           </Box>
           
-          <Typography variant="h4" component="h1" gutterBottom>
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
             Patients
           </Typography>
         </Box>
@@ -114,8 +114,8 @@ export default function PatientsPage() {
   if (error) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Link 
               href="/"
               style={{
@@ -133,7 +133,7 @@ export default function PatientsPage() {
             <Typography color="text.primary">Patients</Typography>
           </Box>
           
-          <Typography variant="h4" component="h1" gutterBottom>
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
             Patients
           </Typography>
         </Box>
@@ -176,8 +176,8 @@ export default function PatientsPage() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Link 
             href="/"
             style={{
@@ -195,8 +195,8 @@ export default function PatientsPage() {
           <Typography color="text.primary">Patients</Typography>
         </Box>
         
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h4" component="h1" gutterBottom>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
             Patients
           </Typography>
           
@@ -210,7 +210,7 @@ export default function PatientsPage() {
             Add New Patient
           </Button>
         </Box>
-        <Typography variant="body1" color="text.secondary" paragraph>
+        <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 4 }}>
           Manage patient records and information.
         </Typography>
       </Box>
@@ -242,15 +242,15 @@ export default function PatientsPage() {
                   {patients.map((patient) => (
                     <TableRow key={patient.id} hover>
                       <TableCell>
-                        {patient.id.substring(0, 8)}...
+                        {patient.id && patient.id.substring(0, 8)}...
                       </TableCell>
                       <TableCell>
-                        {typeof patient.email === 'string' && !patient.email.startsWith('\\x') 
+                        {patient.email && typeof patient.email === 'string' && !patient.email.startsWith('\\x') 
                           ? patient.email 
                           : '[Encrypted]'}
                       </TableCell>
                       <TableCell>
-                        {new Date(patient.created_at).toLocaleDateString()}
+                        {patient.created_at && new Date(patient.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
                         <Chip 

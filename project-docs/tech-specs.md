@@ -327,4 +327,57 @@ In addition, responses include the top 2 most relevant source URLs with their ti
 2. Smegenų vėžys: https://priesvezi.lt/zinynas/smegenu-vezys/
 ```
 
-This transparency helps users understand the source and nature of the information provided and gives them direct links to access more detailed information. 
+This transparency helps users understand the source and nature of the information provided and gives them direct links to access more detailed information.
+
+## Logging and Diagnostics
+
+### Journey Logging System
+
+The AI Companion implements a journey logging system to track the flow of operations throughout the application. This structured logging approach provides greater visibility into how data flows through the system and makes debugging and monitoring easier.
+
+Key components:
+- `src/lib/utils/logger.ts`: Contains the journey logger implementation
+- Numbered steps display the sequence of operations
+- Contextual data is included with each log entry
+- Error states and fallback mechanisms are clearly identified
+
+Example usage:
+```typescript
+import { journeyLogger } from '@/lib/utils/logger';
+
+// Create a logger for a specific journey
+const logger = journeyLogger({ journeyName: 'DATABASE_OPERATIONS' });
+
+// Log steps in the process
+logger.step(1, 'Starting database operation');
+logger.info('Processing data', { count: items.length });
+
+try {
+  // Attempt operation
+  const result = await db.operation();
+  logger.success('Operation completed', { result });
+} catch (error) {
+  // Log errors and fallbacks
+  logger.error('Operation failed', error);
+  logger.fallback('Using cached data instead');
+}
+
+// End the journey
+logger.end();
+```
+
+The console output follows a consistent format:
+```
+==================== DATABASE_OPERATIONS JOURNEY ====================
+[1] Starting database operation
+[INFO] Processing data { count: 42 }
+[SUCCESS] Operation completed { result: {...} }
+==================== END DATABASE_OPERATIONS JOURNEY ====================
+```
+
+Journey logging has been implemented for critical paths:
+- Patient creation process
+- Chat message handling
+- Database operations
+
+See `project-docs/logging.md` for detailed documentation on the journey logging system. 

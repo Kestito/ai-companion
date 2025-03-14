@@ -13,7 +13,10 @@ import {
   Avatar,
   Typography,
   Stack,
-  Tooltip
+  Tooltip,
+  useMediaQuery,
+  useTheme,
+  SwipeableDrawer
 } from '@mui/material';
 import {
   Dashboard,
@@ -32,8 +35,10 @@ import {
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { useNavigation } from '../providers/navigationprovider';
+import { useEffect } from 'react';
 
 const DRAWER_WIDTH = 280;
+const COLLAPSED_DRAWER_WIDTH = 72;
 
 // Main navigation items for the sidebar
 const menuItems = [
@@ -55,16 +60,37 @@ const bottomMenuItems = [
 /**
  * Sidebar navigation component
  * Provides main navigation for the application
- * Can be collapsed to save space
+ * Responsive for both desktop and mobile devices
  */
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isSidebarOpen, toggleSidebar } = useNavigation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
+  // Safe access to navigation context
+  let isSidebarOpen = !isMobile;
+  let toggleSidebar = () => {};
+  let closeSidebar = () => {};
+  
+  try {
+    // This will throw an error during static generation but work during client rendering
+    const navigation = useNavigation();
+    isSidebarOpen = navigation.isSidebarOpen;
+    toggleSidebar = navigation.toggleSidebar;
+    closeSidebar = navigation.closeSidebar;
+  } catch (error) {
+    // During static generation/build, we'll just use fallback values
+    console.log('Navigation context not available, using fallbacks');
+  }
 
   // Navigate to the selected path
   const handleNavigation = (path: string) => {
     router.push(path);
+    // Auto close on mobile after navigation
+    if (isMobile) {
+      closeSidebar();
+    }
   };
 
   // Determine if an item is currently selected
@@ -72,141 +98,98 @@ export default function Sidebar() {
     return pathname === path || pathname.startsWith(`${path}/`);
   };
 
-  return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: isSidebarOpen ? DRAWER_WIDTH : 72,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: isSidebarOpen ? DRAWER_WIDTH : 72,
-          boxSizing: 'border-box',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          transition: 'width 0.2s ease-in-out',
-          overflowX: 'hidden',
-        },
-      }}
-    >
-      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+  // Responsive drawer for mobile and desktop
+  const renderDrawerContent = () => (
+    <>
+      {/* Sidebar header with logo and close button */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: isSidebarOpen ? 'space-between' : 'center',
+          padding: isSidebarOpen ? theme.spacing(0, 2) : theme.spacing(1),
+          height: { xs: '64px', sm: '72px' }, // Match header height
+          overflow: 'hidden',
+        }}
+      >
         {isSidebarOpen && (
-          <Image
-            src="/evelinalogo.png"
-            alt="Evelina AI Logo"
-            width={40}
-            height={40}
-            priority
-          />
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <Box sx={{ width: 28, height: 28, position: 'relative', mr: 1 }}>
+              <Image
+                src="/logo.svg"
+                alt="Evelina AI Logo"
+                layout="fill"
+                objectFit="contain"
+              />
+            </Box>
+            <Typography
+              variant="subtitle1"
+              sx={{
+                fontWeight: 'bold',
+                color: 'primary.main',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Evelina AI
+            </Typography>
+          </Box>
         )}
-        {isSidebarOpen && (
-          <Typography variant="h6" noWrap>
-            Evelina AI
-          </Typography>
-        )}
-        <IconButton 
-          onClick={toggleSidebar}
-          sx={{ ml: isSidebarOpen ? 'auto' : 'auto' }}
-          aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-        >
-          {isSidebarOpen ? <ChevronLeft /> : <MenuIcon />}
+        <IconButton onClick={toggleSidebar}>
+          <ChevronLeft />
         </IconButton>
       </Box>
 
       <Divider />
 
-      <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-        <List>
-          {menuItems.map((item) => (
-            <ListItem key={item.text} disablePadding>
-              <Tooltip 
-                title={!isSidebarOpen ? item.text : ""}
-                placement="right"
-                arrow
-              >
-                <ListItemButton
-                  selected={isActive(item.path)}
-                  onClick={() => handleNavigation(item.path)}
-                  sx={{
-                    minHeight: 48,
-                    px: 2.5,
-                    '&.Mui-selected': {
-                      bgcolor: 'primary.light',
-                      color: 'primary.contrastText',
-                      '& .MuiListItemIcon-root': {
-                        color: 'primary.contrastText',
-                      },
-                    },
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 36, color: isActive(item.path) ? 'inherit' : 'primary.main' }}>
-                    {item.icon}
-                  </ListItemIcon>
-                  {isSidebarOpen && (
-                    <ListItemText 
-                      primary={item.text} 
-                      secondary={item.description}
-                      primaryTypographyProps={{
-                        variant: 'body2',
-                        fontWeight: isActive(item.path) ? 'bold' : 'medium',
-                      }}
-                      secondaryTypographyProps={{
-                        variant: 'caption',
-                        sx: { display: { xs: 'none', sm: 'block' } }
-                      }}
-                    />
-                  )}
-                </ListItemButton>
-              </Tooltip>
-            </ListItem>
-          ))}
-        </List>
-      </Box>
-
-      <Divider />
-
-      <List>
-        {bottomMenuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <Tooltip 
-              title={!isSidebarOpen ? item.text : ""}
+      {/* Main navigation items */}
+      <List sx={{ px: 1 }}>
+        {menuItems.map((item) => (
+          <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+            <Tooltip
+              title={!isSidebarOpen ? item.text : ''}
               placement="right"
               arrow
+              disableHoverListener={isSidebarOpen}
             >
               <ListItemButton
-                selected={isActive(item.path)}
                 onClick={() => handleNavigation(item.path)}
+                selected={isActive(item.path)}
                 sx={{
+                  borderRadius: '8px',
+                  justifyContent: isSidebarOpen ? 'initial' : 'center',
+                  px: isSidebarOpen ? 2 : 1,
                   minHeight: 48,
-                  px: 2.5,
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.light',
-                    color: 'primary.contrastText',
-                    '& .MuiListItemIcon-root': {
-                      color: 'primary.contrastText',
-                    },
-                  },
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
                 }}
               >
-                <ListItemIcon sx={{ minWidth: 36, color: isActive(item.path) ? 'inherit' : 'primary.main' }}>
+                <ListItemIcon
+                  sx={{
+                    minWidth: 0,
+                    mr: isSidebarOpen ? 2 : 'auto',
+                    justifyContent: 'center',
+                    color: isActive(item.path)
+                      ? 'primary.main'
+                      : 'inherit',
+                  }}
+                >
                   {item.icon}
                 </ListItemIcon>
                 {isSidebarOpen && (
-                  <ListItemText 
-                    primary={item.text} 
-                    secondary={item.description}
+                  <ListItemText
+                    primary={item.text}
+                    secondary={isSidebarOpen ? item.description : null}
                     primaryTypographyProps={{
-                      variant: 'body2',
                       fontWeight: isActive(item.path) ? 'bold' : 'medium',
+                      color: isActive(item.path) ? 'primary.main' : 'inherit',
+                      noWrap: true,
                     }}
                     secondaryTypographyProps={{
-                      variant: 'caption',
-                      sx: { display: { xs: 'none', sm: 'block' } }
+                      noWrap: true,
+                      fontSize: '0.75rem',
                     }}
                   />
                 )}
@@ -216,21 +199,111 @@ export default function Sidebar() {
         ))}
       </List>
 
-      {isSidebarOpen && (
-        <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>A</Avatar>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="subtitle2" noWrap>
-                Admin User
-              </Typography>
-              <Typography variant="body2" color="text.secondary" noWrap>
-                admin@example.com
-              </Typography>
-            </Box>
-          </Stack>
-        </Box>
+      <Divider sx={{ mt: 'auto' }} />
+
+      {/* Bottom navigation items */}
+      <List sx={{ px: 1 }}>
+        {bottomMenuItems.map((item) => (
+          <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+            <Tooltip
+              title={!isSidebarOpen ? item.text : ''}
+              placement="right"
+              arrow
+              disableHoverListener={isSidebarOpen}
+            >
+              <ListItemButton
+                onClick={() => handleNavigation(item.path)}
+                selected={isActive(item.path)}
+                sx={{
+                  borderRadius: '8px',
+                  justifyContent: isSidebarOpen ? 'initial' : 'center',
+                  px: isSidebarOpen ? 2 : 1,
+                  minHeight: 48,
+                }}
+              >
+                <ListItemIcon
+                  sx={{
+                    minWidth: 0,
+                    mr: isSidebarOpen ? 2 : 'auto',
+                    justifyContent: 'center',
+                    color: isActive(item.path)
+                      ? 'primary.main'
+                      : 'inherit',
+                  }}
+                >
+                  {item.icon}
+                </ListItemIcon>
+                {isSidebarOpen && (
+                  <ListItemText
+                    primary={item.text}
+                    primaryTypographyProps={{
+                      fontWeight: isActive(item.path) ? 'bold' : 'medium',
+                      color: isActive(item.path) ? 'primary.main' : 'inherit',
+                      noWrap: true,
+                    }}
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
+          </ListItem>
+        ))}
+      </List>
+    </>
+  );
+
+  // Render different drawer types for mobile vs desktop
+  return (
+    <>
+      {/* Mobile drawer (swipeable with backdrop) */}
+      {isMobile ? (
+        <SwipeableDrawer
+          open={isSidebarOpen}
+          onOpen={toggleSidebar}
+          onClose={closeSidebar}
+          disableBackdropTransition={!isMobile}
+          disableDiscovery={isMobile}
+          sx={{
+            width: DRAWER_WIDTH,
+            flexShrink: 0,
+            display: { xs: 'block', md: 'none' },
+            '& .MuiDrawer-paper': {
+              width: DRAWER_WIDTH,
+              boxSizing: 'border-box',
+              border: 'none',
+              boxShadow: '0 4px 20px 0 rgba(0,0,0,0.12)',
+            },
+          }}
+        >
+          {renderDrawerContent()}
+        </SwipeableDrawer>
+      ) : (
+        // Desktop drawer (persistent)
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: isSidebarOpen ? DRAWER_WIDTH : COLLAPSED_DRAWER_WIDTH,
+            flexShrink: 0,
+            display: { xs: 'none', md: 'block' },
+            transition: theme.transitions.create(['width'], {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.enteringScreen,
+            }),
+            '& .MuiDrawer-paper': {
+              width: isSidebarOpen ? DRAWER_WIDTH : COLLAPSED_DRAWER_WIDTH,
+              boxSizing: 'border-box',
+              border: 'none',
+              boxShadow: '0 4px 20px 0 rgba(0,0,0,0.07)',
+              overflow: 'hidden',
+              transition: theme.transitions.create(['width'], {
+                easing: theme.transitions.easing.sharp,
+                duration: theme.transitions.duration.enteringScreen,
+              }),
+            },
+          }}
+        >
+          {renderDrawerContent()}
+        </Drawer>
       )}
-    </Drawer>
+    </>
   );
 } 
