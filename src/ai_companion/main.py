@@ -10,12 +10,19 @@ import httpx
 
 from ai_companion.interfaces.whatsapp.whatsapp_response import whatsapp_router
 from ai_companion.interfaces.monitor.api import monitor_router
+from ai_companion.api.web_handler import router as web_chat_router
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Force override any existing logging config
 )
+
+# Disable problematic loggers
+logging.getLogger("langgraph_api").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 # Create FastAPI app
@@ -39,6 +46,8 @@ app.include_router(whatsapp_router)
 # Include the monitor router with a different prefix
 monitor_router.prefix = "/health"  # Change the prefix from /monitor to /health
 app.include_router(monitor_router)
+# Include the web chat router
+app.include_router(web_chat_router)
 
 # Chainlit proxy configuration
 CHAINLIT_HOST = "localhost"

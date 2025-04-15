@@ -43,13 +43,5 @@
       "failed": 0
     }
   },
-  "last_updated": "2025-02-26T11:01:14.506504",
-  "search_sources": {
-    "vector_only": 0,
-    "keyword_only": 1,
-    "hybrid": 0,
-    "total_vector_docs": 0,
-    "total_keyword_docs": 20
-  },
-  "avg_document_count": 20
+  "last_updated": "2025-02-26T11:01:14.506504"
 }

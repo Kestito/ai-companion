@@ -1,16 +1,27 @@
 """
-Storage interface for scheduled messages.
+Storage module for scheduled messages.
 
-This module provides functions for storing and retrieving scheduled messages
-from the Supabase database.
+This module provides functions for storing and retrieving scheduled
+messages from the database.
 """
 
 import logging
-from typing import Dict, List, Any, Optional
-from datetime import datetime
 import json
+from typing import Dict, Any, List, Optional
+import datetime
+from uuid import UUID
 
-from ai_companion.utils.supabase import get_supabase_client
+# Try both import patterns for compatibility
+try:
+    from src.ai_companion.utils.supabase import get_supabase_client
+    from src.ai_companion.settings import settings
+except ImportError:
+    try:
+        from ai_companion.utils.supabase import get_supabase_client
+        from ai_companion.settings import settings
+    except ImportError:
+        # For documentation purposes only
+        get_supabase_client = settings = None
 
 logger = logging.getLogger(__name__)
 

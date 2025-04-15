@@ -1,0 +1,68 @@
+flowchart TB
+    %% Main components of the Deployment Architecture
+    subgraph "Azure Cloud"
+        subgraph "Container Apps"
+            MainApp[AI Companion App]
+            SchedulerApp[Scheduler Container]
+        end
+        
+        subgraph "Azure OpenAI Service"
+            GPT4o[GPT-4o]
+            TextEmbedding[Text Embedding 3]
+        end
+        
+        subgraph "External Integrations"
+            WhatsAppCloud[WhatsApp Cloud API]
+            TelegramAPI[Telegram Bot API]
+        end
+        
+        subgraph "Storage"
+            Qdrant[(Qdrant Vector DB)]
+            Supabase[(Supabase DB)]
+            Logs[(Log Storage)]
+        end
+    end
+    
+    subgraph "User Devices"
+        Mobile[Mobile Device]
+        Web[Web Browser]
+        MessageApp[Messaging App]
+    end
+    
+    %% Data flows
+    Mobile --> |API Requests| MainApp
+    Web --> |API Requests| MainApp
+    MessageApp --> |Messages| WhatsAppCloud
+    MessageApp --> |Messages| TelegramAPI
+    
+    WhatsAppCloud --> MainApp
+    TelegramAPI --> MainApp
+    
+    MainApp --> |Queries| GPT4o
+    MainApp --> |Embeddings| TextEmbedding
+    
+    MainApp <--> Qdrant
+    MainApp <--> Supabase
+    MainApp --> Logs
+    
+    SchedulerApp <--> Supabase
+    SchedulerApp --> WhatsAppCloud
+    SchedulerApp --> TelegramAPI
+    
+    MainApp <--> SchedulerApp
+    
+    %% Style definitions
+    classDef azure fill:#0078D4,stroke:#005A9E,stroke-width:2px,color:white;
+    classDef container fill:#2560E0,stroke:#16449E,stroke-width:2px,color:white;
+    classDef ai fill:#FF4081,stroke:#BA2159,stroke-width:2px,color:white;
+    classDef integration fill:#FFAA44,stroke:#E08A16,stroke-width:2px;
+    classDef database fill:#FFD700,stroke:#DAA520,stroke-width:2px;
+    classDef client fill:#7CBB00,stroke:#5A8700,stroke-width:2px;
+    
+    %% Apply styles
+    class MainApp,SchedulerApp container;
+    class GPT4o,TextEmbedding ai;
+    class WhatsAppCloud,TelegramAPI integration;
+    class Qdrant,Supabase,Logs database;
+    class Mobile,Web,MessageApp client;
+    class "Container Apps","Azure OpenAI Service","External Integrations","Storage" azure; 

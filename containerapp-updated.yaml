@@ -153,6 +153,50 @@ properties:
     terminationGracePeriodSeconds: null
     volumes: null
   workloadProfileName: Consumption
+  environmentVariables:
+    - name: CONTAINER_APP_ENV
+      value: "prod"
+    - name: USE_MANAGED_IDENTITY
+      value: "true"
+    - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+      value: "${APPLICATIONINSIGHTS_CONNECTION_STRING}"
+    - name: AZURE_SUBSCRIPTION_ID
+      value: "${AZURE_SUBSCRIPTION_ID}"
+    - name: SUPABASE_URL
+      value: "${SUPABASE_URL}"
+    - name: SUPABASE_KEY
+      secretRef: SUPABASE_API_KEY
+  resources:
+    cpu: 1.0
+    memory: "2Gi"
+  probes:
+    - type: startup
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+    - type: liveness
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 60
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+    - type: readiness
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
 resourceGroup: evelina-ai-rg
 systemData:
   createdAt: '2025-02-27T10:52:13.4317611'

@@ -243,3 +243,62 @@ Date: **2025-03-12**
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+# Project Documentation Structure
+
+This folder contains all documentation for the AI Companion project. Documents are organized by category to make information easier to find.
+
+## Folder Structure
+
+- **core/**: Core project information
+  - Overview, requirements, technical specifications, project timeline, etc.
+
+- **architecture/**: System architecture documentation
+  - Architectural diagrams, system flows, component relationships
+
+- **diagrams/**: Visual diagrams
+  - Mermaid diagrams (.mmd files) and other visual representations
+
+- **database/**: Database related documentation
+  - Schema definitions, database integration details, schema updates
+
+- **api/**: API documentation
+  - API structures, endpoints, request/response formats
+
+- **deployment/**: Deployment instructions
+  - Azure deployment, Docker setup, custom domain configuration
+
+- **implementation/**: Implementation details
+  - Development plans, roadmaps, specific implementation guides
+
+- **rag/**: RAG (Retrieval-Augmented Generation) documentation
+  - RAG configuration, usage guides, URL prioritization
+
+- **features/**: Feature specifications
+  - Detailed documentation for individual features
+
+- **interfaces/**: Interface documentation
+  - Web UI, Chainlit, and other user interfaces
+
+- **monitoring/**: Monitoring and logging
+  - Logging configuration, monitoring setup
+
+- **testing/**: Testing documentation
+  - Test plans, testing methodologies
+
+- **troubleshooting/**: Troubleshooting guides
+  - Common issues and fixes, websocket issues, performance optimizations
+
+## File Organization
+
+All documentation files are organized in Markdown (.md) format. Related diagram files are placed in the diagrams folder.
+
+## Contributing
+
+When adding new documentation:
+1. Place the file in the appropriate folder
+2. Follow the existing naming conventions
+3. Link to related documentation when relevant
+4. Update this README if you create new categories
+
+For any questions about the documentation structure, contact the project maintainers.

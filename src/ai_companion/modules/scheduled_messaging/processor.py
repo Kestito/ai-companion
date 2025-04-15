@@ -8,19 +8,35 @@ of scheduled messages that are due.
 import logging
 import asyncio
 import time
+import os
 from typing import Dict, Any, List, Optional
 import sys
 import json
 import signal
 
-from ai_companion.settings import settings
-from ai_companion.modules.scheduled_messaging.storage import (
-    get_pending_messages,
-    update_message_status,
-    create_scheduled_messages_table
-)
-from ai_companion.modules.scheduled_messaging.handlers.telegram_handler import TelegramHandler
-from ai_companion.modules.scheduled_messaging.handlers.whatsapp_handler import WhatsAppHandler
+# Use relative imports to avoid the module not found error
+try:
+    from src.ai_companion.settings import settings
+    from src.ai_companion.modules.scheduled_messaging.storage import (
+        get_pending_messages,
+        update_message_status,
+        create_scheduled_messages_table
+    )
+    from src.ai_companion.modules.scheduled_messaging.handlers.telegram_handler import TelegramHandler
+    from src.ai_companion.modules.scheduled_messaging.handlers.whatsapp_handler import WhatsAppHandler
+except ImportError:
+    # Fallback to absolute imports when running within the package
+    from ai_companion.settings import settings
+    from ai_companion.modules.scheduled_messaging.storage import (
+        get_pending_messages,
+        update_message_status,
+        create_scheduled_messages_table
+    )
+    from ai_companion.modules.scheduled_messaging.handlers.telegram_handler import TelegramHandler
+    from ai_companion.modules.scheduled_messaging.handlers.whatsapp_handler import WhatsAppHandler
+
+# Azure Monitor integration
+from opencensus.ext.azure.log_exporter import AzureLogHandler
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +46,36 @@ HANDLERS = {
     "whatsapp": WhatsAppHandler()
 }
 
+# Health check variable - global to track processor health
+PROCESSOR_HEALTHY = True
+LAST_SUCCESSFUL_RUN = time.time()
+
 async def process_due_messages():
     """Process all messages that are due for delivery."""
+    global PROCESSOR_HEALTHY, LAST_SUCCESSFUL_RUN
+    
     logger.info("Processing due messages")
     
-    # Get all pending messages that are due
-    due_messages = await get_pending_messages()
-    
-    if not due_messages:
-        logger.debug("No due messages to process")
-        return
-    
-    logger.info(f"Found {len(due_messages)} messages to process")
-    
-    for message in due_messages:
-        await process_message(message)
+    try:
+        # Get all pending messages that are due
+        due_messages = await get_pending_messages()
+        
+        if not due_messages:
+            logger.debug("No due messages to process")
+        else:
+            logger.info(f"Found {len(due_messages)} messages to process")
+            
+            for message in due_messages:
+                await process_message(message)
+                
+        # Mark as healthy and update last successful run time
+        PROCESSOR_HEALTHY = True
+        LAST_SUCCESSFUL_RUN = time.time()
+    except Exception as e:
+        logger.error(f"Error processing due messages: {e}")
+        # If we haven't had a successful run in 10 minutes, mark as unhealthy
+        if time.time() - LAST_SUCCESSFUL_RUN > 600:  # 10 minutes
+            PROCESSOR_HEALTHY = False
 
 async def process_message(message: Dict[str, Any]):
     """
@@ -91,21 +122,26 @@ async def create_next_occurrence(message: Dict[str, Any]):
     Args:
         message: The current scheduled message
     """
-    from ai_companion.modules.scheduled_messaging.scheduler import ScheduleManager
-    from ai_companion.modules.scheduled_messaging.triggers import parse_recurrence, get_next_occurrence
-    
-    # Parse the recurrence pattern
-    recurrence_str = message.get("recurrence_pattern")
-    if not recurrence_str:
-        return
-    
     try:
+        # Try both import patterns to handle different environments
+        try:
+            from src.ai_companion.modules.scheduled_messaging.scheduler import ScheduleManager
+            from src.ai_companion.modules.scheduled_messaging.triggers import parse_recurrence, get_next_occurrence
+        except ImportError:
+            from ai_companion.modules.scheduled_messaging.scheduler import ScheduleManager
+            from ai_companion.modules.scheduled_messaging.triggers import parse_recurrence, get_next_occurrence
+        
+        # Parse the recurrence pattern
+        recurrence_str = message.get("recurrence_pattern")
+        if not recurrence_str:
+            return
+        
         # Parse JSON if it's a string
         if isinstance(recurrence_str, str):
             recurrence = json.loads(recurrence_str)
         else:
             recurrence = recurrence_str
-            
+                
         # Calculate next occurrence
         next_time = get_next_occurrence(recurrence)
         
@@ -122,10 +158,25 @@ async def create_next_occurrence(message: Dict[str, Any]):
                 parameters=(json.loads(message.get("parameters")) if message.get("parameters") else None),
                 recurrence_pattern=recurrence
             )
-            
+                
             logger.info(f"Created next occurrence for {message.get('id')} at {next_time}")
     except Exception as e:
         logger.error(f"Failed to create next occurrence: {e}")
+
+async def health_check():
+    """Health check endpoint for Azure Container Apps.
+    
+    Returns:
+        Dict with health status
+    """
+    global PROCESSOR_HEALTHY
+    
+    # Check if we're healthy
+    return {
+        "status": "healthy" if PROCESSOR_HEALTHY else "unhealthy",
+        "last_successful_run": LAST_SUCCESSFUL_RUN,
+        "timestamp": time.time()
+    }
 
 async def run_processor():
     """Run the message processor repeatedly."""
@@ -147,6 +198,37 @@ def handle_signal(signum, frame):
     logger.info(f"Received signal {signum}, shutting down...")
     sys.exit(0)
 
+def create_health_api():
+    """Create a simple FastAPI app for health checks."""
+    from fastapi import FastAPI
+    
+    app = FastAPI(title="Scheduled Messaging Health API")
+    
+    @app.get("/health")
+    async def health_endpoint():
+        """Health check endpoint for Azure Container Apps."""
+        return await health_check()
+    
+    return app
+
+def setup_monitoring():
+    """Set up monitoring for the processor."""
+    # Set up Azure Application Insights if connection string is present
+    app_insights_conn = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    if app_insights_conn:
+        logger.info("Setting up Azure Application Insights monitoring")
+        try:
+            # Add Azure Log Handler
+            azure_handler = AzureLogHandler(connection_string=app_insights_conn)
+            azure_handler.setLevel(logging.INFO)
+            logger.addHandler(azure_handler)
+            logging.getLogger().addHandler(azure_handler)
+            
+            # Log deployment info
+            logger.info(f"Deployed in {os.environ.get('CONTAINER_APP_ENV', 'unknown')} environment")
+        except Exception as e:
+            logger.error(f"Failed to set up Azure monitoring: {e}")
+
 def main():
     """Entry point for the processor."""
     # Configure logging
@@ -159,7 +241,26 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     
+    # Set up monitoring
+    setup_monitoring()
+    
     logger.info("Starting scheduled message processor")
+    
+    # If running in Azure Container Apps, start health API
+    if os.environ.get("CONTAINER_APP_ENV"):
+        logger.info("Running in Azure Container Apps environment, starting health API")
+        import uvicorn
+        from threading import Thread
+        
+        # Create FastAPI app for health checks
+        app = create_health_api()
+        
+        # Start API in a separate thread
+        def run_api():
+            uvicorn.run(app, host="0.0.0.0", port=8080)
+        
+        api_thread = Thread(target=run_api, daemon=True)
+        api_thread.start()
     
     try:
         # Run the processor

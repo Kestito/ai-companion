@@ -33,6 +33,11 @@ interface Patient {
   created_at: string;
   preferred_language?: string;
   support_status?: string;
+  name?: string;
+  platform?: string;
+  risk?: string;
+  first_name?: string;
+  last_name?: string;
   [key: string]: any;
 }
 
@@ -232,7 +237,10 @@ export default function PatientsPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>ID</TableCell>
+                    <TableCell>Name</TableCell>
                     <TableCell>Email</TableCell>
+                    <TableCell>Channel</TableCell>
+                    <TableCell>Risk</TableCell>
                     <TableCell>Created</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Actions</TableCell>
@@ -245,9 +253,20 @@ export default function PatientsPage() {
                         {patient.id && patient.id.substring(0, 8)}...
                       </TableCell>
                       <TableCell>
+                        {(patient.first_name || patient.last_name) 
+                          ? `${patient.first_name || ''} ${patient.last_name || ''}`.trim() 
+                          : (patient.name || 'N/A')}
+                      </TableCell>
+                      <TableCell>
                         {patient.email && typeof patient.email === 'string' && !patient.email.startsWith('\\x') 
                           ? patient.email 
                           : '[Encrypted]'}
+                      </TableCell>
+                      <TableCell>
+                        {patient.channel || patient.platform || 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {patient.risk || 'Low'}
                       </TableCell>
                       <TableCell>
                         {patient.created_at && new Date(patient.created_at).toLocaleDateString()}

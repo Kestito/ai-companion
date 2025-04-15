@@ -18,6 +18,18 @@
         "args": [
           "C:\\npm\\node_modules\\@modelcontextprotocol\\server-sequential-thinking\\dist\\index.js"
         ]
+      },
+      "brave-search": {
+        "command": "C:\\Windows\\System32\\cmd.exe",
+        "args": [
+          "/c",
+          "npx",
+          "-y",
+          "@modelcontextprotocol/server-brave-search"
+        ],
+        "env": {
+          "BRAVE_API_KEY": "BSAC7HBvMNDkBq5O-68gsztlfOW2y5I"
+        }
       }
     }
   }

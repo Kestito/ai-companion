@@ -1,6 +1,8 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { Database } from '@/lib/supabase/types'
+import { Socket, Server } from 'net'
+import http from 'http'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -87,6 +89,43 @@ export async function middleware(request: NextRequest) {
   // Redirect root to login page if no session, or dashboard if session exists
   if (request.nextUrl.pathname === '/') {
     return NextResponse.redirect(new URL(session ? '/dashboard' : '/login', request.url))
+  }
+
+  // Only process WebSocket requests to our /api/web-chat/ws/* route
+  if (
+    request.headers.get('upgrade') === 'websocket' &&
+    request.nextUrl.pathname.startsWith('/api/web-chat/ws/')
+  ) {
+    // Extract the session ID from the URL
+    const sessionId = request.nextUrl.pathname.split('/').pop();
+    
+    // Get the backend URL from environment variables
+    const apiUrlStr = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    
+    // Create a URL object from the API URL string
+    const apiUrl = new URL(apiUrlStr);
+    
+    // Create target URL for the WebSocket connection
+    const targetUrl = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/web-chat/ws/${sessionId}`;
+    
+    // Log connection attempt
+    console.log(`WebSocket connection attempt for session ${sessionId}, forwarding to ${targetUrl}`);
+    
+    try {
+      // Return a Response object that will be used by Next.js to proxy the WebSocket connection
+      return new Response(null, {
+        status: 101, // Switching protocols
+        headers: {
+          'Upgrade': 'websocket',
+          'Connection': 'Upgrade',
+          'Sec-WebSocket-Protocol': request.headers.get('Sec-WebSocket-Protocol') || '',
+          'X-WebSocket-Target': targetUrl,
+        },
+      });
+    } catch (error) {
+      console.error('Error setting up WebSocket proxy:', error);
+      return NextResponse.json({ error: 'Failed to establish WebSocket connection' }, { status: 500 });
+    }
   }
 
   return response

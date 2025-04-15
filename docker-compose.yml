@@ -1,44 +1,110 @@
+version: '3.8'
+
 services:
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-    volumes:
-      - ./long_term_memory:/qdrant/storage
-    restart: unless-stopped
-  chainlit:
-    build:
-      context: .
-      dockerfile: Dockerfile.chainlit
+  # Backend API service
+  backend:
+    image: evelinaacr8677.azurecr.io/ai-companion:v1.0.93
+    container_name: ai-companion-backend
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
-      - QDRANT_PORT=6333
-      - QDRANT_API_KEY=None
-      - QDRANT_HOST=localhost
-      - QDRANT_URL=http://qdrant:6333
-    restart: unless-stopped
-    volumes: 
-      - ./short_term_memory:/app/data
-    depends_on:
-      - qdrant
-  whatsapp:
-    build:
-      context: .
-      dockerfile: Dockerfile
+      - INTERFACE=all
+      - PORT=8000
+      - QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io
+      - QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw
+      - AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com
+      - AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl
+      - AZURE_OPENAI_API_VERSION=2024-08-01-preview
+      - AZURE_OPENAI_DEPLOYMENT=gpt-4o
+      - AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+      - OPENAI_API_TYPE=azure
+      - OPENAI_API_VERSION=2024-08-01-preview
+      - EMBEDDING_MODEL=text-embedding-3-small
+      - LLM_MODEL=gpt-4o
+      - SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co
+      - SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+      - COLLECTION_NAME=Information
+      - ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d
+      - ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - STT_MODEL_NAME=whisper
+      - TTS_MODEL_NAME=eleven_flash_v2_5
+      - CHAINLIT_FORCE_POLLING=true
+      - CHAINLIT_NO_WEBSOCKET=true
+      - CHAINLIT_POLLING_MAX_WAIT=5000
+    volumes:
+      - app_data:/app/data
+      - ./logs:/app/logs
+    restart: always
+    networks:
+      - ai_companion_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Frontend web UI service
+  frontend:
+    image: evelinaacr8677.azurecr.io/web-ui-companion:v1.0.93
+    container_name: ai-companion-frontend
     ports:
-      - "8080:8080"
-    env_file:
-      - .env
+      - "3000:3000"
     environment:
-      - QDRANT_PORT=6333
-      - QDRANT_API_KEY=None
-      - QDRANT_HOST=localhost
-      - QDRANT_URL=http://qdrant:6333
-    restart: unless-stopped
-    volumes: 
-      - ./short_term_memory:/app/data
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q7Q
+      - SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+      - NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com
+      - NEXT_PUBLIC_AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl
+      - NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=gpt-4o
+      - NEXT_PUBLIC_EMBEDDING_MODEL=text-embedding-3-small
+      - NEXT_PUBLIC_LLM_MODEL=gpt-4o
+      - NEXT_PUBLIC_COLLECTION_NAME=Information
+      - NODE_ENV=production
+    restart: always
     depends_on:
-      - qdrant
+      - backend
+    networks:
+      - ai_companion_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Telegram scheduler service
+  telegram-scheduler:
+    image: evelinaacr8677.azurecr.io/ai-companion:v1.0.93
+    container_name: ai-companion-telegram-scheduler
+    command: ["python", "-m", "src.ai_companion.interfaces.telegram.scheduled_message_processor"]
+    environment:
+      - TELEGRAM_BOT_TOKEN=7602202107:AAH-7E6Dy6DGy1yaYQoZYFeJNpf4Z1m_Vmk
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co
+      - SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+    volumes:
+      - app_data:/app/data
+      - ./logs:/app/logs
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - ai_companion_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app_data:
+    driver: local
+
+networks:
+  ai_companion_network:
+    driver: bridge

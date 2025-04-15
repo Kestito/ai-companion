@@ -406,79 +406,19 @@ export default function PatientDetailPage() {
         setLoading(true);
         console.log(`Attempting to fetch patient with ID: ${patientId}`);
         
-        // First try to fetch from database
-        let data = await fetchPatientById(patientId);
+        // Fetch from database only - no mock data fallback
+        const data = await fetchPatientById(patientId);
         
         if (data && data.name) {
           console.log(`Successfully loaded patient: ${data.name}`);
           setPatient(data);
         } else {
-          console.log(`No patient found with ID: ${patientId}, trying mock data`);
-          // If patient not found in Supabase, try to use mock data as fallback
-          import('@/lib/mockData').then(({ mockPatients }) => {
-            const mockPatient = mockPatients.find(p => p.id === patientId);
-            if (mockPatient && mockPatient.name) {
-              console.log(`Found mock patient: ${mockPatient.name}`);
-              // Ensure proper gender type conversion
-              const validPatient: Patient = {
-                ...mockPatient,
-                gender: mockPatient.gender as any, // Cast to PatientGender type
-                status: mockPatient.status as any, // Cast to PatientStatus type
-                platform: mockPatient.platform as any // Cast to MessagePlatform type
-              };
-              setPatient(validPatient);
-              setError(null); // Clear any error if we found a mock patient
-            } else {
-              // Try looking for a UUID match in any patient (database formatting issue)
-              // This handles the case where the ID format might be different
-              const formattedId = patientId.toLowerCase().replace(/-/g, '');
-              const altMatch = mockPatients.find(p => 
-                p.id.toLowerCase().replace(/-/g, '') === formattedId
-              );
-              
-              if (altMatch) {
-                console.log(`Found alternative match: ${altMatch.name}`);
-                // Ensure proper gender type conversion
-                const validPatient: Patient = {
-                  ...altMatch,
-                  gender: altMatch.gender as any, // Cast to PatientGender type
-                  status: altMatch.status as any, // Cast to PatientStatus type
-                  platform: altMatch.platform as any // Cast to MessagePlatform type
-                };
-                setPatient(validPatient);
-                setError(null);
-              } else {
-                console.log(`No mock patient found with ID: ${patientId}`);
-                setError('Patient not found. The patient you are looking for does not exist or has been removed.');
-              }
-            }
-          }).catch(err => {
-            console.error('Error loading mock data:', err);
-            setError('Patient not found and mock data unavailable.');
-          });
+          console.log(`No patient found with ID: ${patientId}`);
+          setError('Patient not found. The patient you are looking for does not exist or has been removed.');
         }
       } catch (err) {
         console.error(`Error loading patient with ID ${patientId}:`, err);
         setError('Failed to load patient data. Please try again later.');
-        
-        // Try to fall back to mock data
-        import('@/lib/mockData').then(({ mockPatients }) => {
-          const mockPatient = mockPatients.find(p => p.id === patientId);
-          if (mockPatient && mockPatient.name) {
-            console.log(`Found mock patient after error: ${mockPatient.name}`);
-            // Ensure proper gender type conversion
-            const validPatient: Patient = {
-              ...mockPatient,
-              gender: mockPatient.gender as any, // Cast to PatientGender type
-              status: mockPatient.status as any, // Cast to PatientStatus type
-              platform: mockPatient.platform as any // Cast to MessagePlatform type
-            };
-            setPatient(validPatient);
-            setError(null); // Clear the error since we found a fallback
-          }
-        }).catch(mockErr => {
-          console.error('Error loading mock data after fetch error:', mockErr);
-        });
       } finally {
         setLoading(false);
       }

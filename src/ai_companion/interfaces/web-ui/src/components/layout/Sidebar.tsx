@@ -30,7 +30,8 @@ import {
   HealthAndSafety,
   NotificationsActive,
   MedicalServices,
-  BarChart
+  BarChart,
+  Chat
 } from '@mui/icons-material';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
@@ -49,11 +50,12 @@ const menuItems = [
   { text: 'Health Records', icon: <HealthAndSafety />, path: '/records', description: 'Patient health data' },
   { text: 'Alerts', icon: <NotificationsActive />, path: '/alerts', description: 'Critical notifications' },
   { text: 'Analytics', icon: <BarChart />, path: '/analytics', description: 'Data analysis' },
+  { text: 'Telegram Messages', icon: <Chat />, path: '/telegram-messages', description: 'Telegram messaging' },
 ];
 
 // Bottom navigation items for settings, etc.
 const bottomMenuItems = [
-  { text: 'Medical Resources', icon: <MedicalServices />, path: '/resources', description: 'Reference materials' },
+  { text: 'Resources', icon: <MedicalServices />, path: '/resources', description: 'Reference materials' },
   { text: 'Settings', icon: <Settings />, path: '/settings', description: 'System configuration' },
 ];
 
@@ -119,24 +121,7 @@ export default function Sidebar() {
               alignItems: 'center',
             }}
           >
-            <Box sx={{ width: 28, height: 28, position: 'relative', mr: 1 }}>
-              <Image
-                src="/logo.svg"
-                alt="Evelina AI Logo"
-                layout="fill"
-                objectFit="contain"
-              />
-            </Box>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 'bold',
-                color: 'primary.main',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Evelina AI
-            </Typography>
+            {/* Logo removed */}
           </Box>
         )}
         <IconButton onClick={toggleSidebar}>

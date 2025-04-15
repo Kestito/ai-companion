@@ -1,0 +1,131 @@
+graph TB
+    %% Main Components
+    User((User)) --> Interfaces
+    
+    subgraph "AI Companion System"
+        %% Interfaces Layer
+        subgraph "Interfaces"
+            Whatsapp[WhatsApp Interface]
+            Telegram[Telegram Interface]
+            API[API Interface]
+        end
+        
+        %% Graph Layer
+        subgraph "Conversation Graph"
+            Router[Message Router]
+            ConversationNode[Conversation Node]
+            RAGNode[RAG Node]
+            ImageNode[Image Generation Node]
+            AudioNode[Audio Response Node]
+            MemoryNode[Memory Management Node]
+            RetryNode[Retry Node]
+        end
+        
+        %% Modules Layer
+        subgraph "Modules"
+            %% RAG System
+            subgraph "RAG System"
+                QueryProcessor[Query Preprocessor]
+                ParallelSearch[Parallel Search]
+                subgraph "Search Engines"
+                    VectorSearch[Vector Search - Qdrant]
+                    KeywordSearch[Keyword Search - Supabase]
+                end
+                ResponseGenerator[Response Generator]
+                RAGMonitor[RAG Monitoring]
+            end
+            
+            %% Memory System
+            subgraph "Memory System"
+                ShortTermMemory[Short-term Memory]
+                LongTermMemory[Long-term Memory]
+                ContextManager[Context Manager]
+            end
+            
+            %% Multimodal
+            subgraph "Multimodal Processing"
+                ImageGenerator[Image Generator]
+                TextToSpeech[Text-to-Speech]
+            end
+            
+            %% Scheduled Messaging
+            subgraph "Scheduled Messaging"
+                Scheduler[Message Scheduler]
+                MessageProcessor[Message Processor]
+                TemplateManager[Template Manager]
+            end
+        end
+        
+        %% Database Layer
+        subgraph "Storage"
+            Qdrant[(Qdrant Vector DB)]
+            Supabase[(Supabase DB)]
+            FileSystem[(File System)]
+        end
+    end
+    
+    %% Main Connections
+    Interfaces --> Router
+    Router --> ConversationNode
+    Router --> RAGNode
+    Router --> ImageNode
+    Router --> AudioNode
+    
+    %% RAG Flow
+    RAGNode --> QueryProcessor
+    QueryProcessor --> ParallelSearch
+    ParallelSearch --> VectorSearch
+    ParallelSearch --> KeywordSearch
+    VectorSearch --> Qdrant
+    KeywordSearch --> Supabase
+    VectorSearch --> ResponseGenerator
+    KeywordSearch --> ResponseGenerator
+    ResponseGenerator --> RAGNode
+    RAGNode --> RetryNode
+    RetryNode --> RAGNode
+    RAGNode --> RAGMonitor
+    
+    %% Memory Flow
+    ConversationNode <--> MemoryNode
+    RAGNode <--> MemoryNode
+    MemoryNode --> ShortTermMemory
+    MemoryNode --> LongTermMemory
+    MemoryNode --> ContextManager
+    ShortTermMemory --> Supabase
+    LongTermMemory --> Supabase
+    
+    %% Multimodal Flow
+    ImageNode --> ImageGenerator
+    AudioNode --> TextToSpeech
+    
+    %% Scheduled Messaging Flow
+    Scheduler --> Supabase
+    MessageProcessor --> Scheduler
+    MessageProcessor --> TemplateManager
+    MessageProcessor --> Whatsapp
+    MessageProcessor --> Telegram
+    
+    %% Response Flow
+    ConversationNode --> Interfaces
+    RAGNode --> Interfaces
+    ImageNode --> Interfaces
+    AudioNode --> Interfaces
+    
+    %% Database Connections
+    VectorSearch <--> Qdrant
+    KeywordSearch <--> Supabase
+    RAGMonitor --> FileSystem
+    
+    %% Style Definitions
+    classDef interface fill:#FFC0CB,stroke:#FF69B4,stroke-width:2px;
+    classDef node fill:#90EE90,stroke:#32CD32,stroke-width:2px;
+    classDef module fill:#ADD8E6,stroke:#4682B4,stroke-width:2px;
+    classDef database fill:#FFD700,stroke:#DAA520,stroke-width:2px;
+    classDef system fill:#E6E6FA,stroke:#9370DB,stroke-width:2px;
+    
+    %% Apply Styles
+    class Whatsapp,Telegram,API interface;
+    class Router,ConversationNode,RAGNode,ImageNode,AudioNode,MemoryNode,RetryNode node;
+    class QueryProcessor,ParallelSearch,VectorSearch,KeywordSearch,ResponseGenerator,RAGMonitor,ShortTermMemory,LongTermMemory,ContextManager,ImageGenerator,TextToSpeech,Scheduler,MessageProcessor,TemplateManager module;
+    class Qdrant,Supabase,FileSystem database;
+    class "RAG System","Memory System","Multimodal Processing","Scheduled Messaging","Storage","Conversation Graph","Interfaces" system; 

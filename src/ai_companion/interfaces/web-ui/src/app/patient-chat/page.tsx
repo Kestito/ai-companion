@@ -13,11 +13,14 @@ import {
   CircularProgress,
   Alert,
   IconButton,
-  Chip
+  Chip,
+  Switch,
+  FormControlLabel
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import SentimentSatisfiedAltIcon from '@mui/icons-material/SentimentSatisfiedAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import InfoIcon from '@mui/icons-material/Info';
 import Cookies from 'js-cookie';
@@ -35,15 +38,14 @@ interface Message {
 // API interfaces
 interface ChatRequest {
   message: string;
-  patient_id: string;
-  platform: string;
-  conversation_id?: string;
-  is_test_mode?: boolean;
+  session_id?: string;
+  user_id?: string;
+  user_info?: any;
 }
 
 interface ChatResponse {
-  message: string;
-  conversation_id?: string;
+  session_id: string;
+  response: string;
   error?: string;
 }
 
@@ -56,6 +58,10 @@ export default function PatientChatPage() {
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [useWebSocket, setUseWebSocket] = useState<boolean>(false);
+  const webSocketRef = useRef<WebSocket | null>(null);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
   
   // Check if user accessed this page correctly
   useEffect(() => {
@@ -97,6 +103,109 @@ export default function PatientChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Initialize session from localStorage or create new
+  useEffect(() => {
+    const storedSessionId = localStorage.getItem('chat_session_id');
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+    }
+    
+    // Check if WebSocket was previously enabled
+    const wsEnabled = localStorage.getItem('use_websocket') === 'true';
+    setUseWebSocket(wsEnabled);
+    
+    // If WebSocket was enabled and we have a session ID, connect
+    if (wsEnabled && storedSessionId) {
+      connectWebSocket(storedSessionId);
+    }
+    
+    // Cleanup WebSocket connection when component unmounts
+    return () => {
+      if (webSocketRef.current) {
+        webSocketRef.current.close();
+      }
+    };
+  }, []);
+
+  // Connect WebSocket when preference changes
+  useEffect(() => {
+    localStorage.setItem('use_websocket', useWebSocket.toString());
+    
+    if (useWebSocket && sessionId) {
+      connectWebSocket(sessionId);
+    } else if (!useWebSocket && webSocketRef.current) {
+      webSocketRef.current.close();
+      setIsWebSocketConnected(false);
+    }
+  }, [useWebSocket, sessionId]);
+
+  // Function to establish WebSocket connection
+  const connectWebSocket = (sid: string) => {
+    // Close existing connection if any
+    if (webSocketRef.current) {
+      webSocketRef.current.close();
+    }
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/web-chat/ws/${sid}`;
+    
+    const ws = new WebSocket(wsUrl);
+    webSocketRef.current = ws;
+    
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      setIsWebSocketConnected(true);
+      
+      // Add system message about connection
+      const systemMessage: Message = {
+        id: `system-${Date.now()}`,
+        role: 'system',
+        content: 'Connected to healthcare assistant via WebSocket for real-time communication.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, systemMessage]);
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.error) {
+          console.warn('WebSocket error:', data.error);
+          setError(data.error);
+          return;
+        }
+        
+        // Add assistant message to chat
+        const assistantMessage: Message = {
+          id: `assistant-ws-${Date.now()}`,
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);
+      } catch (err) {
+        console.error('Error parsing WebSocket message:', err);
+        setError('Failed to process response from healthcare assistant');
+        setIsLoading(false);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setIsWebSocketConnected(false);
+      webSocketRef.current = null;
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setError('WebSocket connection error');
+      setIsWebSocketConnected(false);
+    };
+  };
+
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     
@@ -127,24 +236,32 @@ export default function PatientChatPage() {
       
       const patientData = JSON.parse(storedPatient);
       
-      // Prepare API request
+      // If WebSocket is connected, send message through it
+      if (useWebSocket && isWebSocketConnected && webSocketRef.current) {
+        const message = {
+          message: input,
+          user_id: patientData.id,
+          user_info: patientData
+        };
+        
+        webSocketRef.current.send(JSON.stringify(message));
+        // Note: Don't set isLoading to false here - the WebSocket onmessage handler will do that
+        return;
+      }
+      
+      // Otherwise use HTTP API
       const chatRequest: ChatRequest = {
         message: input,
-        patient_id: patientData.id,
-        platform: 'web-ui',
-        is_test_mode: true
+        session_id: sessionId || undefined,
+        user_id: patientData.id,
+        user_info: patientData
       };
-      
-      // Add conversation ID if we have one from previous messages
-      if (conversationId) {
-        chatRequest.conversation_id = conversationId;
-      }
       
       // Make API call to backend with a timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 100000); // 100 second timeout (increased 10x)
       
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/web-chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,7 +274,7 @@ export default function PatientChatPage() {
       
       // Even if we get a non-200 response, try to parse it
       // Our API is designed to always return a valid response even on errors
-      const data = await response.json();
+      const data: ChatResponse = await response.json();
       
       // Check for error message from API
       if (data.error) {
@@ -165,16 +282,17 @@ export default function PatientChatPage() {
         throw new Error(data.error);
       }
       
-      // Save conversation ID for future messages
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
+      // Save session ID for future messages
+      if (data.session_id && (!sessionId || sessionId !== data.session_id)) {
+        setSessionId(data.session_id);
+        localStorage.setItem('chat_session_id', data.session_id);
       }
       
       // Add assistant message to chat
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: data.message,
+        content: data.response,
         timestamp: new Date()
       };
       
@@ -186,8 +304,8 @@ export default function PatientChatPage() {
       
       // Check if it's a timeout error
       if (err.name === 'AbortError') {
-        errorMessage = "Sorry, the request took too long to process. Our test environment might be experiencing high load or connectivity issues.";
-        setError('Request timed out. The server took too long to respond.');
+        errorMessage = "Sorry, the request took too long to process (over 100 seconds). Our test environment might be experiencing high load or complex processing requirements.";
+        setError('Request timed out after 100 seconds. The server is still processing but took too long to respond.');
       } else {
         setError(err.message || 'Failed to communicate with the healthcare assistant');
       }
@@ -293,7 +411,7 @@ export default function PatientChatPage() {
                       height: 28
                     }}
                   >
-                    {message.role === 'user' ? <PersonIcon fontSize="small" /> : <SmartToyIcon fontSize="small" />}
+                    {message.role === 'user' ? <PersonIcon fontSize="small" /> : <SentimentSatisfiedAltIcon fontSize="small" />}
                   </Avatar>
                   <Typography variant="subtitle2" color="text.secondary">
                     {message.role === 'user' ? 'You' : 'Healthcare Assistant'}
@@ -325,7 +443,7 @@ export default function PatientChatPage() {
         {isLoading && (
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Avatar sx={{ mr: 1, bgcolor: 'secondary.main', width: 28, height: 28 }}>
-              <SmartToyIcon fontSize="small" />
+              <SentimentSatisfiedAltIcon fontSize="small" />
             </Avatar>
             <CircularProgress size={20} sx={{ ml: 1 }} />
           </Box>
@@ -373,6 +491,24 @@ export default function PatientChatPage() {
           {isLoading ? <CircularProgress size={24} /> : <SendIcon />}
         </Button>
       </Paper>
+      
+      {/* Add WebSocket toggle */}
+      <Box sx={{ position: 'absolute', top: 20, right: 20 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={useWebSocket}
+              onChange={(e) => setUseWebSocket(e.target.checked)}
+              color="primary"
+            />
+          }
+          label={
+            <Typography variant="body2" color="textSecondary">
+              {isWebSocketConnected ? "WebSocket Connected" : "Use WebSocket"}
+            </Typography>
+          }
+        />
+      </Box>
     </Container>
   );
 } 

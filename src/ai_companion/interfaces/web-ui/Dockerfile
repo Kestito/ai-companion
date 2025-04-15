@@ -1,13 +1,16 @@
 # Build stage
 FROM node:18-alpine AS deps
+
+# Install necessary system dependencies including libc6-compat
 WORKDIR /app
+RUN apk add --no-cache libc6-compat python3 make g++
 
 # Copy package files for dependency installation
 COPY package.json package-lock.json ./
 RUN npm install
 
 # Builder stage
-FROM node:18-alpine AS builder
+FROM node:18-slim AS builder
 WORKDIR /app
 
 # Copy dependencies from deps stage
@@ -44,7 +47,7 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine AS runner
+FROM node:18-slim AS runner
 WORKDIR /app
 
 # Set environment variables

@@ -1,9 +1,10 @@
 import { Inter } from 'next/font/google';
 import type { Metadata } from "next";
-import AppProviders from '../components/providers/appproviders';
-import ClientLayout from '../components/layout/ClientLayout';
-import logger from '../utils/logger';
 import "./globals.css";
+import { Providers } from './providers';
+import AuthProvider from "@/components/AuthProvider";
+import logger from '../utils/logger';
+import ClientLayout from '@/components/layout/ClientLayout';
 
 // Load Inter font
 const inter = Inter({
@@ -21,8 +22,8 @@ logger.configureLogger({
 
 // Define metadata for the application
 export const metadata: Metadata = {
-  title: "Evelina AI",
-  description: "Interactive AI companion for healthcare assistance",
+  title: "AI Companion",
+  description: "Your AI Companion App",
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
@@ -40,9 +41,9 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   // Log application startup
   logger.info('Application starting', {
     environment: process.env.NODE_ENV,
@@ -73,12 +74,13 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
       <body className={`${inter.variable} font-sans antialiased min-h-screen bg-gray-50`} suppressHydrationWarning>
-        {/* Wrap the entire application with our providers */}
-        <AppProviders>
-          <ClientLayout>
-            {children}
-          </ClientLayout>
-        </AppProviders>
+        <AuthProvider>
+          <Providers>
+            <ClientLayout>
+              {children}
+            </ClientLayout>
+          </Providers>
+        </AuthProvider>
       </body>
     </html>
   );

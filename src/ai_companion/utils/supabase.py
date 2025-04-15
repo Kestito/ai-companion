@@ -4,10 +4,14 @@ This module provides a singleton Supabase client for interacting with the Supaba
 """
 
 import logging
+import os
 from functools import lru_cache
 from supabase import create_client, Client
 from supabase.client import ClientOptions
 from ai_companion.settings import settings
+
+# Add Azure Identity imports for managed identity support
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +28,21 @@ def get_supabase_client() -> Client:
     logger.debug("Initializing Supabase client")
     
     try:
+        # Check if running in Azure Container Apps
+        if os.environ.get("CONTAINER_APP_ENV"):
+            logger.info("Running in Azure Container App environment")
+            
+            # If using Managed Identity for secrets
+            if os.environ.get("USE_MANAGED_IDENTITY", "false").lower() == "true":
+                try:
+                    # Use DefaultAzureCredential to get token
+                    credential = DefaultAzureCredential()
+                    # For key vault access if needed
+                    # Note: This is just preparation - actual key vault integration would need more code
+                    logger.info("Using Azure Managed Identity for authentication")
+                except Exception as e:
+                    logger.warning(f"Failed to use Managed Identity: {e}. Falling back to standard auth.")
+        
         client = create_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_KEY,

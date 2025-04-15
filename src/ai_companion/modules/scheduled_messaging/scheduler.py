@@ -1,8 +1,8 @@
 """
-Scheduler for managing message delivery at specified times.
+Scheduler module for handling scheduled messages.
 
-This module provides the core functionality for scheduling messages
-to be delivered via various platforms at specified times.
+This module provides functionality for scheduling, cancelling, and retrieving 
+messages that are scheduled for delivery.
 """
 
 import logging
@@ -11,6 +11,35 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union
 import json
+
+# Try both import patterns for compatibility
+try:
+    from src.ai_companion.modules.scheduled_messaging.storage import (
+        store_scheduled_message,
+        get_scheduled_message,
+        delete_scheduled_message,
+        get_due_messages
+    )
+    from src.ai_companion.modules.scheduled_messaging.triggers import (
+        parse_trigger_spec,
+        get_next_trigger_time
+    )
+except ImportError:
+    try:
+        from ai_companion.modules.scheduled_messaging.storage import (
+            store_scheduled_message,
+            get_scheduled_message,
+            delete_scheduled_message,
+            get_due_messages
+        )
+        from ai_companion.modules.scheduled_messaging.triggers import (
+            parse_trigger_spec,
+            get_next_trigger_time
+        )
+    except ImportError:
+        # For documentation purposes only
+        store_scheduled_message = get_scheduled_message = delete_scheduled_message = get_due_messages = None
+        parse_trigger_spec = get_next_trigger_time = None
 
 from ai_companion.utils.supabase import get_supabase_client
 from ai_companion.settings import settings

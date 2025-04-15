@@ -3,6 +3,9 @@ import logging
 from io import BytesIO
 from typing import Dict, Optional, Union, Any
 import signal
+import json
+import uuid
+from datetime import datetime
 
 import httpx
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -12,6 +15,7 @@ from ai_companion.graph import graph_builder
 from ai_companion.modules.image import ImageToText
 from ai_companion.modules.speech import SpeechToText, TextToSpeech
 from ai_companion.settings import settings
+from ai_companion.utils.supabase import get_supabase_client
 
 # Configure logging
 logging.basicConfig(
@@ -207,7 +211,7 @@ class TelegramBot:
                 # Debug the result type
                 logger.debug(f"Result type: {type(result).__name__}")
                 
-                # DIRECT FIX: Extract the response message from the result
+                # Extract the response message from the result
                 # The graph returns a dict with a 'messages' key containing a list of messages
                 # The last message in this list is the AI's response
                 response_message = None
@@ -277,6 +281,18 @@ class TelegramBot:
                 
                 # Create a safe result dictionary
                 safe_result = {"workflow": workflow}
+                
+                # NEW CODE: Save the conversation to the database
+                patient_id = None
+                if isinstance(result, dict) and "patient_id" in result:
+                    patient_id = result["patient_id"]
+                
+                conversation_id = await self._save_to_database(
+                    user_metadata, 
+                    content, 
+                    response_message,
+                    patient_id
+                )
                 
                 # Send the response
                 logger.debug(f"Sending response with workflow: {workflow}")
@@ -570,6 +586,156 @@ class TelegramBot:
             await self._send_message(chat_id, caption)
             
         return voice_result
+
+    async def _save_to_database(self, user_metadata, user_message, bot_response, patient_id=None):
+        """Save the conversation to the Supabase database."""
+        try:
+            logger.info("Saving conversation to Supabase database")
+            
+            # Get Supabase client
+            supabase = get_supabase_client()
+            if not supabase:
+                logger.error("Failed to get Supabase client")
+                return None
+                
+            # Extract user details
+            user_id = user_metadata.get("user_id")
+            platform = user_metadata.get("platform", "telegram")
+            
+            # If we don't have a patient ID yet, try to find an existing patient
+            if not patient_id and user_id:
+                logger.debug(f"No patient ID provided, looking for existing patient with user ID: {user_id}")
+                metadata_search = f'%"user_id": "{user_id}"%'
+                
+                # First try to find by Telegram ID stored in email JSON
+                result = supabase.table("patients").select("id").like("email", metadata_search).execute()
+                if result.data and len(result.data) > 0:
+                    patient_id = result.data[0]["id"]
+                    logger.info(f"Found existing patient with ID: {patient_id}")
+                else:
+                    # Try to find by phone field (telegram:user_id format)
+                    telegram_id = f"telegram:{user_id}"
+                    result = supabase.table("patients").select("id").eq("phone", telegram_id).execute()
+                    if result.data and len(result.data) > 0:
+                        patient_id = result.data[0]["id"]
+                        logger.info(f"Found existing patient with phone ID: {patient_id}")
+            
+            # If still no patient ID, create a new patient
+            if not patient_id and user_id:
+                logger.info("No existing patient found, creating new patient record")
+                
+                # Create timestamp
+                now = datetime.now().isoformat()
+                
+                # Extract name from metadata
+                first_name = user_metadata.get("first_name", "")
+                last_name = user_metadata.get("last_name", "")
+                username = user_metadata.get("username", "")
+                name = f"{first_name} {last_name}".strip() if first_name or last_name else username or f"Telegram User {user_id}"
+                
+                # Prepare patient data
+                patient_data = {
+                    "first_name": first_name or name.split(" ")[0],
+                    "last_name": last_name or " ".join(name.split(" ")[1:]) if " " in name else "",
+                    "phone": f"telegram:{user_id}",
+                    "created_at": now,
+                    "last_active": now,
+                    "preferred_language": "lt",  # Default language
+                    "support_status": "active",  # Default status
+                    "email": json.dumps({
+                        "platform": "telegram",
+                        "user_id": user_id,
+                        "username": username
+                    })
+                }
+                
+                # Create patient record
+                logger.debug(f"Creating patient with data: {patient_data}")
+                result = supabase.table("patients").insert(patient_data).execute()
+                
+                if result.data and len(result.data) > 0:
+                    patient_id = result.data[0]["id"]
+                    logger.info(f"Created new patient with ID: {patient_id}")
+                else:
+                    logger.error("Failed to create patient record")
+            
+            # Find or create conversation
+            conversation_id = None
+            if patient_id:
+                # Look for existing active conversation
+                result = supabase.table("conversations").select("id") \
+                    .eq("patient_id", patient_id) \
+                    .eq("platform", platform) \
+                    .eq("status", "active") \
+                    .execute()
+                
+                if result.data and len(result.data) > 0:
+                    conversation_id = result.data[0]["id"]
+                    logger.info(f"Found existing conversation with ID: {conversation_id}")
+                
+                # If no active conversation, create a new one
+                if not conversation_id:
+                    logger.info("Creating new conversation")
+                    conversation_data = {
+                        "patient_id": patient_id,
+                        "platform": platform,
+                        "start_time": datetime.now().isoformat(),
+                        "conversation_type": "general",
+                        "status": "active"
+                    }
+                    
+                    result = supabase.table("conversations").insert(conversation_data).execute()
+                    if result.data and len(result.data) > 0:
+                        conversation_id = result.data[0]["id"]
+                        logger.info(f"Created new conversation with ID: {conversation_id}")
+                    else:
+                        logger.error("Failed to create conversation record")
+            
+            # Add messages to the conversation
+            if conversation_id:
+                # Add user message
+                user_message_data = {
+                    "conversation_id": conversation_id,
+                    "message_content": user_message,
+                    "message_type": "text",
+                    "sent_at": datetime.now().isoformat(),
+                    "sender": "patient",
+                    "metadata": user_metadata
+                }
+                
+                # Add bot response message
+                bot_message_data = {
+                    "conversation_id": conversation_id,
+                    "message_content": bot_response,
+                    "message_type": "text",
+                    "sent_at": datetime.now().isoformat(),
+                    "sender": "evelina",
+                    "metadata": {"workflow": "conversation"}
+                }
+                
+                # Insert both messages
+                message_data = [user_message_data, bot_message_data]
+                result = supabase.table("conversation_details").insert(message_data).execute()
+                
+                if result.data and len(result.data) > 0:
+                    logger.info(f"Added {len(result.data)} messages to conversation {conversation_id}")
+                else:
+                    logger.error("Failed to add messages to conversation")
+                
+                # Update conversation last_message and end_time
+                supabase.table("conversations").update({
+                    "end_time": datetime.now().isoformat(),
+                    "last_message": bot_response[:100] if bot_response else "No response"
+                }).eq("id", conversation_id).execute()
+                
+                return conversation_id
+            else:
+                logger.error("Could not find or create conversation - messages not saved")
+                return None
+        
+        except Exception as e:
+            logger.error(f"Error saving to database: {e}", exc_info=True)
+            return None
 
 async def run_telegram_bot():
     """Run the Telegram bot with proper shutdown handling."""

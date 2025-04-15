@@ -1,0 +1,98 @@
+flowchart TD
+    %% Main components of the Scheduled Messaging System
+    subgraph "Healthcare Provider"
+        Provider((Healthcare Provider))
+        NLCommand[Natural Language Command]
+        TemplateCmd[Template-Based Command]
+    end
+    
+    subgraph "Scheduled Messaging System"
+        CommandParser[Command Parser]
+        Scheduler[Message Scheduler]
+        TemplateManager[Template Manager]
+        MessageProcessor[Message Processor]
+        
+        subgraph "Scheduling Options"
+            OneTime[One-time Message]
+            Recurring[Recurring Message]
+        end
+        
+        subgraph "Message Processing"
+            Validation[Message Validation]
+            Queuing[Message Queuing]
+            Delivery[Message Delivery]
+            Retry[Retry Mechanism]
+            StatusTracking[Status Tracking]
+        end
+    end
+    
+    subgraph "Delivery Channels"
+        Telegram[Telegram Interface]
+        WhatsApp[WhatsApp Interface]
+    end
+    
+    subgraph "Storage"
+        Supabase[(Supabase DB)]
+    end
+    
+    subgraph "Patient"
+        PatientWhatsApp[Patient WhatsApp]
+        PatientTelegram[Patient Telegram]
+        Patient((Patient))
+    end
+    
+    %% Data flow
+    Provider --> NLCommand
+    Provider --> TemplateCmd
+    
+    NLCommand --> CommandParser
+    TemplateCmd --> CommandParser
+    
+    CommandParser --> Scheduler
+    CommandParser --> TemplateManager
+    
+    TemplateManager --> Scheduler
+    
+    Scheduler --> OneTime
+    Scheduler --> Recurring
+    
+    OneTime --> MessageProcessor
+    Recurring --> MessageProcessor
+    
+    MessageProcessor --> Validation
+    Validation --> Queuing
+    Queuing --> Delivery
+    Delivery --> Retry
+    Retry --> Delivery
+    Delivery --> StatusTracking
+    
+    Scheduler --> Supabase
+    MessageProcessor --> Supabase
+    StatusTracking --> Supabase
+    
+    Delivery --> Telegram
+    Delivery --> WhatsApp
+    
+    Telegram --> PatientTelegram
+    WhatsApp --> PatientWhatsApp
+    
+    PatientTelegram --> Patient
+    PatientWhatsApp --> Patient
+    
+    %% Style definitions
+    classDef provider fill:#FFDFBA,stroke:#FF9A00,stroke-width:2px;
+    classDef command fill:#FFFFBA,stroke:#FFFF00,stroke-width:2px;
+    classDef processor fill:#BAE1FF,stroke:#1D7CF2,stroke-width:2px;
+    classDef option fill:#BAFFC9,stroke:#00FF41,stroke-width:2px;
+    classDef delivery fill:#FFBAF2,stroke:#FF00C8,stroke-width:2px;
+    classDef patient fill:#E1BAFF,stroke:#A400FF,stroke-width:2px;
+    classDef database fill:#FFD700,stroke:#DAA520,stroke-width:2px;
+    
+    %% Apply styles
+    class Provider,Patient provider;
+    class NLCommand,TemplateCmd command;
+    class CommandParser,Scheduler,TemplateManager,MessageProcessor processor;
+    class OneTime,Recurring,Validation,Queuing,StatusTracking option;
+    class Delivery,Retry,Telegram,WhatsApp delivery;
+    class PatientWhatsApp,PatientTelegram patient;
+    class Supabase database; 

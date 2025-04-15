@@ -5,7 +5,13 @@ param (
     [switch]$SkipChangeDetection = $false,  # Add parameter to skip change detection
     [switch]$AutoIncrement = $true,        # Auto-increment version by default
     [switch]$CleanupLocalImages = $false,    # Add parameter to clean up local images after deployment
-    [switch]$ForceUpdate = $false           # Force update container apps to latest image by default
+    [switch]$ForceUpdate = $false,           # Force update container apps to latest image by default
+    [switch]$SkipTelegramSetup = $false,      # Skip setting up Telegram scheduler
+    [switch]$RunTelegramScheduler = $true,    # Run Telegram scheduler immediately after setup by default
+    [switch]$UseContainerJobs = $true,        # Use Container App Jobs for scheduling by default
+    [string]$CronExpression = "*/5 * * * *",   # Default CRON expression (every 5 minutes)
+    [switch]$UseFallbackScheduler = $false,    # Use fallback simple Container App instead of Jobs if jobs fail
+    [switch]$DiagnoseOnly = $false            # Only run diagnostics without making changes
 )
 
 # Set variables
@@ -15,8 +21,9 @@ $VERSION_FILE = "./.version"               # New file to store version
 $TAG = "v1.0.10"                           # Default tag (will be updated if auto-increment)
 $RESOURCE_GROUP = "evelina-rg-20250308115110"  # Use existing resource group
 $ACR_NAME = "evelinaacr8677"  # Use existing ACR
-$BACKEND_CONTAINER_APP_NAME = "backend-app"
-$FRONTEND_CONTAINER_APP_NAME = "frontend-app"
+$BACKEND_APP_NAME = "backend-app"
+$FRONTEND_APP_NAME = "frontend-app"
+$TELEGRAM_SCHEDULER_APP_NAME = "telegram-scheduler-app"  # Define the Telegram scheduler app name
 $LOCATION = "eastus"
 $SUBSCRIPTION_ID = "7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e"
 $CONTAINER_ENV_NAME = "production-env-20250308115110"  # Use existing environment
@@ -43,6 +50,10 @@ Write-Host "Use -ForceUpdate:$false to disable automatic updates" -ForegroundCol
 # By default AutoIncrement is now true
 Write-Host "Version will be auto-incremented on each deployment (AutoIncrement=true by default)" -ForegroundColor Green
 Write-Host "Use -AutoIncrement:$false to keep the same version" -ForegroundColor Green
+
+# Show Telegram scheduler message
+Write-Host "Telegram message scheduler setup will be included (use -SkipTelegramSetup to disable)" -ForegroundColor Green
+Write-Host "Telegram scheduler will run automatically after setup (use -RunTelegramScheduler:$false to disable)" -ForegroundColor Green
 
 # Handle version auto-incrementing (now enabled by default)
 if (-not $AutoIncrement) {
@@ -124,7 +135,45 @@ function Test-CommandSuccess {
     }
 }
 
-# Create a function to check if an image exists in ACR
+# Create a function to check if an image exists in ACR with tag
+function Test-ImageExists {
+    param (
+        [string]$AcrName,
+        [string]$ImageName,
+        [string]$Tag,
+        [string]$Username,
+        [string]$Password
+    )
+    
+    # Login to ACR if credentials provided
+    if ($Username -and $Password) {
+        az acr login --name $AcrName
+    }
+    
+    try {
+        # Use az acr repository show-tags command to check if the tag exists
+        $imageExists = az acr repository show-tags --name $AcrName --repository $ImageName --query "contains(@, '$Tag')" --output tsv 2>$null
+        if ($imageExists -eq "true") {
+            return $true
+        } else {
+            Write-ColorOutput -Message "Image tag '$Tag' does not exist in repository '$ImageName'" -Color Red -Prefix "❌"
+            
+            # List available tags
+            Write-ColorOutput -Message "Available tags for '$ImageName':" -Color Yellow -Prefix "→"
+            $tags = az acr repository show-tags --name $AcrName --repository $ImageName --output tsv
+            foreach ($availableTag in $tags) {
+                Write-Host "  - $availableTag"
+            }
+            
+            return $false
+        }
+    } catch {
+        Write-ColorOutput -Message "Error checking image: $_" -Color Red -Prefix "❌"
+        return $false
+    }
+}
+
+# Legacy function for backward compatibility
 function Test-ImageExistsInACR {
     param (
         [string]$ImageName,
@@ -316,6 +365,12 @@ function Test-DirectoryChanged {
     
     Write-ColorOutput -Message "No changes detected in directory" -Color Green -Prefix "✅"
     return $false
+}
+
+# Check if we're running as administrator for the scheduler task
+function Test-Admin {
+    $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    $currentUser.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
 # Start deployment process
@@ -706,17 +761,7 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
               EMBEDDING_MODEL=text-embedding-3-small `
               LLM_MODEL=gpt-4o `
               SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-              SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
-              COLLECTION_NAME=Information `
-              ELEVENLABS_API_KEY=sk_f8aaf95ce7c9bc93c1341eded4014382cd6444e84cb5c03d `
-              ELEVENLABS_VOICE_ID=qSfcmCS9tPikUrDxO8jt `
-              PYTHONUNBUFFERED=1 `
-              PYTHONPATH=/app `
-              STT_MODEL_NAME=whisper `
-              TTS_MODEL_NAME=eleven_flash_v2_5 `
-              CHAINLIT_FORCE_POLLING=true `
-              CHAINLIT_NO_WEBSOCKET=true `
-              CHAINLIT_POLLING_MAX_WAIT=5000
+              SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
 
         if (-not (Test-CommandSuccess -SuccessMessage "Backend Container App deployed successfully" -ErrorMessage "Failed to deploy Backend Container App")) {
             Write-ColorOutput -Message "Failed to deploy backend, continuing with deployment" -Color Yellow -Prefix "⚠️"
@@ -853,10 +898,451 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
     }
 }
 
-# Step 10: Deployment Summary
+# Add diagnostic function for Azure environment
+function Test-AzureEnvironment {
+    param (
+        [string]$ResourceGroup,
+        [string]$ContainerEnvName
+    )
+    
+    Write-ColorOutput -Message "Diagnosing Azure environment for Container App Job support" -Color Green -Prefix "🔍"
+    
+    # Check if logged in to Azure
+    try {
+        $account = az account show --query "name" -o tsv 2>$null
+        Write-ColorOutput -Message "Azure login verified: $account" -Color Green -Prefix "✅"
+    } catch {
+        Write-ColorOutput -Message "Not logged in to Azure. Please run 'az login' first." -Color Red -Prefix "❌"
+        return $false
+    }
+    
+    # Check resource group existence
+    try {
+        $rgExists = az group show --name $ResourceGroup --query "name" -o tsv 2>$null
+        if ($rgExists) {
+            Write-ColorOutput -Message "Resource group exists: $ResourceGroup" -Color Green -Prefix "✅"
+        } else {
+            Write-ColorOutput -Message "Resource group not found: $ResourceGroup" -Color Red -Prefix "❌"
+            return $false
+        }
+    } catch {
+        Write-ColorOutput -Message "Error checking resource group: $_" -Color Red -Prefix "❌"
+        return $false
+    }
+    
+    # Check if Container App environment exists
+    try {
+        $envExists = az containerapp env show --name $ContainerEnvName --resource-group $ResourceGroup --query "name" -o tsv 2>$null
+        if ($envExists) {
+            Write-ColorOutput -Message "Container App environment exists: $ContainerEnvName" -Color Green -Prefix "✅"
+        } else {
+            Write-ColorOutput -Message "Container App environment not found: $ContainerEnvName" -Color Red -Prefix "❌"
+            return $false
+        }
+    } catch {
+        Write-ColorOutput -Message "Error checking Container App environment: $_" -Color Red -Prefix "❌"
+        return $false
+    }
+    
+    # Check permissions for creating jobs
+    try {
+        $userPrincipal = az ad signed-in-user show --query "userPrincipalName" -o tsv 2>$null
+        Write-ColorOutput -Message "Current user: $userPrincipal" -Color Yellow -Prefix "→"
+        
+        # Check if user has Contributor role on resource group
+        $rolesJson = az role assignment list --assignee $userPrincipal --resource-group $ResourceGroup --query "[].roleDefinitionName" -o json 2>$null
+        
+        # Handle potentially empty or null response
+        if ([string]::IsNullOrEmpty($rolesJson) -or $rolesJson -eq "[]") {
+            Write-ColorOutput -Message "No roles found for current user in resource group" -Color Yellow -Prefix "⚠️"
+            Write-ColorOutput -Message "User does not have sufficient permissions to create Container App Jobs" -Color Yellow -Prefix "⚠️"
+            Write-ColorOutput -Message "Recommended roles: Contributor or Owner" -Color Yellow -Prefix "→"
+            $global:UseFallbackScheduler = $true
+            return $true  # Continue with deployment using fallback
+        }
+        
+        # Convert JSON to PowerShell object
+        try {
+            $roles = $rolesJson | ConvertFrom-Json
+        }
+        catch {
+            Write-ColorOutput -Message "Error parsing roles: $_" -Color Yellow -Prefix "⚠️"
+            $roles = @()
+        }
+        
+        # Check if array is empty
+        if ($roles.Count -eq 0) {
+            Write-ColorOutput -Message "User has no roles assigned in this resource group" -Color Yellow -Prefix "⚠️"
+            Write-ColorOutput -Message "Recommended roles: Contributor or Owner" -Color Yellow -Prefix "→"
+            $global:UseFallbackScheduler = $true
+        }
+        elseif ($roles -contains "Contributor" -or $roles -contains "Owner") {
+            Write-ColorOutput -Message "User has sufficient permissions (Contributor/Owner)" -Color Green -Prefix "✅"
+        }
+        else {
+            Write-ColorOutput -Message "User may not have sufficient permissions to create Container App Jobs" -Color Yellow -Prefix "⚠️"
+            Write-ColorOutput -Message "Recommended roles: Contributor or Owner" -Color Yellow -Prefix "→"
+            Write-ColorOutput -Message "Current roles: $($roles -join ', ')" -Color Yellow -Prefix "→"
+            $global:UseFallbackScheduler = $true
+        }
+    } catch {
+        Write-ColorOutput -Message "Error checking permissions: $_" -Color Yellow -Prefix "⚠️"
+        Write-ColorOutput -Message "Defaulting to fallback scheduler for safety" -Color Yellow -Prefix "→"
+        $global:UseFallbackScheduler = $true
+    }
+    
+    # Check if Container Apps Jobs feature is available in the region
+    try {
+        $location = az containerapp env show --name $ContainerEnvName --resource-group $ResourceGroup --query "location" -o tsv 2>$null
+        Write-ColorOutput -Message "Container App environment location: $location" -Color Yellow -Prefix "→"
+        
+        # List of regions with confirmed Container App Jobs support (as of script creation date)
+        $supportedRegions = @(
+            "eastus", "eastus2", "westus", "westus2", "westus3", "centralus", "northcentralus", "southcentralus",
+            "westeurope", "northeurope", "uksouth", "ukwest", "francecentral", "switzerlandnorth",
+            "japaneast", "koreacentral", "southeastasia", "australiaeast"
+        )
+        
+        if ($supportedRegions -contains $location.ToLower()) {
+            Write-ColorOutput -Message "Region supports Container App Jobs" -Color Green -Prefix "✅"
+    } else {
+            Write-ColorOutput -Message "Region may not support Container App Jobs. Consider using fallback approach." -Color Yellow -Prefix "⚠️"
+            $global:UseFallbackScheduler = $true
+        }
+    } catch {
+        Write-ColorOutput -Message "Error checking region: $_" -Color Yellow -Prefix "⚠️"
+    }
+    
+    # Try to list existing jobs as a test
+    try {
+        # First check if the jobs API is working
+        $jobApiTest = az containerapp job --help 2>$null
+        if ([string]::IsNullOrEmpty($jobApiTest)) {
+            Write-ColorOutput -Message "Container App Jobs API may not be available" -Color Yellow -Prefix "⚠️"
+            $global:UseFallbackScheduler = $true
+        }
+        else {
+            # Try to list jobs
+            $jobsListResult = az containerapp job list --resource-group $ResourceGroup 2>&1
+            
+            # Check if there was an error (error message contains lines with Python.exe path)
+            if ($jobsListResult -like "*python.exe*" -or $jobsListResult -like "*error*") {
+                Write-ColorOutput -Message "Error listing jobs: API may not be available" -Color Red -Prefix "❌"
+                Write-ColorOutput -Message "Container App Jobs may not be supported in your region or configuration" -Color Yellow -Prefix "⚠️"
+                $global:UseFallbackScheduler = $true
+            }
+            else {
+                # Try to parse the result as JSON and count
+                try {
+                    $jobsList = $jobsListResult | ConvertFrom-Json
+                    $jobsCount = $jobsList.Count
+                    Write-ColorOutput -Message "Successfully listed jobs in resource group ($jobsCount jobs found)" -Color Green -Prefix "✅"
+                }
+                catch {
+                    Write-ColorOutput -Message "Error processing jobs list: $_" -Color Red -Prefix "❌"
+                    Write-ColorOutput -Message "Container App Jobs API may not be returning valid data" -Color Yellow -Prefix "⚠️"
+                    $global:UseFallbackScheduler = $true
+                }
+            }
+        }
+    } catch {
+        Write-ColorOutput -Message "Error listing jobs: $_" -Color Red -Prefix "❌"
+        Write-ColorOutput -Message "Container App Jobs API may not be available" -Color Yellow -Prefix "⚠️"
+        $global:UseFallbackScheduler = $true
+    }
+    
+    # Check Azure CLI version
+    try {
+        $cliVersion = az version --query "azure-cli" -o tsv 2>$null
+        
+        if ([string]::IsNullOrEmpty($cliVersion)) {
+            # Try alternate query format if the first one didn't work
+            $cliVersion = az version --query '''azure-cli''' -o tsv 2>$null
+        }
+        
+        if ([string]::IsNullOrEmpty($cliVersion)) {
+            # If still empty, get the full version info and extract manually
+            $versionInfo = az version 2>$null | ConvertFrom-Json
+            if ($versionInfo.'azure-cli') {
+                $cliVersion = $versionInfo.'azure-cli'
+            }
+        }
+        
+        Write-ColorOutput -Message "Azure CLI version: $cliVersion" -Color Yellow -Prefix "→"
+        
+        # Parse version components if we have a version
+        if ($cliVersion -match '(\d+)\.(\d+)\.(\d+)') {
+            $major = [int]$Matches[1]
+            $minor = [int]$Matches[2]
+            $patch = [int]$Matches[3]
+            
+            # Check if version is recent enough (2.40.0+)
+            if ($major -gt 2 -or ($major -eq 2 -and $minor -ge 40)) {
+                Write-ColorOutput -Message "Azure CLI version supports Container App Jobs" -Color Green -Prefix "✅"
+} else {
+                Write-ColorOutput -Message "Azure CLI version may be too old for Container App Jobs" -Color Yellow -Prefix "⚠️"
+                Write-ColorOutput -Message "Consider updating Azure CLI: az upgrade" -Color Yellow -Prefix "→"
+                $global:UseFallbackScheduler = $true
+            }
+        } else {
+            Write-ColorOutput -Message "Could not determine Azure CLI version format" -Color Yellow -Prefix "⚠️"
+            Write-ColorOutput -Message "Proceeding with deployment, but consider checking CLI version manually" -Color Yellow -Prefix "→"
+        }
+    } catch {
+        Write-ColorOutput -Message "Error checking Azure CLI version: $_" -Color Yellow -Prefix "⚠️"
+        Write-ColorOutput -Message "Proceeding with deployment" -Color Yellow -Prefix "→"
+    }
+    
+    return $true
+}
+
+# Before deploying the Telegram scheduler, run the diagnostic
+if (-not $SkipTelegramSetup) {
+    Write-ColorOutput -Message "Running pre-deployment diagnostics for Telegram scheduler" -Color Cyan -Prefix "🔍"
+    $diagnosticResult = Test-AzureEnvironment -ResourceGroup $RESOURCE_GROUP -ContainerEnvName $CONTAINER_ENV_NAME
+    
+    # Check if we're in diagnose-only mode
+    if ($DiagnoseOnly) {
+        Write-ColorOutput -Message "Diagnostics completed. Exiting as -DiagnoseOnly flag was specified." -Color Cyan -Prefix "ℹ️"
+        exit 0
+    }
+    
+    # Override UseFallbackScheduler if explicitly set
+    if ($UseFallbackScheduler) {
+        Write-ColorOutput -Message "Using fallback scheduler as specified by -UseFallbackScheduler parameter" -Color Yellow -Prefix "→"
+    }
+}
+
+# Step 10: Deploy Telegram Scheduler Container App
+Write-ColorOutput -Message "Deploying Telegram Scheduler Container App" -Color Green -Prefix "🤖"
+
+        $telegramSchedulerAppRunning = $false
+$telegramSchedulerAppNeedsUpdate = $false
+$telegramJobExists = $false
+$telegramContainerAppExists = $false
+
+# Check if the telegram scheduler container app exists
+try {
+    $telegramAppCheck = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+    if ($telegramAppCheck) {
+        Write-ColorOutput -Message "Telegram scheduler job exists, checking if update is needed" -Color Yellow -Prefix "→"
+        $telegramJobExists = $true
+        
+        # Check the current image version used by the job
+        $currentJobImage = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.template.containers[0].image" -o tsv 2>$null
+        Write-ColorOutput -Message "Current job image: $currentJobImage" -Color Yellow -Prefix "→"
+        
+        # Check if current image matches desired version
+        $desiredJobImage = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+        if ($currentJobImage -eq $desiredJobImage) {
+            Write-ColorOutput -Message "Telegram scheduler job is already using the latest image" -Color Green -Prefix "✅"
+            $telegramSchedulerAppRunning = $true
+        } else {
+            Write-ColorOutput -Message "Telegram scheduler job needs to be updated to image: $desiredJobImage" -Color Yellow -Prefix "→"
+            $telegramSchedulerAppNeedsUpdate = $true
+        }
+    }
+} catch {
+    # Check if it exists as a regular Container App instead
+    try {
+        $telegramAppCheckRegular = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+        if ($telegramAppCheckRegular) {
+            Write-ColorOutput -Message "Telegram scheduler exists as a regular Container App, will use fallback mode" -Color Yellow -Prefix "→"
+            $telegramContainerAppExists = $true
+            $UseFallbackScheduler = $true
+            
+            # Check if needs update
+            $currentAppImage = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv 2>$null
+            $desiredAppImage = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+            
+            if ($currentAppImage -eq $desiredAppImage) {
+                Write-ColorOutput -Message "Telegram scheduler app is already using the latest image" -Color Green -Prefix "✅"
+                $telegramSchedulerAppRunning = $true
+            } else {
+                Write-ColorOutput -Message "Telegram scheduler app needs to be updated to image: $desiredAppImage" -Color Yellow -Prefix "→"
+                $telegramSchedulerAppNeedsUpdate = $true
+            }
+        } else {
+            Write-ColorOutput -Message "Telegram scheduler does not exist, needs to be created" -Color Yellow -Prefix "→"
+        }
+    } catch {
+        Write-ColorOutput -Message "Telegram scheduler does not exist, needs to be created" -Color Yellow -Prefix "→"
+        }
+    }
+    
+    # Only create if app doesn't exist or was deleted
+    if (-not $telegramSchedulerAppRunning) {
+        # Hardcode Telegram Bot Token
+        $telegramBotToken = "7602202107:AAH-7E6Dy6DGy1yaYQoZYFeJNpf4Z1m_Vmk"
+        
+    # Verify that the image exists before attempting to deploy
+    $imageToUse = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+    Write-ColorOutput -Message "Verifying image exists: $imageToUse" -Color Yellow -Prefix "→"
+    $imageExists = Test-ImageExists -AcrName $ACR_NAME -ImageName $IMAGE_NAME -Tag $TAG -Username $ACR_USERNAME -Password $ACR_PASSWORD
+    
+    if (-not $imageExists) {
+        # Check if we have a previous tag we can use
+        Write-ColorOutput -Message "Attempting to find a previous valid tag to use" -Color Yellow -Prefix "→"
+        $allTags = az acr repository show-tags --name $ACR_NAME --repository $IMAGE_NAME --orderby time_desc --output tsv 2>$null
+        
+        if ($allTags) {
+            $latestValidTag = $allTags[0]
+            Write-ColorOutput -Message "Found valid tag: $latestValidTag, will use this instead" -Color Green -Prefix "✅"
+            $TAG = $latestValidTag
+            $imageToUse = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+        } else {
+            Write-ColorOutput -Message "No valid tags found for $IMAGE_NAME, cannot deploy" -Color Red -Prefix "❌"
+            Write-ColorOutput -Message "Please build and push the image first" -Color Yellow -Prefix "→"
+            return
+        }
+    }
+    
+    if ($UseContainerJobs -and -not $UseFallbackScheduler) {
+        # Try to create Container App Job with CRON scheduling
+        Write-ColorOutput -Message "Creating Telegram Scheduler as Container App Job" -Color Green -Prefix "⏱️"
+        Write-ColorOutput -Message "Using CRON schedule: $CronExpression" -Color Yellow -Prefix "→"
+        
+        # Create Container App Job with CRON scheduling
+        $jobCreated = $false
+        try {
+            # Updated command with required parameters
+            az containerapp job create `
+                --name $TELEGRAM_SCHEDULER_APP_NAME `
+                --resource-group $RESOURCE_GROUP `
+                --environment $CONTAINER_ENV_NAME `
+                --image $imageToUse `
+                --registry-server "${ACR_NAME}.azurecr.io" `
+                --registry-username $ACR_USERNAME `
+                --registry-password $ACR_PASSWORD `
+                --command '["python", "-m", "src.ai_companion.interfaces.telegram.scheduled_message_processor"]' `
+                --cpu 0.5 `
+                --memory 1.0Gi `
+                --replica-timeout 1800 `
+                --replica-retry-limit 3 `
+                --replica-completion-count 1 `
+                --parallelism 1 `
+                --min-executions 0 `
+                --max-executions 10 `
+                --trigger-type Schedule `
+                --cron-expression "$CronExpression" `
+                --env-vars TELEGRAM_BOT_TOKEN=$telegramBotToken `
+                           PYTHONUNBUFFERED=1 `
+                           PYTHONPATH=/app `
+                           SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
+                           SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+            
+            $jobCreated = $true
+            Write-ColorOutput -Message "Telegram Scheduler Job created successfully" -Color Green -Prefix "✅"
+            Write-ColorOutput -Message "Job will run according to CRON schedule: $CronExpression" -Color Green -Prefix "⏱️"
+            
+            # Create a function to trigger a job execution with better error handling
+            function Invoke-JobExecution {
+                param (
+                    [string]$JobName,
+                    [string]$ResourceGroup,
+                    [int]$MaxRetries = 3,
+                    [int]$RetryDelaySeconds = 5
+                )
+                
+                Write-ColorOutput -Message "Triggering manual execution of job $JobName" -Color Yellow -Prefix "→"
+                
+                for ($retryCount = 0; $retryCount -lt $MaxRetries; $retryCount++) {
+                    if ($retryCount -gt 0) {
+                        Write-ColorOutput -Message "Retrying job execution trigger (attempt $($retryCount+1) of $MaxRetries)..." -Color Yellow -Prefix "⚠️"
+                        Start-Sleep -Seconds $RetryDelaySeconds
+                    }
+                    
+                    try {
+                        # First check if the job exists
+                        $jobExists = az containerapp job show --name $JobName --resource-group $ResourceGroup 2>$null
+                        
+                        if (-not $jobExists) {
+                            Write-ColorOutput -Message "Job $JobName does not exist in resource group $ResourceGroup" -Color Red -Prefix "❌"
+                            return $false
+                        }
+                        
+                        # Use the correct command format with explicit parameter names
+                        $result = az containerapp job execution start --name $JobName --resource-group $ResourceGroup 2>$null
+                        
+                        if ($LASTEXITCODE -eq 0 -and $result) {
+                            Write-ColorOutput -Message "Job triggered successfully" -Color Green -Prefix "✅"
+                            return $true
+                        }
+                    }
+                    catch {
+                        Write-ColorOutput -Message "Error triggering job: $_" -Color Red -Prefix "❌"
+                    }
+                }
+                
+                Write-ColorOutput -Message "Failed to trigger manual execution after $MaxRetries attempts" -Color Red -Prefix "❌"
+                Write-ColorOutput -Message "Try manually triggering the job with:" -Color Yellow -Prefix "→"
+                Write-ColorOutput -Message "  az containerapp job execution start --name $JobName --resource-group $ResourceGroup" -Color White
+                
+                return $false
+            }
+            
+            # Manually trigger the job once to initialize it - fixed command
+            Write-ColorOutput -Message "Manually triggering the job once to initialize" -Color Yellow -Prefix "→"
+            $jobExecutionResult = Invoke-JobExecution -JobName $TELEGRAM_SCHEDULER_APP_NAME -ResourceGroup $RESOURCE_GROUP
+            if ($jobExecutionResult) {
+                Write-ColorOutput -Message "Job triggered successfully" -Color Green -Prefix "✅"
+            } else {
+                Write-ColorOutput -Message "Failed to trigger job execution" -Color Yellow -Prefix "⚠️"
+                Write-ColorOutput -Message "Job may still be created and will run according to schedule" -Color Yellow -Prefix "→"
+            }
+        } catch {
+            Write-ColorOutput -Message "Error creating Container App Job: $_" -Color Red -Prefix "❌"
+            Write-ColorOutput -Message "Falling back to regular Container App deployment" -Color Yellow -Prefix "→"
+            $UseFallbackScheduler = $true
+        }
+    }
+    
+    # If Job creation failed or fallback is active, deploy as regular Container App
+    if ($UseFallbackScheduler -or -not $jobCreated) {
+        Write-ColorOutput -Message "Creating Telegram Scheduler as regular Container App (fallback mode)" -Color Yellow -Prefix "→"
+        Write-ColorOutput -Message "Note: This will run continuously instead of on a schedule" -Color Yellow -Prefix "→"
+        
+        # Deploy as a regular Container App with a continuous process
+        az containerapp create `
+            --name $TELEGRAM_SCHEDULER_APP_NAME `
+            --resource-group $RESOURCE_GROUP `
+            --environment $CONTAINER_ENV_NAME `
+            --image $imageToUse `
+            --registry-server "${ACR_NAME}.azurecr.io" `
+            --registry-username $ACR_USERNAME `
+            --registry-password $ACR_PASSWORD `
+            --ingress 'external' `
+            --target-port 8080 `
+            --command '["python", "-m", "src.ai_companion.interfaces.telegram.scheduled_message_processor"]' `
+            --min-replicas 1 `
+            --max-replicas 1 `
+            --cpu 0.5 `
+            --memory 1.0Gi `
+            --env-vars `
+              TELEGRAM_BOT_TOKEN=$telegramBotToken `
+              PYTHONUNBUFFERED=1 `
+              PYTHONPATH=/app `
+              SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
+              SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+
+        if (-not (Test-CommandSuccess -SuccessMessage "Telegram Scheduler App deployed successfully" -ErrorMessage "Failed to deploy Telegram Scheduler App")) {
+            Write-ColorOutput -Message "Failed to deploy Telegram scheduler, even in fallback mode" -Color Red -Prefix "❌"
+            Write-ColorOutput -Message "Please check your Azure permissions and resource group" -Color Yellow -Prefix "→"
+        } else {
+            Write-ColorOutput -Message "Telegram Scheduler App deployed successfully (fallback mode)" -Color Green -Prefix "✅"
+            Write-ColorOutput -Message "Note: This runs continuously rather than on a schedule" -Color Yellow -Prefix "→"
+            
+            # Set variable to indicate we're using a regular app not a job
+            $telegramContainerAppExists = $true
+            $telegramJobExists = $false
+        }
+    }
+}
+
+# Step 11: Deployment Summary
 Write-ColorOutput -Message "Deployment Summary" -Color Green -Prefix "📋"
 
-# Step 11: Configure Custom Domain for Frontend App
+# Step 12: Configure Custom Domain for Frontend App
 Write-ColorOutput -Message "Configuring Custom Domain for Frontend" -Color Green -Prefix "🔗"
 
 # Define custom domain parameters
@@ -914,7 +1400,6 @@ if ($frontendExists) {
     Write-ColorOutput -Message "Frontend app does not exist, skipping custom domain setup" -Color Yellow -Prefix "⚠️"
 }
 
-# Step 12: Deployment Summary
 Write-Host ""
 Write-Host "Backend Application:" -ForegroundColor Cyan
 Write-Host "  URL: $backendAppUrl" -ForegroundColor White
@@ -939,6 +1424,69 @@ if ($frontendExists) {
 Write-Host "Resource Group: $RESOURCE_GROUP" -ForegroundColor Cyan
 Write-Host "Container Registry: $ACR_NAME" -ForegroundColor Cyan
 Write-Host "Container App Environment: $CONTAINER_ENV_NAME" -ForegroundColor Cyan
+
+# Add Telegram scheduler info to summary
+$taskName = "AI-Companion-Telegram-Scheduler"
+$schedulerTaskExists = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+
+# Check if Telegram scheduler container app exists
+$telegramContainerAppExists = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$telegramJobExists = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+
+if ($telegramJobExists) {
+    Write-Host "Telegram Scheduler:" -ForegroundColor Cyan
+    Write-Host "  Status: Active (running as Azure Container App Job)" -ForegroundColor White
+    Write-Host "  Container App Job: $TELEGRAM_SCHEDULER_APP_NAME" -ForegroundColor White
+    
+    # Get CRON expression
+    $cronExpression = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.triggerType.schedule.cronExpression" -o tsv
+    Write-Host "  CRON Schedule: $cronExpression" -ForegroundColor White
+    
+    # Get the deployed image version
+    $telegramSchedulerImageRef = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $telegramSchedulerVersion = $telegramSchedulerImageRef.Split(':')[1]
+    Write-Host "  Version: $telegramSchedulerVersion" -ForegroundColor White
+    
+    # Show message about Container App Jobs
+    Write-Host "  Note: Telegram scheduler is running as an Azure Container App Job" -ForegroundColor Green
+    Write-Host "        Scheduled using CRON expression for optimal reliability" -ForegroundColor Green
+    
+    if ($schedulerTaskExists) {
+        Write-Host "  Warning: Windows Task Scheduler task $taskName still exists" -ForegroundColor Yellow
+        Write-Host "           You can remove it to avoid running two instances" -ForegroundColor Yellow
+    }
+} elseif ($telegramContainerAppExists) {
+    Write-Host "Telegram Scheduler:" -ForegroundColor Cyan
+    Write-Host "  Status: Active (running as Azure Container App)" -ForegroundColor White
+    Write-Host "  Container App: $TELEGRAM_SCHEDULER_APP_NAME" -ForegroundColor White
+    Write-Host "  Replicas: 1 (continuously running)" -ForegroundColor White
+    
+    # Get the deployed image version
+    $telegramSchedulerImageRef = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $telegramSchedulerVersion = $telegramSchedulerImageRef.Split(':')[1]
+    Write-Host "  Version: $telegramSchedulerVersion" -ForegroundColor White
+    
+    # Show message about Windows Task Scheduler vs Container App
+    Write-Host "  Note: Telegram scheduler is running as a regular Container App" -ForegroundColor Green
+    Write-Host "        Run with -UseContainerJobs flag to convert to scheduled job" -ForegroundColor Yellow
+    
+    if ($schedulerTaskExists) {
+        Write-Host "  Warning: Windows Task Scheduler task $taskName still exists" -ForegroundColor Yellow
+        Write-Host "           You can remove it to avoid running two instances" -ForegroundColor Yellow
+    }
+} elseif ($schedulerTaskExists) {
+    # Fall back to Windows Task Scheduler info if it exists
+    Write-Host "Telegram Scheduler:" -ForegroundColor Cyan
+    Write-Host "  Status: Active (running via Windows Task Scheduler)" -ForegroundColor White
+    Write-Host "  Task Name: $taskName" -ForegroundColor White
+    Write-Host "  Logs: ./logs/telegram_scheduler.log" -ForegroundColor White
+    Write-Host "  Note: Consider deploying as Container App Job for production" -ForegroundColor Yellow
+} else {
+    Write-Host "Telegram Scheduler:" -ForegroundColor Cyan
+    Write-Host "  Status: Not configured" -ForegroundColor Yellow
+    Write-Host "  Run deploy.ps1 again with -ForceUpdate to deploy the scheduler" -ForegroundColor White
+}
+
 Write-Host ""
 
 # Add cleanup step if requested
@@ -997,36 +1545,153 @@ if ($frontendExists) {
     }
 }
 
-# Step 13: Version Verification
+# Step 14: Deployment Verification Complete
+Write-ColorOutput -Message "Deployment and Version Verification Complete" -Color Green -Prefix "🚀"
+
+# Step 15: Version Verification
 Write-ColorOutput -Message "Verifying Application Versions" -Color Green -Prefix "🔍"
 
+# Add this utility function to normalize version strings
+function Get-VersionFromImageString {
+    param (
+        [string]$ImageString
+    )
+    
+    if ([string]::IsNullOrEmpty($ImageString)) {
+        return $null
+    }
+    
+    # Check if the image string contains a colon (separator for tag)
+    if ($ImageString -match '.*:(.+)$') {
+        return $Matches[1]
+    }
+    
+    return $null
+}
+
+# Create a function to update container app image if version mismatch detected
+function Update-ContainerAppVersion {
+    param (
+        [string]$AppName,
+        [string]$ResourceGroup,
+        [string]$Repository,
+        [string]$Tag,
+        [bool]$ForceUpdate = $false
+    )
+    
+    if (-not $ForceUpdate) {
+        Write-ColorOutput -Message "Version mismatch detected, but ForceUpdate is not enabled. Use -ForceUpdate to update." -Color Yellow -Prefix "→"
+        return $false
+    }
+    
+    Write-ColorOutput -Message "Updating $AppName to version $Tag" -Color Yellow -Prefix "→"
+    
+    try {
+        # Get ACR credentials for the image
+        $acrName = $Repository.Split('.')[0]
+        
+        # Use the update-container CLI command to update just the image
+        $updateResult = az containerapp update --name $AppName --resource-group $ResourceGroup --image "$Repository/$AppName`:$Tag" 2>$null
+        
+        if ($LASTEXITCODE -eq 0 -and $updateResult) {
+            Write-ColorOutput -Message "$AppName updated to version $Tag successfully" -Color Green -Prefix "✅"
+            return $true
+        } else {
+            Write-ColorOutput -Message "Failed to update $AppName to version $Tag" -Color Red -Prefix "❌"
+            return $false
+        }
+    } catch {
+        # Store the error message in a variable first
+        $errorMsg = $_.Exception.Message
+        Write-ColorOutput -Message "Error updating $AppName - Error details: $errorMsg" -Color Red -Prefix "❌"
+        return $false
+    }
+}
+
 # Check backend version
-$backendExists = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$backendExists = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 if ($backendExists) {
-    $backendDeployedImageRef = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
-    $backendDeployedVersion = $backendDeployedImageRef.Split(':')[1]
+    $backendDeployedImageRef = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $backendDeployedVersion = Get-VersionFromImageString -ImageString $backendDeployedImageRef
     
     if ($backendDeployedVersion -eq $TAG) {
         Write-ColorOutput -Message "Backend version verification: SUCCESS ($backendDeployedVersion)" -Color Green -Prefix "✅"
     } else {
         Write-ColorOutput -Message "Backend version verification: MISMATCH (Deployed: $backendDeployedVersion, Expected: $TAG)" -Color Red -Prefix "❌"
+        
+        if ($ForceUpdate) {
+            $updateResult = Update-ContainerAppVersion -AppName $BACKEND_APP_NAME -ResourceGroup $RESOURCE_GROUP -Repository "$ACR_NAME.azurecr.io" -Tag $TAG -ForceUpdate $ForceUpdate
+            if ($updateResult) {
+                Write-ColorOutput -Message "Backend successfully updated to version $TAG" -Color Green -Prefix "✅"
+            }
+        } else {
         Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+        }
     }
 }
 
 # Check frontend version
-$frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$frontendExists = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 if ($frontendExists) {
-    $frontendDeployedImageRef = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
-    $frontendDeployedVersion = $frontendDeployedImageRef.Split(':')[1]
+    $frontendDeployedImageRef = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $frontendDeployedVersion = Get-VersionFromImageString -ImageString $frontendDeployedImageRef
     
     if ($frontendDeployedVersion -eq $TAG) {
         Write-ColorOutput -Message "Frontend version verification: SUCCESS ($frontendDeployedVersion)" -Color Green -Prefix "✅"
     } else {
         Write-ColorOutput -Message "Frontend version verification: MISMATCH (Deployed: $frontendDeployedVersion, Expected: $TAG)" -Color Red -Prefix "❌"
+        
+        if ($ForceUpdate) {
+            $updateResult = Update-ContainerAppVersion -AppName $FRONTEND_APP_NAME -ResourceGroup $RESOURCE_GROUP -Repository "$ACR_NAME.azurecr.io" -Tag $TAG -ForceUpdate $ForceUpdate
+            if ($updateResult) {
+                Write-ColorOutput -Message "Frontend successfully updated to version $TAG" -Color Green -Prefix "✅"
+            }
+        } else {
         Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+        }
     }
 }
 
-# Step 14: Deployment Verification Complete
-Write-ColorOutput -Message "Deployment and Version Verification Complete" -Color Green -Prefix "🚀" 
+# Check Telegram scheduler version - check both container app and job
+$telegramSchedulerExists = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($telegramSchedulerExists) {
+    $telegramSchedulerImageRef = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $telegramSchedulerVersion = Get-VersionFromImageString -ImageString $telegramSchedulerImageRef
+    
+    if ($telegramSchedulerVersion -eq $TAG) {
+        Write-ColorOutput -Message "Telegram scheduler version verification: SUCCESS ($telegramSchedulerVersion)" -Color Green -Prefix "✅"
+    } else {
+        Write-ColorOutput -Message "Telegram scheduler version verification: MISMATCH (Deployed: $telegramSchedulerVersion, Expected: $TAG)" -Color Red -Prefix "❌"
+        
+        if ($ForceUpdate) {
+            $updateResult = Update-ContainerAppVersion -AppName $TELEGRAM_SCHEDULER_APP_NAME -ResourceGroup $RESOURCE_GROUP -Repository "$ACR_NAME.azurecr.io" -Tag $TAG -ForceUpdate $ForceUpdate
+            if ($updateResult) {
+                Write-ColorOutput -Message "Telegram scheduler successfully updated to version $TAG" -Color Green -Prefix "✅"
+                }
+            } else {
+            Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+        }
+    }
+}
+
+# Also check Telegram scheduler job if it exists
+$telegramJobExists = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+if ($telegramJobExists) {
+    $telegramJobImageRef = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+    $telegramJobVersion = Get-VersionFromImageString -ImageString $telegramJobImageRef
+    
+    if ($telegramJobVersion -eq $TAG) {
+        Write-ColorOutput -Message "Telegram scheduler job version verification: SUCCESS ($telegramJobVersion)" -Color Green -Prefix "✅"
+            } else {
+        Write-ColorOutput -Message "Telegram scheduler job version verification: MISMATCH (Deployed: $telegramJobVersion, Expected: $TAG)" -Color Red -Prefix "❌"
+        
+        if ($ForceUpdate) {
+            # For jobs, we need to recreate them
+            Write-ColorOutput -Message "Updating Telegram scheduler job to version $TAG" -Color Yellow -Prefix "→"
+            # The job update logic is handled in the Telegram scheduler deployment section
+            Write-ColorOutput -Message "Job will be updated when you run with -ForceUpdate" -Color Yellow -Prefix "→"
+    } else {
+            Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+        }
+    }
+}

@@ -247,7 +247,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 query=last_message,
                 memory_context=combined_context,  # Pass combined context
                 max_retries=3,
-                min_confidence=0.7
+                min_confidence=0.5  # Lower similarity threshold from 0.7 to 0.5
             )
             
             # Format sources with proper error handling
@@ -265,8 +265,68 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                     logger.warning(f"Error formatting source metadata: {e}")
                     continue
             
+            # Add self-evaluation of confidence
+            confidence_prompt = f"""
+            Rate your confidence in the following answer on a scale of 1-10 (1 being lowest, 10 being highest).
+            Consider:
+            - The accuracy and completeness of the information
+            - The relevance to the user's question
+            - The quality of sources cited (if any)
+            - Any uncertainty or missing information
+            
+            Question: {last_message}
+            Answer: {response}
+            
+            Provide ONLY a rating number between 1 and 10.
+            """
+            
+            try:
+                # Use the same model for self-evaluation
+                model = get_chat_model()
+                confidence_response = await model.ainvoke([HumanMessage(content=confidence_prompt)])
+                confidence_text = confidence_response.content.strip()
+                
+                # Extract just the number from the response
+                confidence_match = re.search(r'\b([1-9]|10)\b', confidence_text)
+                confidence_rating = int(confidence_match.group(1)) if confidence_match else 7  # Default to 7 if parsing fails
+                
+                # Format confidence level based on the rating
+                confidence_level = "High" if confidence_rating >= 8 else "Medium" if confidence_rating >= 5 else "Low"
+                
+                # Enhance response with process details and supporting links
+                process_prompt = (
+                    f"Based on the user's query \"{last_message}\" and your response, please provide additional structured information in Lithuanian:\n\n"
+                    f"1. Detailed Process: Briefly explain the step-by-step process related to this query (max 3 steps)\n"
+                    f"2. Primary Link: Identify the most important resource or website where the user can get official information\n"
+                    f"3. Supporting Resources: List 2-3 additional resources or organizations that can help\n\n"
+                    f"Format your response in clear, concise bullet points. No introduction or conclusion needed."
+                )
+                
+                # Create message list for enhancement request
+                enhancement_messages = []
+                if chat_history:
+                    enhancement_messages.append(chat_history[-1])
+                enhancement_messages.append(HumanMessage(content=last_message))
+                enhancement_messages.append(AIMessage(content=response))
+                enhancement_messages.append(HumanMessage(content=process_prompt))
+                
+                enhancement_response = await model.ainvoke(enhancement_messages)
+                
+                enhancement_text = enhancement_response.content.strip()
+                
+                # Append enhancement and confidence to the response
+                confidence_note = f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
+                enhanced_response = f"{response}\n\n{enhancement_text}{confidence_note}"
+                
+                logger.info(f"Self-evaluated confidence rating: {confidence_rating}/10 ({confidence_level})")
+                logger.info("Enhanced response with process details and supporting links")
+            except Exception as e:
+                logger.error(f"Error in response enhancement: {e}")
+                confidence_note = f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
+                enhanced_response = response + confidence_note
+            
             # Create context with sources
-            context = response
+            context = enhanced_response
             if sources:
                 sources_info = "\nŠaltiniai:\n" + "\n".join([
                     f"- {s['source']} (Patikimumas: {s['confidence']:.2f})" 
@@ -289,16 +349,27 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 "response_generation_time": total_time * 0.4,
                 "total_processing_time": total_time,
                 "error_details": {},
-                "last_updated": end_time.isoformat()
+                "last_updated": end_time.isoformat(),
+                "self_rating": confidence_rating,
+                "confidence_level": confidence_level
             }
+            
+            # Check if response is substantive (more than just an error message or generic reply)
+            is_substantive_response = (
+                len(response) > 100 and  # Reasonable length
+                "atsiprašau" not in response.lower() and  # Not an apology
+                "įvyko klaida" not in response.lower()  # Not an error message
+            )
             
             return {
                 "rag_response": {
-                    "has_relevant_info": len(relevant_docs) > 0,
-                    "response": response,
+                    "has_relevant_info": len(relevant_docs) > 0 or is_substantive_response,
+                    "response": enhanced_response,
                     "sources": sources,
                     "context": context,
-                    "metrics": metrics
+                    "metrics": metrics,
+                    "confidence_rating": confidence_rating,
+                    "confidence_level": confidence_level
                 }
             }
             
@@ -308,7 +379,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
             return {
                 "rag_response": {
                     "has_relevant_info": False,
-                    "response": "Atsiprašau, įvyko klaida ieškant informacijos. Prašome bandyti vėliau.",
+                    "response": "Atsiprašau, įvyko klaida ieškant informacijos. Prašome bandyti vėliau.\n\n[Confidence: Low (2/10)]",
                     "sources": [],
                     "context": "",
                     "metrics": {
@@ -321,8 +392,12 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                         "response_generation_time": 0.0,
                         "total_processing_time": 0.0,
                         "error_details": {"error": str(e)},
-                        "last_updated": error_time.isoformat()
-                    }
+                        "last_updated": error_time.isoformat(),
+                        "self_rating": 2,
+                        "confidence_level": "Low"
+                    },
+                    "confidence_rating": 2,
+                    "confidence_level": "Low"
                 }
             }
             
@@ -332,7 +407,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
         return {
             "rag_response": {
                 "has_relevant_info": False,
-                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.",
+                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.\n\n[Confidence: Low (1/10)]",
                 "sources": [],
                 "context": "",
                 "metrics": {
@@ -345,8 +420,12 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                     "response_generation_time": 0.0,
                     "total_processing_time": 0.0,
                     "error_details": {"error": str(e)},
-                    "last_updated": error_time.isoformat()
-                }
+                    "last_updated": error_time.isoformat(),
+                    "self_rating": 1,
+                    "confidence_level": "Low"
+                },
+                "confidence_rating": 1,
+                "confidence_level": "Low"
             }
         }
 
@@ -594,6 +673,9 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
         memory_context = state.get("memory_context", "")
         retry_count = state.get("rag_retry_count", 0) + 1
         
+        # Get chat history for enhancement context
+        chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
+        
         # Adjust retrieval parameters based on retry count
         retrieval_params = {
             "k": 5 + retry_count * 2,  # Increase number of documents
@@ -629,11 +711,78 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
                     logger.warning(f"Error formatting source metadata in retry: {e}")
                     continue
             
+            # Add self-evaluation of confidence for the retry
+            confidence_prompt = f"""
+            Rate your confidence in the following answer on a scale of 1-10 (1 being lowest, 10 being highest).
+            Consider:
+            - The accuracy and completeness of the information
+            - The relevance to the user's question
+            - The quality of sources cited (if any)
+            - Any uncertainty or missing information
+            
+            Question: {last_message}
+            Answer: {response}
+            
+            Provide ONLY a rating number between 1 and 10.
+            """
+            
+            try:
+                # Use the same model for self-evaluation
+                model = get_chat_model()
+                confidence_response = await model.ainvoke([HumanMessage(content=confidence_prompt)])
+                confidence_text = confidence_response.content.strip()
+                
+                # Extract just the number from the response
+                confidence_match = re.search(r'\b([1-9]|10)\b', confidence_text)
+                confidence_rating = int(confidence_match.group(1)) if confidence_match else 7  # Default to 7 if parsing fails
+                
+                # Format confidence level based on the rating
+                confidence_level = "High" if confidence_rating >= 8 else "Medium" if confidence_rating >= 5 else "Low"
+                
+                # Enhance response with process details and supporting links
+                process_prompt = (
+                    f"Based on the user's query \"{last_message}\" and your response, please provide additional structured information in Lithuanian:\n\n"
+                    f"1. Detailed Process: Briefly explain the step-by-step process related to this query (max 3 steps)\n"
+                    f"2. Primary Link: Identify the most important resource or website where the user can get official information\n"
+                    f"3. Supporting Resources: List 2-3 additional resources or organizations that can help\n\n"
+                    f"Format your response in clear, concise bullet points. No introduction or conclusion needed."
+                )
+                
+                # Create message list for enhancement request
+                enhancement_messages = []
+                if chat_history:
+                    enhancement_messages.append(chat_history[-1])
+                enhancement_messages.append(HumanMessage(content=last_message))
+                enhancement_messages.append(AIMessage(content=response))
+                enhancement_messages.append(HumanMessage(content=process_prompt))
+                
+                enhancement_response = await model.ainvoke(enhancement_messages)
+                
+                enhancement_text = enhancement_response.content.strip()
+                
+                # Append enhancement and confidence to the response
+                confidence_note = f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
+                enhanced_response = f"{response}\n\n{enhancement_text}{confidence_note}"
+                
+                logger.info(f"Self-evaluated confidence rating (retry): {confidence_rating}/10 ({confidence_level})")
+                logger.info("Enhanced response with process details and supporting links")
+            except Exception as e:
+                logger.error(f"Error in response enhancement for retry: {e}")
+                confidence_note = f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
+                enhanced_response = response + confidence_note
+            
             # Create response with sources and metrics
             sources_info = "\nŠaltiniai:\n" + "\n".join([
                 f"- {s['source']} (Patikimumas: {s['confidence']:.2f})" 
                 for s in sources
             ]) if sources else ""
+            
+            # Final context with the enhanced response and sources
+            context = enhanced_response + sources_info
+            
+            # Update metrics with confidence rating
+            metrics["self_rating"] = confidence_rating
+            metrics["confidence_level"] = confidence_level
             
             # Log retry metrics
             await rag_chain.monitor.log_query(
@@ -643,17 +792,20 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
                 retry_count=retry_count,
                 response_metadata={
                     "num_sources": len(sources),
-                    "avg_confidence": sum(s["confidence"] for s in sources) / len(sources) if sources else 0
+                    "avg_confidence": sum(s["confidence"] for s in sources) / len(sources) if sources else 0,
+                    "self_rating": confidence_rating
                 }
             )
             
             return {
                 "rag_response": {
                     "has_relevant_info": len(relevant_docs) > 0,
-                    "response": response,
+                    "response": enhanced_response,
                     "sources": sources,
-                    "context": response + sources_info,
-                    "metrics": metrics
+                    "context": context,
+                    "metrics": metrics,
+                    "confidence_rating": confidence_rating,
+                    "confidence_level": confidence_level
                 },
                 "rag_retry_count": retry_count
             }
@@ -668,10 +820,12 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
             return {
                 "rag_response": {
                     "has_relevant_info": False,
-                    "response": "Atsiprašau, įvyko klaida bandant rasti tikslesnę informaciją. Prašome bandyti vėliau.",
+                    "response": "Atsiprašau, įvyko klaida bandant rasti tikslesnę informaciją. Prašome bandyti vėliau.\n\n[Confidence: Low (2/10)]",
                     "sources": [],
                     "context": "",
-                    "metrics": rag_chain.get_metrics()
+                    "metrics": rag_chain.get_metrics(),
+                    "confidence_rating": 2,
+                    "confidence_level": "Low"
                 },
                 "rag_retry_count": retry_count
             }
@@ -681,10 +835,15 @@ async def rag_retry_node(state: AICompanionState, config: RunnableConfig) -> Dic
         return {
             "rag_response": {
                 "has_relevant_info": False,
-                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.",
+                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.\n\n[Confidence: Low (1/10)]",
                 "sources": [],
                 "context": "",
-                "metrics": {}
+                "metrics": {
+                    "self_rating": 1,
+                    "confidence_level": "Low"
+                },
+                "confidence_rating": 1,
+                "confidence_level": "Low"
             },
             "rag_retry_count": state.get("rag_retry_count", 0) + 1
         }

@@ -127,10 +127,12 @@ export default function Header() {
           >
             <Box sx={{ width: 32, height: 32, position: 'relative', mr: 1 }}>
               <Image
-                src="/logo.svg"
+                src="/EvelinaAIlogosmall.webp"
                 alt="Evelina AI Logo"
-                layout="fill"
-                objectFit="contain"
+                width={32}
+                height={32}
+                priority
+                style={{ objectFit: 'contain' }}
               />
             </Box>
             <Typography variant="h6" noWrap component="div">
@@ -179,15 +181,6 @@ export default function Header() {
           >
             <Search />
           </IconButton>
-
-          {/* Theme toggle */}
-          <Tooltip title="Toggle dark mode">
-            <IconButton sx={{ mr: 1 }} onClick={() => {
-              // Toggle theme logic here
-            }}>
-              {theme.palette.mode === 'dark' ? <LightMode /> : <NightsStay />}
-            </IconButton>
-          </Tooltip>
 
           {/* Help button */}
           <Tooltip title="Help">

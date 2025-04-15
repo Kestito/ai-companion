@@ -1,0 +1,64 @@
+flowchart TD
+    %% Main components of the RAG system
+    User((User)) --> |Query| QueryPreprocessor
+    
+    subgraph "RAG System"
+        QueryPreprocessor[Query Preprocessor]
+        ParallelSearch[Parallel Search]
+        
+        subgraph "Search Engines"
+            Vector[Vector Search]
+            Keyword[Keyword Search]
+        end
+        
+        Combination[Result Combination]
+        Deduplication[Deduplication]
+        Ranking[Ranking & Scoring]
+        ResponseGen[Response Generator]
+        Monitor[RAG Monitoring]
+    end
+    
+    %% Databases
+    Qdrant[(Qdrant Vector DB)]
+    Supabase[(Supabase DB)]
+    
+    %% Data flow
+    QueryPreprocessor --> |Enhanced Query| ParallelSearch
+    QueryPreprocessor --> |Query Variations| ParallelSearch
+    QueryPreprocessor --> |Query Intent| ResponseGen
+    
+    ParallelSearch --> Vector
+    ParallelSearch --> Keyword
+    
+    Vector --> |Vector Results| Combination
+    Keyword --> |Keyword Results| Combination
+    
+    Vector <--> Qdrant
+    Keyword <--> Supabase
+    
+    Combination --> Deduplication
+    Deduplication --> Ranking
+    Ranking --> |Ranked Documents| ResponseGen
+    
+    ResponseGen --> |Response with Sources| Output
+    Output --> User
+    
+    ResponseGen --> Monitor
+    Monitor --> |Metrics| FileSystem[File System]
+    
+    %% Fallback path
+    Vector --> |Fallback| ResponseGen
+    
+    %% Style definitions
+    classDef processor fill:#D4F1F9,stroke:#05445E,stroke-width:2px;
+    classDef search fill:#B1D4E0,stroke:#05445E,stroke-width:2px;
+    classDef result fill:#75E6DA,stroke:#05445E,stroke-width:2px;
+    classDef database fill:#FFD700,stroke:#DAA520,stroke-width:2px;
+    classDef output fill:#189AB4,stroke:#05445E,stroke-width:2px,color:white;
+    
+    %% Apply styles
+    class QueryPreprocessor,ResponseGen processor;
+    class Vector,Keyword,ParallelSearch search;
+    class Combination,Deduplication,Ranking result;
+    class Qdrant,Supabase,FileSystem database;
+    class Output output; 

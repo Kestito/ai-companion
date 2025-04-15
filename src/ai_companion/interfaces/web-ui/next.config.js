@@ -29,6 +29,11 @@ const nextConfig = {
     pagesBufferLength: 2,
   },
   async headers() {
+    // Get API URL from env or use a default value for development
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    // Include the specific Azure Container App URL
+    const azureContainerAppUrl = 'https://backend-app.redstone-957fece8.eastus.azurecontainerapps.io';
+    
     return [
       {
         source: '/(.*)',
@@ -40,7 +45,7 @@ const nextConfig = {
               script-src 'self' 'unsafe-inline' 'unsafe-eval';
               style-src 'self' 'unsafe-inline';
               img-src 'self' data:;
-              connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL};
+              connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL} ${apiUrl} ${azureContainerAppUrl} https://*.azure.com https://*.azurecontainerapps.io https://*.azure.io;
               frame-src 'self';
               form-action 'self';
             `.replace(/\n/g, ' ')

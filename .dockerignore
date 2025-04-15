@@ -1,0 +1,109 @@
+# Version control
+.git/
+.gitignore
+.github/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env/
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node modules and Next.js files
+node_modules/
+.next/
+.nuxt/
+dist/
+out/
+
+# Docker
+.docker/
+Dockerfile*
+!scheduler-container.Dockerfile
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Test coverage
+.coverage
+htmlcov/
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Documentation
+docs/
+site/
+*.md
+!README.md
+
+# Large data directories
+data/
+images/
+metrics/
+logs/
+generated_images/
+notebooks/
+tests/
+.pytest_cache/
+.chainlit/
+.cursor/
+
+# Azure specific
+.azure/
+.files/
+.langgraph_api/
+docker/
+docker-combined/
+ai-companion/
+supabase/
+public/ 
