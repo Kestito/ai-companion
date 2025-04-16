@@ -1,11 +1,12 @@
 import asyncio
 import logging
 from io import BytesIO
-from typing import Dict, Optional, Union, Any
+from typing import Dict, Optional, Union, Any, List
 import signal
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+import sqlite3
 
 import httpx
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -16,6 +17,7 @@ from ai_companion.modules.image import ImageToText
 from ai_companion.modules.speech import SpeechToText, TextToSpeech
 from ai_companion.settings import settings
 from ai_companion.utils.supabase import get_supabase_client
+from ai_companion.modules.memory.short_term import get_short_term_memory_manager, ShortTermMemoryManager
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +40,7 @@ class TelegramBot:
         self.client = httpx.AsyncClient(timeout=60.0)
         self._running = True
         self._setup_signal_handlers()
+        self.memory_manager = get_short_term_memory_manager()
 
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
@@ -81,10 +84,14 @@ class TelegramBot:
                 
             logger.info(f"Telegram API connection successful ({api_time:.2f}s): @{me['result']['username']}")
             
-            # More health checks could be added here:
-            # - Database connections
-            # - Required external services
-            # - Memory usage
+            # 2. Check if we can connect to Supabase for memory storage
+            try:
+                # Check Supabase connection via memory manager
+                test_memories = await self.memory_manager.get_active_memories()
+                logger.info(f"Supabase connection successful, found {len(test_memories)} active memories")
+            except Exception as e:
+                logger.warning(f"Supabase memory check warning: {e}")
+                # Not critical, continue with warning
             
             logger.info("Health check completed successfully")
             return True
@@ -154,54 +161,94 @@ class TelegramBot:
 
     async def _process_update(self, update: Dict):
         """Process incoming update from Telegram."""
-        message = update.get("message")
-        if not message:
-            return
-
-        chat_id = message["chat"]["id"]
-        session_id = str(chat_id)
-        
         try:
-            content_result = await self._extract_message_content(message)
-            if not content_result or not content_result[0]:
+            # Extract message from update
+            if "message" not in update:
+                logger.warning(f"Update contains no message: {update}")
                 return
-
-            content, message_type = content_result
             
-            # Extract user information to include in message metadata
+            message = update["message"]
+            chat_id = message.get("chat", {}).get("id")
+            user_id = message.get("from", {}).get("id")
+            
+            if not chat_id or not user_id:
+                logger.warning(f"Missing chat_id or user_id in message: {message}")
+                return
+            
+            # Check if this is a file or text message
+            message_type = None
+            content = None
+            
+            # Generate a unique session ID for this chat
+            session_id = f"telegram-{chat_id}-{user_id}"
+            
+            # Extract message content based on type
+            if "text" in message:
+                message_type = "text"
+                content = message["text"]
+            elif "voice" in message:
+                message_type = "voice"
+                file_id = message["voice"]["file_id"]
+                voice_data = await self._download_file(file_id)
+                
+                # Convert voice to text
+                content = await speech_to_text.transcribe(voice_data)
+                logger.info(f"Transcribed voice message: {content}")
+            elif "photo" in message:
+                message_type = "photo"
+                # Get the largest photo (last in array)
+                file_id = message["photo"][-1]["file_id"]
+                photo_data = await self._download_file(file_id)
+                
+                # Extract text from image
+                content = await image_to_text.process_image(photo_data)
+                logger.info(f"Extracted text from image: {content}")
+            else:
+                # Handle other message types or send a response about unsupported format
+                logger.warning(f"Unsupported message type: {message}")
+                await self._send_message(chat_id, 
+                    "I can process text, voice messages, and images. Please send one of these formats.")
+                return
+            
+            # Collect user metadata
+            username = message.get("from", {}).get("username")
+            first_name = message.get("from", {}).get("first_name", "")
+            last_name = message.get("from", {}).get("last_name", "")
+            
             user_metadata = {
-                "platform": "telegram",
-                "user_id": str(message["from"]["id"]) if "from" in message else None,
-                "chat_id": str(chat_id)
+                "user_id": user_id,
+                "username": username,
+                "first_name": first_name,
+                "last_name": last_name,
+                "chat_id": chat_id,
+                "platform": "telegram"
             }
             
-            # Add more user details if available
-            if "from" in message:
-                user = message["from"]
-                # Store full user object for reference
-                user_metadata["telegram_user"] = user
-                # Extract common fields individually
-                if "username" in user:
-                    user_metadata["username"] = user["username"]
-                if "first_name" in user:
-                    user_metadata["first_name"] = user["first_name"]
-                if "last_name" in user:
-                    user_metadata["last_name"] = user["last_name"]
+            # Create metadata for memory storage
+            memory_metadata = {
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "session_id": session_id,
+                "message_type": message_type
+            }
             
-            # Process message through the graph agent
-            async with AsyncSqliteSaver.from_conn_string(
-                settings.SHORT_TERM_MEMORY_DB_PATH
-            ) as short_term_memory:
+            # Process message through the graph agent using memory manager for persistence
+            try:
                 logger.debug("Starting graph processing")
                 
-                # Create a new graph instance with the checkpointer
+                # Get complete conversation history combining memory and database
+                conversation_history = await self._get_conversation_history(chat_id, user_id, max_messages=10)
+                
+                # Create a new graph instance with thread_id for consistent conversation
                 graph = graph_builder.with_config(
-                    {"configurable": {"thread_id": session_id}},
-                    checkpointer=short_term_memory
+                    {"configurable": {"thread_id": session_id}}
                 )
                 
                 # Create HumanMessage with metadata
-                human_message = HumanMessage(content=content, metadata=user_metadata)
+                human_message = HumanMessage(content=content, metadata={
+                    **user_metadata,
+                    "conversation_history": conversation_history  # Include conversation history in metadata
+                })
                 
                 # Invoke the graph with the message
                 result = await graph.ainvoke(
@@ -215,72 +262,62 @@ class TelegramBot:
                 # The graph returns a dict with a 'messages' key containing a list of messages
                 # The last message in this list is the AI's response
                 response_message = None
-                workflow = "conversation"  # Default workflow
+                workflow = "conversation"
                 
-                try:
-                    # Case 1: Direct message object
-                    if isinstance(result, (AIMessage, BaseMessage)):
-                        logger.debug("Processing direct message object")
-                        response_message = result.content
-                    
-                    # Case 2: Dictionary with messages list
-                    elif isinstance(result, dict) and "messages" in result:
-                        logger.debug("Processing dictionary with messages list")
-                        messages = result["messages"]
-                        
-                        # The messages could be a list or a single message
-                        if isinstance(messages, list):
-                            # Get the last message in the list
-                            if messages:
-                                last_message = messages[-1]
-                                
-                                # Extract content based on message type
-                                if isinstance(last_message, (AIMessage, BaseMessage)):
-                                    response_message = last_message.content
-                                elif isinstance(last_message, dict) and "content" in last_message:
-                                    response_message = last_message["content"]
-                                else:
-                                    response_message = str(last_message)
-                        
-                        # It could be a single message object
-                        elif isinstance(messages, (AIMessage, BaseMessage)):
-                            response_message = messages.content
-                        
-                        # It could be a single message dictionary
-                        elif isinstance(messages, dict) and "content" in messages:
-                            response_message = messages["content"]
-                        
-                        # It could be something else we can stringify
-                        else:
-                            response_message = str(messages)
-                    
-                    # Case 3: Dictionary with direct content
-                    elif isinstance(result, dict) and "content" in result:
-                        logger.debug("Processing dictionary with direct content")
-                        response_message = result["content"]
-                    
-                    # Case 4: Any other type - try to convert to string
+                # Handle different result types
+                if isinstance(result, dict) and "messages" in result:
+                    messages = result["messages"]
+                    if messages and len(messages) > 0:
+                        last_message = messages[-1]
+                        if isinstance(last_message, AIMessage):
+                            response_message = last_message.content
+                            
+                            # Check for workflow directives in the message metadata
+                            if hasattr(last_message, "metadata") and last_message.metadata:
+                                metadata = last_message.metadata
+                                # Check if workflow is explicitly defined
+                                if "workflow" in metadata:
+                                    workflow = metadata["workflow"]
+                    elif "error" in result:
+                        response_message = f"I encountered an error: {result['error']}"
                     else:
-                        logger.warning(f"Unknown result type: {type(result).__name__}")
-                        response_message = str(result)
-                
-                except Exception as e:
-                    logger.error(f"Error extracting response: {e}", exc_info=True)
-                    response_message = "Sorry, I encountered an error processing your request."
-                
-                # If we still don't have a response, use a fallback
-                if not response_message:
-                    logger.warning("Could not extract response message")
-                    response_message = "Sorry, I couldn't process your request properly."
+                        response_message = "I'm not sure how to respond to that."
+                elif isinstance(result, dict) and "response" in result:
+                    # For custom output formats
+                    response_message = result["response"]
+                    
+                    # Check for workflow specification
+                    if "workflow" in result:
+                        workflow = result["workflow"]
+                elif isinstance(result, str):
+                    # Simple string response
+                    response_message = result
                 else:
-                    logger.debug(f"Successfully extracted response: {response_message[:50]}...")
+                    # Fallback for unrecognized format
+                    logger.warning(f"Unrecognized result format: {type(result)}")
+                    response_message = "I processed your message but couldn't formulate a proper response."
                 
-                # Get workflow if present
-                if isinstance(result, dict) and "workflow" in result:
-                    workflow = result["workflow"]
+                # Safe version of result for passing to response handler
+                safe_result = {}
+                if isinstance(result, dict):
+                    # Only include safe keys that don't contain large data
+                    for key, value in result.items():
+                        if key not in ["full_context", "embeddings", "raw_response"]:
+                            safe_result[key] = value
                 
-                # Create a safe result dictionary
-                safe_result = {"workflow": workflow}
+                # Store both the user message and the bot response in memory
+                conversation_data = {
+                    "user_message": content,
+                    "bot_response": response_message,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Store in short-term memory first
+                memory = await self.memory_manager.store_memory(
+                    content=json.dumps(conversation_data),
+                    ttl_minutes=60,  # Keep for 1 hour
+                    metadata=memory_metadata
+                )
                 
                 # NEW CODE: Save the conversation to the database
                 patient_id = None
@@ -294,9 +331,32 @@ class TelegramBot:
                     patient_id
                 )
                 
+                # Update memory metadata with conversation_id and patient_id if available
+                if conversation_id:
+                    updated_metadata = memory_metadata.copy()
+                    updated_metadata["conversation_id"] = conversation_id
+                    if patient_id:
+                        updated_metadata["patient_id"] = patient_id
+                    
+                    # Store an updated memory entry with database IDs
+                    updated_conversation_data = conversation_data.copy()
+                    updated_conversation_data["memory_id"] = memory.id
+                    
+                    await self.memory_manager.store_memory(
+                        content=json.dumps(updated_conversation_data),
+                        ttl_minutes=60,
+                        metadata=updated_metadata
+                    )
+                    
+                    logger.info(f"Updated memory with conversation_id: {conversation_id}")
+                
                 # Send the response
                 logger.debug(f"Sending response with workflow: {workflow}")
                 await self._send_response(chat_id, response_message, workflow, safe_result, message_type)
+            
+            except Exception as e:
+                logger.error(f"Error in graph processing: {e}", exc_info=True)
+                await self._send_message(chat_id, "Sorry, I encountered an error processing your message.")
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
@@ -335,6 +395,28 @@ class TelegramBot:
                 
         return None, None
 
+    def _clean_response_text(self, text: str) -> str:
+        """
+        Remove markdown formatting symbols from response text.
+        
+        Args:
+            text: The response text to clean
+            
+        Returns:
+            Cleaned text without markdown symbols
+        """
+        if not text:
+            return text
+        
+        # Remove asterisks (used for bold formatting in markdown)
+        cleaned_text = text.replace("*", "")
+        
+        # Other potential formatting to clean if needed:
+        # cleaned_text = cleaned_text.replace("_", "")  # Remove underscores (italic)
+        # cleaned_text = cleaned_text.replace("`", "")  # Remove backticks (code)
+        
+        return cleaned_text
+
     async def _send_response(
         self,
         chat_id: int,
@@ -349,6 +431,9 @@ class TelegramBot:
             if not response_text or not isinstance(response_text, str):
                 logger.warning(f"Invalid response text: {response_text}")
                 response_text = "Sorry, I encountered an error generating a response."
+            
+            # Clean response text to remove markdown formatting
+            response_text = self._clean_response_text(response_text)
             
             logger.info(f"Sending response with workflow '{workflow}', length: {len(response_text)} chars")
             
@@ -548,6 +633,10 @@ class TelegramBot:
         files = {"photo": ("image.jpg", photo, "image/jpeg")}
         data = {"chat_id": chat_id}
         
+        # Clean caption to remove markdown formatting
+        if caption:
+            caption = self._clean_response_text(caption)
+        
         # Telegram has a 1024 character limit for photo captions
         MAX_CAPTION_LENGTH = 1000  # Using 1000 to be safe
         
@@ -581,161 +670,403 @@ class TelegramBot:
         # Send voice message first
         voice_result = await self._make_request("sendVoice", data=data, files=files)
         
-        # Send caption as a separate message if provided
+        # Clean and send caption as a separate message if provided
         if caption and isinstance(caption, str) and caption.strip():
+            caption = self._clean_response_text(caption)
             await self._send_message(chat_id, caption)
-            
+        
         return voice_result
 
-    async def _save_to_database(self, user_metadata, user_message, bot_response, patient_id=None):
-        """Save the conversation to the Supabase database."""
+    async def _save_to_database(
+        self, 
+        user_metadata: Dict[str, Any], 
+        user_message: str, 
+        bot_response: str,
+        patient_id: Optional[str] = None
+    ) -> Optional[str]:
+        """Save conversation to database with proper error handling."""
         try:
-            logger.info("Saving conversation to Supabase database")
-            
             # Get Supabase client
             supabase = get_supabase_client()
+            
             if not supabase:
-                logger.error("Failed to get Supabase client")
+                logger.error("Failed to initialize Supabase client for database save")
                 return None
                 
             # Extract user details
             user_id = user_metadata.get("user_id")
             platform = user_metadata.get("platform", "telegram")
+            first_name = user_metadata.get("first_name", "")
+            last_name = user_metadata.get("last_name", "")
             
-            # If we don't have a patient ID yet, try to find an existing patient
-            if not patient_id and user_id:
-                logger.debug(f"No patient ID provided, looking for existing patient with user ID: {user_id}")
-                metadata_search = f'%"user_id": "{user_id}"%'
-                
-                # First try to find by Telegram ID stored in email JSON
-                result = supabase.table("patients").select("id").like("email", metadata_search).execute()
-                if result.data and len(result.data) > 0:
-                    patient_id = result.data[0]["id"]
-                    logger.info(f"Found existing patient with ID: {patient_id}")
-                else:
-                    # Try to find by phone field (telegram:user_id format)
-                    telegram_id = f"telegram:{user_id}"
-                    result = supabase.table("patients").select("id").eq("phone", telegram_id).execute()
+            # Prepare user data for lookup or creation
+            user_data = {
+                "platform": platform,
+                "platform_id": str(user_id),
+                "first_name": first_name,
+                "last_name": last_name,
+                "name": f"{first_name} {last_name}".strip(),
+                "last_active": datetime.now().isoformat()
+            }
+            
+            patient_info = {}
+            created_new_patient = False
+            
+            # Check if we have an existing patient ID for this user
+            if not patient_id:
+                try:
+                    # Look up patient by platform ID
+                    result = supabase.table("patients").select("id").eq("platform", platform).eq("platform_id", str(user_id)).execute()
+                    
                     if result.data and len(result.data) > 0:
                         patient_id = result.data[0]["id"]
-                        logger.info(f"Found existing patient with phone ID: {patient_id}")
+                        logger.info(f"Found existing patient: {patient_id}")
+                        
+                        # Update last_active timestamp
+                        supabase.table("patients").update({"last_active": datetime.now().isoformat()}).eq("id", patient_id).execute()
+                    else:
+                        # Create new patient record
+                        new_patient = {
+                            **user_data,
+                            "risk": "Low",
+                            "created_at": datetime.now().isoformat(),
+                            "preferred_language": "en",
+                            "subsidy_eligible": False,
+                            "legal_consents": {},
+                            "support_status": "initial"
+                        }
+                        
+                        result = supabase.table("patients").insert(new_patient).execute()
+                        
+                        if result.data and len(result.data) > 0:
+                            patient_id = result.data[0]["id"]
+                            patient_info = new_patient
+                            created_new_patient = True
+                            logger.info(f"Created new patient: {patient_id}")
+                        else:
+                            logger.error("Failed to create patient record")
+                            return None
+                except Exception as e:
+                    logger.error(f"Error looking up/creating patient: {e}")
+                    return None
             
-            # If still no patient ID, create a new patient
-            if not patient_id and user_id:
-                logger.info("No existing patient found, creating new patient record")
+            # With patient_id confirmed, check for existing active conversation
+            try:
+                # Look for active conversation in last 15 minutes
+                fifteen_min_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
                 
-                # Create timestamp
-                now = datetime.now().isoformat()
+                result = supabase.table("conversations").select("id").eq("patient_id", patient_id).eq("platform", platform).gt("start_time", fifteen_min_ago).eq("status", "active").execute()
                 
-                # Extract name from metadata
-                first_name = user_metadata.get("first_name", "")
-                last_name = user_metadata.get("last_name", "")
-                username = user_metadata.get("username", "")
-                name = f"{first_name} {last_name}".strip() if first_name or last_name else username or f"Telegram User {user_id}"
-                
-                # Prepare patient data
-                patient_data = {
-                    "first_name": first_name or name.split(" ")[0],
-                    "last_name": last_name or " ".join(name.split(" ")[1:]) if " " in name else "",
-                    "phone": f"telegram:{user_id}",
-                    "created_at": now,
-                    "last_active": now,
-                    "preferred_language": "lt",  # Default language
-                    "support_status": "active",  # Default status
-                    "email": json.dumps({
-                        "platform": "telegram",
-                        "user_id": user_id,
-                        "username": username
-                    })
-                }
-                
-                # Create patient record
-                logger.debug(f"Creating patient with data: {patient_data}")
-                result = supabase.table("patients").insert(patient_data).execute()
+                conversation_id = None
                 
                 if result.data and len(result.data) > 0:
-                    patient_id = result.data[0]["id"]
-                    logger.info(f"Created new patient with ID: {patient_id}")
-                else:
-                    logger.error("Failed to create patient record")
-            
-            # Find or create conversation
-            conversation_id = None
-            if patient_id:
-                # Look for existing active conversation
-                result = supabase.table("conversations").select("id") \
-                    .eq("patient_id", patient_id) \
-                    .eq("platform", platform) \
-                    .eq("status", "active") \
-                    .execute()
-                
-                if result.data and len(result.data) > 0:
+                    # Use existing conversation
                     conversation_id = result.data[0]["id"]
-                    logger.info(f"Found existing conversation with ID: {conversation_id}")
-                
-                # If no active conversation, create a new one
-                if not conversation_id:
-                    logger.info("Creating new conversation")
+                    logger.info(f"Found active conversation: {conversation_id}")
+                    
+                    # Update end_time
+                    supabase.table("conversations").update({
+                        "end_time": datetime.now().isoformat()
+                    }).eq("id", conversation_id).execute()
+                else:
+                    # Create new conversation
                     conversation_data = {
                         "patient_id": patient_id,
                         "platform": platform,
                         "start_time": datetime.now().isoformat(),
+                        "end_time": datetime.now().isoformat(),
                         "conversation_type": "general",
                         "status": "active"
                     }
                     
                     result = supabase.table("conversations").insert(conversation_data).execute()
+                    
                     if result.data and len(result.data) > 0:
                         conversation_id = result.data[0]["id"]
-                        logger.info(f"Created new conversation with ID: {conversation_id}")
+                        logger.info(f"Created new conversation: {conversation_id}")
                     else:
                         logger.error("Failed to create conversation record")
-            
-            # Add messages to the conversation
-            if conversation_id:
-                # Add user message
+                        return None
+                
+                # Now save the user message
                 user_message_data = {
                     "conversation_id": conversation_id,
                     "message_content": user_message,
                     "message_type": "text",
                     "sent_at": datetime.now().isoformat(),
-                    "sender": "patient",
-                    "metadata": user_metadata
+                    "sender": "user",
+                    "metadata": {}
                 }
                 
-                # Add bot response message
+                supabase.table("conversation_details").insert(user_message_data).execute()
+                
+                # Save the bot response
                 bot_message_data = {
                     "conversation_id": conversation_id,
                     "message_content": bot_response,
                     "message_type": "text",
                     "sent_at": datetime.now().isoformat(),
-                    "sender": "evelina",
-                    "metadata": {"workflow": "conversation"}
+                    "sender": "assistant",
+                    "metadata": {}
                 }
                 
-                # Insert both messages
-                message_data = [user_message_data, bot_message_data]
-                result = supabase.table("conversation_details").insert(message_data).execute()
+                supabase.table("conversation_details").insert(bot_message_data).execute()
                 
-                if result.data and len(result.data) > 0:
-                    logger.info(f"Added {len(result.data)} messages to conversation {conversation_id}")
-                else:
-                    logger.error("Failed to add messages to conversation")
+                # Also save to short_term_memory table for database consistency
+                try:
+                    # Create a context object with both messages
+                    context = {
+                        "user_message": user_message,
+                        "bot_response": bot_response,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # Set expiry for 30 minutes from now
+                    expires_at = (datetime.now() + timedelta(minutes=30)).isoformat()
+                    
+                    memory_data = {
+                        "patient_id": patient_id,
+                        "conversation_id": conversation_id,
+                        "context": context,
+                        "expires_at": expires_at
+                    }
+                    
+                    supabase.table("short_term_memory").insert(memory_data).execute()
+                except Exception as e:
+                    # Non-critical, just log the error
+                    logger.warning(f"Failed to save to short_term_memory table: {e}")
                 
-                # Update conversation last_message and end_time
-                supabase.table("conversations").update({
-                    "end_time": datetime.now().isoformat(),
-                    "last_message": bot_response[:100] if bot_response else "No response"
-                }).eq("id", conversation_id).execute()
+                # If we created a new patient or found one, update any existing memories
+                if patient_id and user_id:
+                    await self._update_memory_with_patient_info(user_id, patient_id, patient_info)
                 
+                # Return the conversation ID for reference
                 return conversation_id
-            else:
-                logger.error("Could not find or create conversation - messages not saved")
+                
+            except Exception as e:
+                logger.error(f"Error creating/updating conversation: {e}")
                 return None
+                
+        except Exception as e:
+            logger.error(f"Error saving to database: {e}")
+            return None
+
+    async def _get_recent_memories(self, chat_id: int, user_id: int, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Retrieve recent memories for a specific user/chat combination.
+        
+        Args:
+            chat_id: The Telegram chat ID
+            user_id: The Telegram user ID
+            limit: Maximum number of memories to retrieve
+            
+        Returns:
+            List of memory contents as dictionaries
+        """
+        try:
+            # Create session ID in the same format used when storing
+            session_id = f"telegram-{chat_id}-{user_id}"
+            
+            # Get active memories
+            memories = await self.memory_manager.get_active_memories()
+            
+            # Filter memories for this session
+            session_memories = []
+            for memory in memories:
+                if memory.metadata.get("session_id") == session_id:
+                    try:
+                        # Parse the JSON content
+                        content = json.loads(memory.content)
+                        # Add memory metadata and ID
+                        content["memory_id"] = memory.id
+                        content["created_at"] = memory.created_at.isoformat()
+                        content["expires_at"] = memory.expires_at.isoformat()
+                        session_memories.append(content)
+                    except json.JSONDecodeError:
+                        self.logger.warning(f"Failed to parse memory content: {memory.content[:50]}...")
+            
+            # Sort by timestamp if available
+            session_memories.sort(
+                key=lambda m: m.get("timestamp", ""),
+                reverse=True  # Most recent first
+            )
+            
+            # Limit results
+            return session_memories[:limit]
+        except Exception as e:
+            self.logger.error(f"Error retrieving recent memories: {e}")
+            return []
+
+    async def _update_memory_with_patient_info(self, user_id: int, patient_id: str, patient_info: Dict[str, Any]) -> None:
+        """
+        Update existing memories with patient information when it becomes available.
+        
+        Args:
+            user_id: Telegram user ID
+            patient_id: Patient ID from database
+            patient_info: Additional patient information
+        """
+        try:
+            # Get active memories
+            memories = await self.memory_manager.get_active_memories()
+            
+            # Filter memories for this user
+            user_memories = [
+                mem for mem in memories 
+                if mem.metadata.get("user_id") == user_id and not mem.metadata.get("patient_id")
+            ]
+            
+            if not user_memories:
+                return
+            
+            logger.info(f"Updating {len(user_memories)} memories with patient ID {patient_id}")
+            
+            # Update each memory with patient information
+            for memory in user_memories:
+                try:
+                    # Update metadata with patient information
+                    updated_metadata = memory.metadata.copy()
+                    updated_metadata["patient_id"] = patient_id
+                    
+                    # Update any additional patient info
+                    if patient_info:
+                        for key, value in patient_info.items():
+                            if key not in updated_metadata:
+                                updated_metadata[f"patient_{key}"] = value
+                    
+                    # Store memory content with updated metadata
+                    content = memory.content
+                    await self.memory_manager.store_memory(
+                        content=content,
+                        ttl_minutes=60,  # Keep original TTL
+                        metadata=updated_metadata
+                    )
+                    
+                    # Delete the old memory
+                    await self.memory_manager.delete_memory(memory.id)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to update memory {memory.id}: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error updating memories with patient info: {e}")
+
+    async def _get_conversation_history(self, chat_id: int, user_id: int, max_messages: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get conversation history combining both short-term memory and database records.
+        
+        Args:
+            chat_id: Telegram chat ID
+            user_id: Telegram user ID
+            max_messages: Maximum number of messages to retrieve
+            
+        Returns:
+            List of message pairs (user message and bot response)
+        """
+        try:
+            # First get recent memories which are fastest to access
+            session_id = f"telegram-{chat_id}-{user_id}"
+            memories = await self._get_recent_memories(chat_id, user_id, limit=max_messages)
+            
+            # If we have enough messages from memory, just return those
+            if len(memories) >= max_messages:
+                return memories[:max_messages]
+            
+            # Get patient_id and conversation_id from memory if available
+            patient_id = None
+            conversation_id = None
+            
+            # Check if any of the memories have patient/conversation IDs
+            for memory in memories:
+                metadata = memory.get("metadata", {})
+                if "patient_id" in metadata and not patient_id:
+                    patient_id = metadata["patient_id"]
+                if "conversation_id" in metadata and not conversation_id:
+                    conversation_id = metadata["conversation_id"]
+            
+            # If we have a conversation_id, get additional history from database
+            if conversation_id:
+                try:
+                    supabase = get_supabase_client()
+                    if not supabase:
+                        return memories
+                    
+                    # Query conversation details
+                    result = supabase.table("conversation_details")\
+                        .select("*")\
+                        .eq("conversation_id", conversation_id)\
+                        .order("sent_at", {"ascending": False})\
+                        .limit(max_messages * 2)\
+                        .execute()
+                    
+                    if not result.data:
+                        return memories
+                    
+                    # Group messages from same conversation
+                    db_messages = []
+                    messages_by_time = {}
+                    
+                    # Sort messages by timestamp
+                    for msg in result.data:
+                        sent_at = msg.get("sent_at", "")
+                        if sent_at:
+                            messages_by_time[sent_at] = msg
+                    
+                    # Sort timestamps
+                    sorted_times = sorted(messages_by_time.keys(), reverse=True)
+                    
+                    # Reconstruct conversation pairs
+                    i = 0
+                    while i < len(sorted_times) - 1:
+                        user_msg = None
+                        bot_msg = None
+                        
+                        # Find a user+bot message pair
+                        for j in range(i, min(i+2, len(sorted_times))):
+                            msg = messages_by_time[sorted_times[j]]
+                            if msg.get("sender") == "user":
+                                user_msg = msg
+                            elif msg.get("sender") == "assistant":
+                                bot_msg = msg
+                        
+                        # If we found a pair, add to results
+                        if user_msg and bot_msg:
+                            db_messages.append({
+                                "user_message": user_msg.get("message_content", ""),
+                                "bot_response": bot_msg.get("message_content", ""),
+                                "timestamp": user_msg.get("sent_at", ""),
+                                "conversation_id": conversation_id,
+                                "source": "database"
+                            })
+                        
+                        i += 2
+                    
+                    # Combine memories and database messages, removing duplicates
+                    seen_responses = set(m.get("bot_response", "")[:100] for m in memories)
+                    
+                    for msg in db_messages:
+                        # Check if this message is already in memories (avoid duplicates)
+                        if msg.get("bot_response", "")[:100] not in seen_responses:
+                            memories.append(msg)
+                            seen_responses.add(msg.get("bot_response", "")[:100])
+                    
+                    # Sort again by timestamp
+                    memories.sort(key=lambda m: m.get("timestamp", ""), reverse=True)
+                    
+                    # Limit results
+                    return memories[:max_messages]
+                    
+                except Exception as e:
+                    logger.warning(f"Error retrieving conversation history from database: {e}")
+                    # Return just the memories we have
+                    return memories
+            
+            # If we don't have a conversation_id, just return memories
+            return memories
         
         except Exception as e:
-            logger.error(f"Error saving to database: {e}", exc_info=True)
-            return None
+            logger.error(f"Error retrieving conversation history: {e}")
+            return []
 
 async def run_telegram_bot():
     """Run the Telegram bot with proper shutdown handling."""

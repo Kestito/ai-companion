@@ -494,7 +494,7 @@ $frontendImageExists = Test-ImageExistsInACR -ImageName $WEB_UI_IMAGE_NAME -Tag 
 # Make sure backend URL is defined before building frontend
 if (-not $backendAppUrl) {
     Write-ColorOutput -Message "Getting backend URL for frontend configuration" -Color Yellow -Prefix "→"
-    $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
     $backendAppUrl = "https://$backendAppUrl"
     Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
 }
@@ -603,7 +603,7 @@ if (-not $envExists) {
 
 # Step 6: Check Backend Container App
 Write-ColorOutput -Message "Checking Backend Container App" -Color Green
-$backendAppExists = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$backendAppExists = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 $backendAppNeedsUpdate = $false
 $backendAppRunning = $true
 
@@ -612,7 +612,7 @@ if ($backendAppExists) {
     Write-ColorOutput -Message "Backend app exists, checking status" -Color Yellow -Prefix "→"
     
     # Get the backend app URL
-    $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
     $backendAppUrl = "https://$backendAppUrl"
     
     # Check health endpoint
@@ -652,7 +652,7 @@ if ($backendAppExists) {
 
 # Step 7: Check Frontend Container App
 Write-ColorOutput -Message "Checking Frontend Container App" -Color Green
-$frontendAppExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$frontendAppExists = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 $frontendAppNeedsUpdate = $false
 $frontendAppRunning = $true
 
@@ -661,7 +661,7 @@ if ($frontendAppExists) {
     Write-ColorOutput -Message "Frontend app exists, checking status" -Color Yellow -Prefix "→"
     
     # Get the frontend app URL
-    $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
     $frontendAppUrl = "https://$frontendAppUrl"
     
     # Check if the frontend is responding
@@ -695,7 +695,7 @@ if ($frontendAppExists) {
 if ($backendAppNeedsUpdate -or $ForceUpdate) {
     if ($backendAppRunning -and (-not $ForceUpdate)) {
         Write-ColorOutput -Message "Deleting misconfigured backend container app" -Color Yellow -Prefix "→"
-        az containerapp delete --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+        az containerapp delete --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --yes
         if (-not (Test-CommandSuccess -SuccessMessage "Backend container app deleted successfully" -ErrorMessage "Failed to delete backend container app")) {
             Write-ColorOutput -Message "Continuing despite backend deletion failure" -Color Yellow -Prefix "⚠️"
         }
@@ -704,7 +704,7 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
         Write-ColorOutput -Message "Updating existing backend container app to image version: $TAG" -Color Yellow -Prefix "→"
         
         # Execute command with detailed error handling
-        $updateCmd = "az containerapp update --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --image ${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
+        $updateCmd = "az containerapp update --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --image ${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
         Write-Host "Executing command: $updateCmd" -ForegroundColor Gray
         
         $updateResult = Invoke-Expression $updateCmd
@@ -715,14 +715,14 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
             Write-ColorOutput -Message "Failed to update backend, will attempt to recreate" -Color Yellow -Prefix "⚠️"
             
             # If update fails, delete and recreate
-            az containerapp delete --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+            az containerapp delete --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --yes
             if (-not (Test-CommandSuccess -SuccessMessage "Backend container app deleted successfully" -ErrorMessage "Failed to delete backend container app")) {
                 Write-ColorOutput -Message "Continuing despite backend deletion failure" -Color Yellow -Prefix "⚠️"
             }
             $backendAppRunning = $false
         } else {
             # Get updated URL
-            $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+            $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
             $backendAppUrl = "https://$backendAppUrl"
             Write-ColorOutput -Message "Backend App updated to version $TAG" -Color Green -Prefix "✅"
             Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
@@ -733,7 +733,7 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
     if (-not $backendAppRunning) {
         Write-ColorOutput -Message "Deploying Backend Container App" -Color Green
         az containerapp create `
-            --name $BACKEND_CONTAINER_APP_NAME `
+            --name $BACKEND_APP_NAME `
             --resource-group $RESOURCE_GROUP `
             --environment $CONTAINER_ENV_NAME `
             --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}" `
@@ -767,21 +767,21 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
             Write-ColorOutput -Message "Failed to deploy backend, continuing with deployment" -Color Yellow -Prefix "⚠️"
         } else {
             # Update URL and configure settings
-            $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+            $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
             $backendAppUrl = "https://$backendAppUrl"
             Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
             
             # Configure other settings
             Write-ColorOutput -Message "Configuring Backend Ingress" -Color Green
             az containerapp ingress update `
-                --name $BACKEND_CONTAINER_APP_NAME `
+                --name $BACKEND_APP_NAME `
                 --resource-group $RESOURCE_GROUP `
                 --target-port 8000 `
                 --transport auto
                 
             Write-ColorOutput -Message "Configuring CORS for Backend" -Color Green
             az containerapp ingress cors update `
-                --name $BACKEND_CONTAINER_APP_NAME `
+                --name $BACKEND_APP_NAME `
                 --resource-group $RESOURCE_GROUP `
                 --allowed-origins "*" `
                 --allowed-methods "GET,POST,PUT,DELETE,OPTIONS" `
@@ -792,7 +792,7 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
     }
 } else {
     # Get existing backend URL for frontend configuration
-    $backendAppUrl = az containerapp show --name $BACKEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
     $backendAppUrl = "https://$backendAppUrl"
     Write-ColorOutput -Message "Using existing Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
 }
@@ -803,7 +803,7 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
     if ($frontendImageExists) {
         if ($frontendAppRunning -and (-not $ForceUpdate)) {
             Write-ColorOutput -Message "Deleting misconfigured frontend container app" -Color Yellow -Prefix "→"
-            az containerapp delete --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+            az containerapp delete --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --yes
             if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app deleted successfully" -ErrorMessage "Failed to delete frontend container app")) {
                 Write-ColorOutput -Message "Continuing despite frontend deletion failure" -Color Yellow -Prefix "⚠️"
             }
@@ -813,7 +813,7 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
             Write-ColorOutput -Message "Setting API URL to: $backendAppUrl" -Color Yellow -Prefix "→"
             
             # Execute command with detailed error handling
-            $updateCmd = "az containerapp update --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --image ${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG} --set-env-vars NEXT_PUBLIC_API_URL=$backendAppUrl"
+            $updateCmd = "az containerapp update --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --image ${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG} --set-env-vars NEXT_PUBLIC_API_URL=$backendAppUrl"
             Write-Host "Executing command: $updateCmd" -ForegroundColor Gray
             
             $updateResult = Invoke-Expression $updateCmd
@@ -824,14 +824,14 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
                 Write-ColorOutput -Message "Failed to update frontend, will attempt to recreate" -Color Yellow -Prefix "⚠️"
                 
                 # If update fails, delete and recreate
-                az containerapp delete --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --yes
+                az containerapp delete --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --yes
                 if (-not (Test-CommandSuccess -SuccessMessage "Frontend container app deleted successfully" -ErrorMessage "Failed to delete frontend container app")) {
                     Write-ColorOutput -Message "Continuing despite frontend deletion failure" -Color Yellow -Prefix "⚠️"
                 }
                 $frontendAppRunning = $false
             } else {
                 # Get updated URL
-                $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+                $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
                 $frontendAppUrl = "https://$frontendAppUrl"
                 Write-ColorOutput -Message "Frontend App updated to version $TAG" -Color Green -Prefix "✅"
                 Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
@@ -842,7 +842,7 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
         if (-not $frontendAppRunning) {
             Write-ColorOutput -Message "Deploying Frontend Container App" -Color Green
             az containerapp create `
-                --name $FRONTEND_CONTAINER_APP_NAME `
+                --name $FRONTEND_APP_NAME `
                 --resource-group $RESOURCE_GROUP `
                 --environment $CONTAINER_ENV_NAME `
                 --image "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${TAG}" `
@@ -871,7 +871,7 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
             if (-not (Test-CommandSuccess -SuccessMessage "Frontend Container App deployed successfully" -ErrorMessage "Failed to deploy Frontend Container App")) {
                 Write-ColorOutput -Message "Frontend deployment failed, continuing with backend only" -Color Yellow -Prefix "⚠️"
             } else {
-                $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+                $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
                 $frontendAppUrl = "https://$frontendAppUrl"
                 Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
             }
@@ -881,14 +881,14 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
     }
 } else {
     # Get existing frontend URL
-    $frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+    $frontendExists = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
     if ($frontendExists) {
-        $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+        $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
         $frontendAppUrl = "https://$frontendAppUrl"
         Write-ColorOutput -Message "Using existing Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
         
         # Add check to see if versions match and report
-        $deployedImageRef = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
+        $deployedImageRef = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
         if ($deployedImageRef -like "*:$TAG") {
             Write-ColorOutput -Message "Frontend is already at version $TAG" -Color Green -Prefix "✅"
         } else {
@@ -1349,10 +1349,10 @@ Write-ColorOutput -Message "Configuring Custom Domain for Frontend" -Color Green
 $CUSTOM_DOMAIN = "demo.evelinaai.com"
 
 # Check if frontend exists for custom domain setup
-$frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$frontendExists = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 if ($frontendExists) {
     # Get the domain verification ID
-    $verificationId = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.customDomainVerificationId" -o tsv
+    $verificationId = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.customDomainVerificationId" -o tsv
     
     Write-ColorOutput -Message "Domain verification ID: $verificationId" -Color Yellow -Prefix "→"
     Write-ColorOutput -Message "Important DNS requirements (automatic setup in progress):" -Color Yellow -Prefix "⚠️"
@@ -1360,7 +1360,7 @@ if ($frontendExists) {
     Write-ColorOutput -Message "2. A TXT record for 'asuid.demo' with value '$verificationId'" -Color White
     
     # First check if the custom domain is already bound
-    $existingDomain = az containerapp hostname list --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "[?hostname=='$CUSTOM_DOMAIN']" -o tsv
+    $existingDomain = az containerapp hostname list --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "[?hostname=='$CUSTOM_DOMAIN']" -o tsv
     
     if ($existingDomain) {
         Write-ColorOutput -Message "Custom domain $CUSTOM_DOMAIN is already configured" -Color Green -Prefix "✅"
@@ -1369,7 +1369,7 @@ if ($frontendExists) {
         Write-ColorOutput -Message "Automatically adding custom domain to frontend app" -Color Yellow -Prefix "→"
         
         # Add the custom domain to the frontend container app
-        az containerapp hostname add --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_APP_NAME
+        az containerapp hostname add --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_APP_NAME
         
         if (-not (Test-CommandSuccess -SuccessMessage "Custom domain added successfully" -ErrorMessage "Failed to add custom domain")) {
             Write-ColorOutput -Message "Failed to add custom domain. Please verify your DNS records:" -Color Red -Prefix "❌"
@@ -1379,7 +1379,7 @@ if ($frontendExists) {
         } else {
             # Automatically bind a managed certificate to the custom domain
             Write-ColorOutput -Message "Binding managed certificate to custom domain" -Color Yellow -Prefix "→"
-            az containerapp hostname bind --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_CONTAINER_APP_NAME --environment $CONTAINER_ENV_NAME --validation-method CNAME
+            az containerapp hostname bind --hostname $CUSTOM_DOMAIN --resource-group $RESOURCE_GROUP --name $FRONTEND_APP_NAME --environment $CONTAINER_ENV_NAME --validation-method CNAME
             
             if (-not (Test-CommandSuccess -SuccessMessage "Managed certificate bound successfully" -ErrorMessage "Failed to bind managed certificate")) {
                 Write-ColorOutput -Message "Failed to bind managed certificate, but domain may still be added." -Color Yellow -Prefix "⚠️"
@@ -1408,14 +1408,14 @@ Write-Host "  Health Endpoint: $backendAppUrl/monitor/health" -ForegroundColor W
 Write-Host ""
 
 # Check if frontend exists for summary
-$frontendExists = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
+$frontendExists = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 if ($frontendExists) {
-    $frontendAppUrl = az containerapp show --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
     $frontendAppUrl = "https://$frontendAppUrl"
     
     Write-Host "Frontend Application:" -ForegroundColor Cyan
     Write-Host "  URL: $frontendAppUrl" -ForegroundColor White
-    if (az containerapp hostname list --name $FRONTEND_CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --query "[?hostname==''$CUSTOM_DOMAIN'']" -o tsv) {
+    if (az containerapp hostname list --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "[?hostname==''$CUSTOM_DOMAIN'']" -o tsv) {
         Write-Host "  Custom Domain: https://$CUSTOM_DOMAIN" -ForegroundColor White
     }
     Write-Host ""
