@@ -30,7 +30,8 @@ import {
   BarChart,
   Chat,
   KeyboardArrowDown,
-  KeyboardArrowUp
+  KeyboardArrowUp,
+  AssessmentOutlined
 } from '@mui/icons-material';
 import { useRouter, usePathname } from 'next/navigation';
 import { useNavigation } from '../providers/navigationprovider';
@@ -71,12 +72,13 @@ export const useSidebarNavigation = () => {
 const mainNavigationItems: NavigationItem[] = [
   { id: 'dashboard', text: 'Dashboard', icon: <Dashboard />, path: '/dashboard', description: 'Overview and statistics' },
   { id: 'patients', text: 'Patients', icon: <People />, path: '/patients', description: 'Patient management' },
-  { id: 'appointments', text: 'Appointments', icon: <CalendarMonth />, path: '/appointments', description: 'Schedule management' },
-  { id: 'messages', text: 'Messages', icon: <Message />, path: '/messages', description: 'Communication center', badge: 3 },
+  { id: 'telegram', text: 'Scheduled Messages', icon: <Chat />, path: '/scheduled-messages', description: 'Scheduled messaging' },
   { id: 'health-records', text: 'Health Records', icon: <HealthAndSafety />, path: '/records', description: 'Patient health data' },
-  { id: 'alerts', text: 'Alerts', icon: <NotificationsActive />, path: '/alerts', description: 'Critical notifications', badge: 2 },
+  { id: 'risk-assessment', text: 'Risk Assessment', icon: <AssessmentOutlined />, path: '/risk-assessment', description: 'Patient risk analysis' },
+  { id: 'reports', text: 'Reports', icon: <Assessment />, path: '/reports', description: 'Analytics and reporting' },
+  { id: 'alerts', text: 'Alerts', icon: <NotificationsActive />, path: '/alerts', description: 'Critical notifications'},
   { id: 'analytics', text: 'Analytics', icon: <BarChart />, path: '/analytics', description: 'Data analysis' },
-  { id: 'telegram', text: 'Telegram Messages', icon: <Chat />, path: '/telegram-messages', description: 'Telegram messaging' },
+ 
 ];
 
 // Bottom navigation items for settings, etc.

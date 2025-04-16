@@ -11,16 +11,42 @@ import {
   Add as AddIcon,
   Home as HomeIcon,
   Warning as WarningIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  Description as DocumentIcon,
+  Send as SendIcon,
+  Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchPatientStatistics } from '@/lib/supabase/patientService';
-import { fetchRecentActivity, ActivityItem } from '@/lib/supabase/activityService';
-import { fetchNotifications, Notification } from '@/lib/supabase/notificationService';
 import { useLogger } from '@/hooks/useLogger';
 import { AlertTitle } from '@mui/material';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
+// Define types
+interface PatientStatistics {
+  totalPatients: number;
+  activePatients: number;
+  newPatients: number;
+  criticalPatients: number;
+  pendingAppointments: number;
+  responseRate: number;
+}
+
+interface ActivityItem {
+  id: string;
+  time: string;
+  user: string;
+  action: string;
+  severity: 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success';
+}
+
+interface Notification {
+  id: string;
+  type: 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success';
+  message: string;
+  icon: string;
+}
 
 // Default stats for initial render
 const defaultStats = {
@@ -104,46 +130,52 @@ const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }
       </IconButton>
     </Box>
     <Stack spacing={2}>
-      {items.map((item) => (
-        <Box 
-          key={item.id} 
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'flex-start', 
-            gap: 2,
-            p: 1.5,
-            borderRadius: 1,
-            bgcolor: 'background.default',
-            '&:hover': {
-              bgcolor: 'action.hover',
-            },
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            '&:last-child': {
-              borderBottom: 'none'
-            }
-          }}
-        >
+      {items.length > 0 ? (
+        items.map((item) => (
           <Box 
+            key={item.id} 
             sx={{ 
-              width: 8, 
-              height: 8, 
-              borderRadius: '50%', 
-              bgcolor: `${item.severity}.main`,
-              flexShrink: 0,
-              mt: 1
-            }} 
-          />
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-              {item.time}
-            </Typography>
-            <Typography variant="body1">
-              <Box component="span" fontWeight="fontWeightMedium">{item.user}</Box> • {item.action}
-            </Typography>
+              display: 'flex', 
+              alignItems: 'flex-start', 
+              gap: 2,
+              p: 1.5,
+              borderRadius: 1,
+              bgcolor: 'background.default',
+              '&:hover': {
+                bgcolor: 'action.hover',
+              },
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              '&:last-child': {
+                borderBottom: 'none'
+              }
+            }}
+          >
+            <Box 
+              sx={{ 
+                width: 8, 
+                height: 8, 
+                borderRadius: '50%', 
+                bgcolor: `${item.severity}.main`,
+                flexShrink: 0,
+                mt: 1
+              }} 
+            />
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                {item.time}
+              </Typography>
+              <Typography variant="body1">
+                <Box component="span" fontWeight="fontWeightMedium">{item.user}</Box> • {item.action}
+              </Typography>
+            </Box>
           </Box>
+        ))
+      ) : (
+        <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
+          <Typography variant="body2">No recent activity found</Typography>
         </Box>
-      ))}
+      )}
     </Stack>
   </Paper>
 );
@@ -174,27 +206,33 @@ const NotificationsCard = ({ notifications }: { notifications: Notification[] })
         Notifications
       </Typography>
       <Stack spacing={2}>
-        {notifications.map((notification) => (
-          <Box 
-            key={notification.id} 
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 2,
-              p: 2,
-              borderRadius: 1,
-              bgcolor: `${notification.type}.lighter`,
-              color: `${notification.type}.main`,
-              border: 1,
-              borderColor: `${notification.type}.light`
-            }}
-          >
-            {getIconForType(notification.icon)}
-            <Typography variant="body2" color="inherit">
-              {notification.message}
-            </Typography>
+        {notifications.length > 0 ? (
+          notifications.map((notification) => (
+            <Box 
+              key={notification.id} 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 2,
+                p: 2,
+                borderRadius: 1,
+                bgcolor: `${notification.type}.lighter`,
+                color: `${notification.type}.main`,
+                border: 1,
+                borderColor: `${notification.type}.light`
+              }}
+            >
+              {getIconForType(notification.icon)}
+              <Typography variant="body2" color="inherit">
+                {notification.message}
+              </Typography>
+            </Box>
+          ))
+        ) : (
+          <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
+            <Typography variant="body2">No notifications found</Typography>
           </Box>
-        ))}
+        )}
       </Stack>
       <Button
         fullWidth
@@ -373,10 +411,223 @@ export default function DashboardPage() {
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [documentStats, setDocumentStats] = useState({
+    totalDocuments: 0,
+    processedDocuments: 0
+  });
+  const [messageStats, setMessageStats] = useState({
+    sentMessages: 0,
+    scheduledMessages: 0
+  });
+  
+  // Initialize Supabase client
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
     loadDashboardData();
   }, []);
+
+  // Fetch patient statistics directly from Supabase
+  async function fetchPatientStatistics(): Promise<PatientStatistics> {
+    logger.info('Fetching patient statistics from Supabase');
+    
+    try {
+      // Count total patients
+      const { count: totalPatients, error: totalError } = await supabase
+        .from('patients')
+        .select('*', { count: 'exact', head: true });
+        
+      if (totalError) throw totalError;
+      
+      // Count patients with 'Low' risk (as active)
+      const { data: activeData, error: activeError } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('risk', 'Low');
+        
+      if (activeError) throw activeError;
+      
+      // Get upcoming appointments (if the table exists)
+      let pendingAppointments = 0;
+      const { count, error: appointmentsError } = await supabase
+        .from('scheduled_appointments')
+        .select('*', { count: 'exact', head: true });
+        
+      if (!appointmentsError && count !== null) {
+        pendingAppointments = count;
+      }
+      
+      // For critical patients, use patients with risk != Low
+      const { data: criticalData, error: criticalError } = await supabase
+        .from('patients')
+        .select('id')
+        .neq('risk', 'Low');
+        
+      if (criticalError) throw criticalError;
+      
+      return {
+        totalPatients: totalPatients || 0,
+        activePatients: activeData?.length || 0,
+        newPatients: 0, // Could calculate from created_at if needed
+        criticalPatients: criticalData?.length || 0,
+        pendingAppointments,
+        responseRate: 0 // Could calculate based on message responses
+      };
+    } catch (error) {
+      logger.error('Error fetching patient statistics', error);
+      throw error;
+    }
+  }
+
+  // Fetch recent activity from activity_logs
+  async function fetchRecentActivity(limit: number): Promise<ActivityItem[]> {
+    logger.info('Fetching recent activity from Supabase');
+    
+    try {
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+        
+      if (error) throw error;
+      
+      return data.map(item => ({
+        id: item.id,
+        time: new Date(item.timestamp).toLocaleTimeString(),
+        user: item.user_id || 'System',
+        action: item.action,
+        severity: determineSeverity(item.action)
+      }));
+    } catch (error) {
+      logger.error('Error fetching recent activity', error);
+      throw error;
+    }
+  }
+  
+  // Helper function to determine severity based on action
+  function determineSeverity(action: string): 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success' {
+    if (action.includes('error') || action.includes('fail')) return 'error';
+    if (action.includes('warn')) return 'warning';
+    if (action.includes('success')) return 'success';
+    if (action.includes('info')) return 'info';
+    return 'primary';
+  }
+
+  // Fetch notifications (simulate from activity logs or other sources)
+  async function fetchNotifications(limit: number): Promise<Notification[]> {
+    logger.info('Generating notifications based on system data');
+    
+    const notificationsList: Notification[] = [];
+    
+    try {
+      // Patients requiring attention (example notification)
+      const { data: criticalPatients, error: criticalError } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('risk', 'High');
+        
+      if (!criticalError && criticalPatients && criticalPatients.length > 0) {
+        notificationsList.push({
+          id: 'notification-critical-patients',
+          type: 'error',
+          message: `${criticalPatients.length} patients require immediate attention`,
+          icon: 'warning'
+        });
+      }
+      
+      // Upcoming appointments notification
+      const { count: appointmentsCount, error: appointmentsError } = await supabase
+        .from('scheduled_appointments')
+        .select('*', { count: 'exact', head: true });
+        
+      if (!appointmentsError && appointmentsCount && appointmentsCount > 0) {
+        notificationsList.push({
+          id: 'notification-appointments',
+          type: 'warning',
+          message: `${appointmentsCount} upcoming appointments in next hour`,
+          icon: 'event'
+        });
+      }
+      
+      // New document processing notification
+      const { count: newDocuments, error: documentsError } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true });
+        
+      if (!documentsError && newDocuments && newDocuments > 0) {
+        notificationsList.push({
+          id: 'notification-documents',
+          type: 'info',
+          message: `New treatment protocol available`,
+          icon: 'update'
+        });
+      }
+      
+      return notificationsList.slice(0, limit);
+    } catch (error) {
+      logger.error('Error generating notifications', error);
+      throw error;
+    }
+  }
+  
+  // Fetch document processing statistics
+  async function fetchDocumentStats() {
+    logger.info('Fetching document statistics from Supabase');
+    
+    try {
+      // Count total documents
+      const { count: totalDocuments, error: totalError } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true });
+        
+      if (totalError) throw totalError;
+      
+      // Count document chunks
+      const { count: totalChunks, error: chunksError } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true });
+        
+      if (chunksError) throw chunksError;
+      
+      return {
+        totalDocuments: totalDocuments || 0,
+        processedDocuments: totalChunks ? Math.min(totalDocuments || 0, totalChunks) : 0
+      };
+    } catch (error) {
+      logger.error('Error fetching document statistics', error);
+      throw error;
+    }
+  }
+
+  // Fetch message statistics
+  async function fetchMessageStats() {
+    logger.info('Fetching message statistics from Supabase');
+    
+    try {
+      // Count sent messages
+      const { count: sentCount, error: sentError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true });
+        
+      if (sentError) throw sentError;
+      
+      // Count scheduled messages
+      const { count: scheduledCount, error: scheduledError } = await supabase
+        .from('scheduled_messages')
+        .select('*', { count: 'exact', head: true });
+        
+      if (scheduledError) throw scheduledError;
+      
+      return {
+        sentMessages: sentCount || 0,
+        scheduledMessages: scheduledCount || 0
+      };
+    } catch (error) {
+      logger.error('Error fetching message statistics', error);
+      throw error;
+    }
+  }
 
   async function loadDashboardData() {
     try {
@@ -385,7 +636,7 @@ export default function DashboardPage() {
       setError(null);
 
       // Fetch all data in parallel with error handling for each request
-      const [statistics, activity, notifs] = await Promise.all([
+      const [statistics, activity, notifs, docStats, msgStats] = await Promise.all([
         fetchPatientStatistics().catch(err => {
           logger.error('Failed to fetch patient statistics', err);
           throw new Error(`Failed to load statistics: ${err.message}`);
@@ -397,18 +648,30 @@ export default function DashboardPage() {
         fetchNotifications(3).catch(err => {
           logger.error('Failed to fetch notifications', err);
           throw new Error(`Failed to load notifications: ${err.message}`);
+        }),
+        fetchDocumentStats().catch(err => {
+          logger.error('Failed to fetch document statistics', err);
+          return { totalDocuments: 0, processedDocuments: 0 };
+        }),
+        fetchMessageStats().catch(err => {
+          logger.error('Failed to fetch message statistics', err);
+          return { sentMessages: 0, scheduledMessages: 0 };
         })
       ]);
 
       logger.debug('Dashboard data loaded', { 
         statsLoaded: Object.keys(statistics).length > 0,
         activityCount: activity.length,
-        notificationsCount: notifs.length
+        notificationsCount: notifs.length,
+        documentsCount: docStats.totalDocuments,
+        messageStats: msgStats
       });
       
       setStats(statistics);
       setRecentActivity(activity);
       setNotifications(notifs);
+      setDocumentStats(docStats);
+      setMessageStats(msgStats);
       setLastRefreshed(new Date());
       setIsLoading(false);
     } catch (err) {
@@ -501,23 +764,55 @@ export default function DashboardPage() {
             </Grid>
             <Grid item xs={12} md={4}>
               <StatCard
-                title="Pending Appointments"
-                value={stats.pendingAppointments}
-                icon={<CalendarIcon />}
-                color="warning"
+                title="Sent Messages"
+                value={messageStats.sentMessages}
+                icon={<SendIcon />}
+                color="info"
               />
             </Grid>
             <Grid item xs={12} md={4}>
               <StatCard
-                title="Critical Alerts"
-                value={stats.criticalPatients}
-                icon={<NotificationsIcon />}
-                color="error"
+                title="Scheduled Messages"
+                value={messageStats.scheduledMessages}
+                icon={<ScheduleIcon />}
+                color="success"
               />
             </Grid>
           </>
         )}
       </Grid>
+      
+      {/* Add Document Stats Card */}
+      {!isLoading && (
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid item xs={12} md={4}>
+            <StatCard
+              title="Total Documents"
+              value={documentStats.totalDocuments}
+              icon={<DocumentIcon />}
+              color="info"
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <StatCard
+              title="Processed Documents"
+              value={documentStats.processedDocuments}
+              icon={<DocumentIcon />}
+              color="success"
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <StatCard
+              title="Processing Rate"
+              value={documentStats.totalDocuments > 0 
+                ? `${Math.round((documentStats.processedDocuments / documentStats.totalDocuments) * 100)}%` 
+                : '0%'}
+              icon={<TrendingUpIcon />}
+              color="info"
+            />
+          </Grid>
+        </Grid>
+      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>
