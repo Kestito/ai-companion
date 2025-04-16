@@ -22,7 +22,7 @@ logger.configureLogger({
 
 // Define metadata for the application
 export const metadata: Metadata = {
-  title: "AI Companion",
+  title: "Evelina AI",
   description: "Your AI Companion App",
   icons: {
     icon: [
