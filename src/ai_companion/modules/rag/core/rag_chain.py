@@ -323,110 +323,100 @@ class LithuanianRAGChain:
         documents: List[Document],
         **kwargs: Any
     ) -> Dict[str, Any]:
-        """Generate a response to the query using the retrieved documents.
+        """Generate final response with enhanced context and details.
         
         Args:
-            query: Original user query
+            query: User query
             documents: Retrieved documents
-            **kwargs: Additional parameters for response generation
+            **kwargs: Additional parameters
             
         Returns:
-            Dictionary with response text and metadata
+            Dictionary with response and additional information
         """
+        start_time = time.time()
         try:
-            start_time = time.time()
+            # Prioritize and reorder documents by relevance score and source quality
+            documents = self._prioritize_documents(documents)
             
-            # Get source info and track search sources
-            source_info = []
-            vector_count = 0
-            keyword_count = 0
+            # Extract memory context
+            memory_context = kwargs.get('memory_context', '')
             
-            for doc in documents:
-                metadata = doc.metadata
-                search_type = metadata.get('search_type', 'vector')  # Default to 'vector' if not specified
-                
-                if search_type == 'vector':
-                    vector_count += 1
-                elif search_type == 'keyword':
-                    keyword_count += 1
-                
-                if 'title' in metadata and 'url' in metadata:
-                    source_info.append({
-                        'title': metadata.get('title', 'Unknown'),
-                        'url': metadata.get('url', '#'),
-                        'score': metadata.get('score', 0.0),
-                        'search_type': search_type
-                    })
+            # Organize documents by topic/source for better context grouping
+            organized_docs = self._organize_documents(documents)
             
-            # Generate response
-            try:
-                # Extract memory_context from kwargs if provided
-                memory_context = kwargs.get('memory_context', None)
-                
-                # Call the response generator's _generate_response method directly
-                response = await self.response_generator._generate_response(
-                    query=query,
-                    documents=documents,
-                    memory_context=memory_context
-                )
-            except Exception as e:
-                logger.error(f"Error in response generation: {str(e)}")
-                response = f"Nepavyko sugeneruoti detalaus atsakymo. Bandykite dar kartą arba užduokite kitą klausimą."
+            # Prepare citation information
+            citations = self._prepare_citations(documents)
+            
+            # Generate detailed response
+            response = await self.response_generator.generate_response(
+                query, 
+                documents,
+                context=memory_context,
+                organized_docs=organized_docs,
+                citations=citations,
+                detailed=True,  # Signal to response generator that we want detailed output
+                **kwargs
+            )
             
             generation_time = time.time() - start_time
             
-            # Update metrics
-            self.metrics['response_generation_time'] = (
-                self.metrics['response_generation_time'] * 0.9 + generation_time * 0.1
-            )
-            
-            # Track different source types in the final response metadata
-            source_distribution = {
-                'vector_count': vector_count,
-                'keyword_count': keyword_count,
-                'total_count': len(documents)
-            }
-            
-            # Log response metrics for monitoring
-            await self.monitor.log_success(
-                question=query,
-                num_docs=len(documents),
-                response_metadata={
-                    'source_distribution': source_distribution,
-                    'generation_time': generation_time,
-                    'search_types': ['vector' if vector_count > 0 else None, 'keyword' if keyword_count > 0 else None]
-                }
-            )
-            
             return {
                 'response': response,
-                'sources': source_info,
+                'response_time': generation_time,
                 'document_count': len(documents),
-                'vector_sources': vector_count,
-                'keyword_sources': keyword_count,
-                'confidence': 1.0 if len(documents) > 0 else 0.5,  # Adjust confidence based on document count
-                'generation_time': generation_time,
-                'search_types_used': ['vector' if vector_count > 0 else None, 'keyword' if keyword_count > 0 else None]
+                'citations': citations
             }
-            
         except Exception as e:
-            logger.error(f"Error generating response: {str(e)}", exc_info=True)
+            logger.error(f"Error in response generation: {str(e)}")
+            raise ResponseGenerationError(f"Failed to generate response: {str(e)}")
             
-            # Log the error for monitoring
-            await self.monitor.log_error('response_generation', query, str(e))
+    def _prioritize_documents(self, documents: List[Document]) -> List[Document]:
+        """Prioritize documents based on relevance and source quality."""
+        # Sort by score first if available
+        docs_with_scores = []
+        for doc in documents:
+            score = doc.metadata.get('score', 0.0) if hasattr(doc, 'metadata') else 0.0
+            docs_with_scores.append((doc, score))
+        
+        # Sort by score in descending order
+        sorted_docs = [doc for doc, _ in sorted(docs_with_scores, key=lambda x: x[1], reverse=True)]
+        return sorted_docs
+        
+    def _organize_documents(self, documents: List[Document]) -> Dict[str, List[Document]]:
+        """Organize documents by source/category for better context."""
+        organized = {}
+        
+        for doc in documents:
+            if not hasattr(doc, 'metadata'):
+                continue
+                
+            source = doc.metadata.get('source', 'unknown')
+            if source not in organized:
+                organized[source] = []
             
-            # Create a detailed error response
-            error_response = {
-                'response': f"Atsiprašau, įvyko klaida apdorojant duomenis. Bandykite dar kartą. (Collection: {self.collection_name})",
-                'sources': [],
-                'document_count': 0,
-                'confidence': 0.0,
-                'generation_time': 0.0,
-                'error': str(e),
-                'error_type': type(e).__name__
+            organized[source].append(doc)
+            
+        return organized
+        
+    def _prepare_citations(self, documents: List[Document]) -> List[Dict[str, Any]]:
+        """Prepare citation information for sources."""
+        citations = []
+        
+        for i, doc in enumerate(documents):
+            if not hasattr(doc, 'metadata'):
+                continue
+                
+            metadata = doc.metadata
+            citation = {
+                'id': i + 1,
+                'source': metadata.get('source', 'Unknown'),
+                'title': metadata.get('title', 'Untitled'),
+                'url': metadata.get('url', ''),
+                'date': metadata.get('date', '')
             }
+            citations.append(citation)
             
-            return error_response
+        return citations
     
     async def query(
         self,
@@ -434,19 +424,23 @@ class LithuanianRAGChain:
         memory_context: str = "",
         max_retries: int = 3,
         min_confidence: float = 0.7,
+        detailed: bool = False,
+        with_citations: bool = True,
         **kwargs
     ) -> Tuple[str, List[Document]]:
-        """Query the RAG system with enhanced context handling.
+        """Process a query and generate a response with Lithuanian support.
         
         Args:
-            query: The user's query
-            memory_context: Combined conversation history and memory context
+            query: User query
+            memory_context: Additional context from conversation history and memory
             max_retries: Maximum number of retry attempts
-            min_confidence: Minimum confidence threshold
+            min_confidence: Minimum confidence score for document relevance
+            detailed: Whether to generate a detailed response
+            with_citations: Whether to include citations in the response
             **kwargs: Additional parameters
             
         Returns:
-            Tuple of response text and relevant documents
+            Tuple of (response text, list of relevant documents)
         """
         try:
             # Process query with context
@@ -474,6 +468,8 @@ class LithuanianRAGChain:
                 query=query,
                 documents=relevant_docs,
                 context=memory_context,  # Pass full context for response generation
+                detailed=detailed,
+                with_citations=with_citations,
                 **kwargs
             )
             

@@ -60,8 +60,8 @@ class VectorStoreRetriever:
     async def similarity_search(
         self,
         query: str,
-        k: int = 4,
-        score_threshold: float = 0.7,
+        k: int = 8,
+        score_threshold: float = 0.65,
         filter_conditions: Optional[Dict] = None
     ) -> List[Tuple[Document, float]]:
         """Search for similar documents with advanced filtering."""
@@ -230,8 +230,8 @@ class VectorStoreRetriever:
     async def parallel_search(
         self,
         query: str,
-        k: int = 10,
-        score_threshold: float = 0.7,
+        k: int = 15,
+        score_threshold: float = 0.65,
         filter_conditions: Optional[Dict] = None,
         prioritized_urls: Optional[List[str]] = None
     ) -> List[Tuple[Document, float]]:

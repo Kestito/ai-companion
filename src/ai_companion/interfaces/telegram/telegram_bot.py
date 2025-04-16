@@ -7,6 +7,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 import sqlite3
+import os
 
 import httpx
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -41,6 +42,14 @@ class TelegramBot:
         self._running = True
         self._setup_signal_handlers()
         self.memory_manager = get_short_term_memory_manager()
+        self.supabase = get_supabase_client()
+        
+        # Setup checkpoint directory
+        self.checkpoint_dir = os.path.join(os.getcwd(), "data", "checkpoints")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        if not self.supabase:
+            logger.error("Failed to initialize Supabase client for memory storage")
 
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
@@ -239,20 +248,85 @@ class TelegramBot:
                 # Get complete conversation history combining memory and database
                 conversation_history = await self._get_conversation_history(chat_id, user_id, max_messages=10)
                 
-                # Create a new graph instance with thread_id for consistent conversation
-                graph = graph_builder.with_config(
-                    {"configurable": {"thread_id": session_id}}
-                )
+                # Format conversation history for better context retention
+                formatted_history = []
+                if conversation_history:
+                    # Convert conversation history to a format the LLM can better understand
+                    for entry in conversation_history:
+                        if "user_message" in entry and "bot_response" in entry:
+                            formatted_history.append({
+                                "role": "human", 
+                                "content": entry.get("user_message", "")
+                            })
+                            formatted_history.append({
+                                "role": "ai", 
+                                "content": entry.get("bot_response", "")
+                            })
+                
+                # Create a context object with thread_id
+                context = {
+                    "thread_id": session_id,
+                    "user_id": user_id,
+                    "chat_id": chat_id
+                }
+
+                # Instead of using SQLite for checkpointing, use Supabase
+                # First check if there's an existing memory record for this session
+                memory_exists = False
+                memory_data = None
+                
+                if self.supabase:
+                    try:
+                        # Query for existing memory - need to get all records and filter
+                        # since session_id is inside the context JSON
+                        result = self.supabase.table("short_term_memory").select("*").order("expires_at", desc=True).limit(20).execute()
+                        
+                        if result.data:
+                            # Filter records that have session_id in their context metadata
+                            for record in result.data:
+                                context = record.get("context", {})
+                                metadata = context.get("metadata", {})
+                                if metadata and metadata.get("session_id") == session_id:
+                                    memory_exists = True
+                                    memory_data = record
+                                    logger.info(f"Found existing memory in Supabase for session {session_id}")
+                                    break
+                    except Exception as e:
+                        logger.error(f"Error checking for existing memory: {e}")
+                
+                # Setup checkpointer for the graph - ensure it's properly initialized
+                checkpoint_file = os.path.join(self.checkpoint_dir, f"{session_id}.json")
+                checkpointer = AsyncSqliteSaver(checkpoint_file)
+                
+                # Create a graph instance with embedded checkpointer
+                config = {
+                    "configurable": {
+                        "thread_id": session_id,
+                        "memory_exists": memory_exists,
+                        "checkpointer": checkpointer  # Add checkpointer directly to graph config
+                    }
+                }
+                
+                # Inject existing memory if found
+                if memory_exists and memory_data and "state" in memory_data:
+                    config["configurable"]["existing_memory"] = memory_data.get("state", {})
+                
+                # Create a new graph instance with config
+                graph = graph_builder.with_config(config)
                 
                 # Create HumanMessage with metadata
                 human_message = HumanMessage(content=content, metadata={
                     **user_metadata,
-                    "conversation_history": conversation_history  # Include conversation history in metadata
+                    "conversation_history": formatted_history,  # Use formatted history
+                    "previous_interactions": len(formatted_history) // 2,  # Count of previous turns
+                    "detailed_response": True,  # Request detailed RAG responses
+                    "with_citations": True  # Include citations in responses
                 })
                 
-                # Invoke the graph with the message
+                # Invoke the graph with the message using the checkpointer config
                 result = await graph.ainvoke(
                     {"messages": [human_message]}
+                    # No need for separate config here since checkpointer is in graph config
                 )
 
                 # Debug the result type
@@ -305,19 +379,63 @@ class TelegramBot:
                         if key not in ["full_context", "embeddings", "raw_response"]:
                             safe_result[key] = value
                 
-                # Store both the user message and the bot response in memory
-                conversation_data = {
-                    "user_message": content,
-                    "bot_response": response_message,
-                    "timestamp": datetime.now().isoformat()
+                # Get the graph state to store
+                graph_state = {}
+                try:
+                    # Get the graph state - no need to pass checkpointer again
+                    graph_state = await graph.aget_state()
+                except Exception as e:
+                    logger.error(f"Error getting graph state: {e}")
+                
+                # Format the conversation context according to the correct schema
+                conversation_context = {
+                    "conversation": {
+                        "user_message": content,
+                        "bot_response": response_message,
+                        "timestamp": datetime.now().isoformat()
+                    },
+                    "metadata": {
+                        "session_id": session_id,
+                        "user_id": str(user_id),
+                        "chat_id": str(chat_id),
+                        "platform": "telegram",
+                        "message_type": message_type
+                    },
+                    "state": graph_state
                 }
                 
-                # Store in short-term memory first
-                memory = await self.memory_manager.store_memory(
-                    content=json.dumps(conversation_data),
-                    ttl_minutes=60,  # Keep for 1 hour
-                    metadata=memory_metadata
-                )
+                # Format the memory data according to the correct schema
+                memory_data = {
+                    "id": str(uuid.uuid4()),
+                    "context": conversation_context,
+                    "expires_at": (datetime.now() + timedelta(hours=24)).isoformat()
+                }
+                
+                # Add patient_id if available
+                if isinstance(result, dict) and "patient_id" in result:
+                    patient_id = result["patient_id"]
+                    memory_data["patient_id"] = patient_id
+                
+                # Add conversation_id if available
+                if isinstance(result, dict) and "conversation_id" in result:
+                    conversation_id = result["conversation_id"]
+                    memory_data["conversation_id"] = conversation_id
+                
+                # Store in Supabase - with retries on failure
+                if self.supabase:
+                    for retry_attempt in range(3):  # Try up to 3 times
+                        try:
+                            memory_result = self.supabase.table("short_term_memory").insert(memory_data).execute()
+                            if memory_result.data and len(memory_result.data) > 0:
+                                memory_id = memory_result.data[0].get("id")
+                                logger.info(f"Stored memory in Supabase: {memory_id}")
+                                break
+                            else:
+                                logger.warning(f"Failed to get memory ID from Supabase (attempt {retry_attempt+1}/3)")
+                        except Exception as e:
+                            logger.error(f"Error storing memory in Supabase (attempt {retry_attempt+1}/3): {e}")
+                            if retry_attempt < 2:  # Only sleep if we're going to retry
+                                await asyncio.sleep(1 * (retry_attempt + 1))  # Simple backoff
                 
                 # NEW CODE: Save the conversation to the database
                 patient_id = None
@@ -330,25 +448,6 @@ class TelegramBot:
                     response_message,
                     patient_id
                 )
-                
-                # Update memory metadata with conversation_id and patient_id if available
-                if conversation_id:
-                    updated_metadata = memory_metadata.copy()
-                    updated_metadata["conversation_id"] = conversation_id
-                    if patient_id:
-                        updated_metadata["patient_id"] = patient_id
-                    
-                    # Store an updated memory entry with database IDs
-                    updated_conversation_data = conversation_data.copy()
-                    updated_conversation_data["memory_id"] = memory.id
-                    
-                    await self.memory_manager.store_memory(
-                        content=json.dumps(updated_conversation_data),
-                        ttl_minutes=60,
-                        metadata=updated_metadata
-                    )
-                    
-                    logger.info(f"Updated memory with conversation_id: {conversation_id}")
                 
                 # Send the response
                 logger.debug(f"Sending response with workflow: {workflow}")
@@ -695,13 +794,13 @@ class TelegramBot:
                 
             # Extract user details
             user_id = user_metadata.get("user_id")
+            chat_id = user_metadata.get("chat_id")  # Extract chat_id from user_metadata
             platform = user_metadata.get("platform", "telegram")
             first_name = user_metadata.get("first_name", "")
             last_name = user_metadata.get("last_name", "")
             
             # Prepare user data for lookup or creation
             user_data = {
-                "platform": platform,
                 "platform_id": str(user_id),
                 "first_name": first_name,
                 "last_name": last_name,
@@ -715,8 +814,10 @@ class TelegramBot:
             # Check if we have an existing patient ID for this user
             if not patient_id:
                 try:
-                    # Look up patient by platform ID
-                    result = supabase.table("patients").select("id").eq("platform", platform).eq("platform_id", str(user_id)).execute()
+                    # Look up patient by platform ID - using email field as metadata storage
+                    # Store platform info in metadata JSON
+                    platform_query = f'%"platform_id": "{user_id}"%'
+                    result = supabase.table("patients").select("id").like("email", platform_query).execute()
                     
                     if result.data and len(result.data) > 0:
                         patient_id = result.data[0]["id"]
@@ -726,14 +827,24 @@ class TelegramBot:
                         supabase.table("patients").update({"last_active": datetime.now().isoformat()}).eq("id", patient_id).execute()
                     else:
                         # Create new patient record
+                        platform_metadata = {
+                            "platform": platform,
+                            "platform_id": str(user_id)
+                        }
+                        
                         new_patient = {
-                            **user_data,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            # Remove name field as it doesn't exist in the schema
+                            "email": json.dumps(platform_metadata),  # Store platform info in email field
+                            "channel": platform,  # Use channel instead of platform
                             "risk": "Low",
                             "created_at": datetime.now().isoformat(),
+                            "last_active": datetime.now().isoformat(),
                             "preferred_language": "en",
                             "subsidy_eligible": False,
                             "legal_consents": {},
-                            "support_status": "initial"
+                            "support_status": "active"
                         }
                         
                         result = supabase.table("patients").insert(new_patient).execute()
@@ -755,7 +866,8 @@ class TelegramBot:
                 # Look for active conversation in last 15 minutes
                 fifteen_min_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
                 
-                result = supabase.table("conversations").select("id").eq("patient_id", patient_id).eq("platform", platform).gt("start_time", fifteen_min_ago).eq("status", "active").execute()
+                # Use patient_id for conversation lookup
+                result = supabase.table("conversations").select("id").eq("patient_id", patient_id).gt("start_time", fifteen_min_ago).eq("status", "active").execute()
                 
                 conversation_id = None
                 
@@ -772,7 +884,7 @@ class TelegramBot:
                     # Create new conversation
                     conversation_data = {
                         "patient_id": patient_id,
-                        "platform": platform,
+                        "platform": platform,  # Use platform instead of platform_type
                         "start_time": datetime.now().isoformat(),
                         "end_time": datetime.now().isoformat(),
                         "conversation_type": "general",
@@ -794,7 +906,7 @@ class TelegramBot:
                     "message_content": user_message,
                     "message_type": "text",
                     "sent_at": datetime.now().isoformat(),
-                    "sender": "user",
+                    "sender": "patient",
                     "metadata": {}
                 }
                 
@@ -806,7 +918,7 @@ class TelegramBot:
                     "message_content": bot_response,
                     "message_type": "text",
                     "sent_at": datetime.now().isoformat(),
-                    "sender": "assistant",
+                    "sender": "evelina",
                     "metadata": {}
                 }
                 
@@ -815,19 +927,29 @@ class TelegramBot:
                 # Also save to short_term_memory table for database consistency
                 try:
                     # Create a context object with both messages
-                    context = {
-                        "user_message": user_message,
-                        "bot_response": bot_response,
-                        "timestamp": datetime.now().isoformat()
+                    context_data = {
+                        "conversation": {
+                            "user_message": user_message,
+                            "bot_response": bot_response,
+                            "timestamp": datetime.now().isoformat()
+                        },
+                        "metadata": {
+                            "session_id": f"telegram-{chat_id}-{user_id}",
+                            "user_id": str(user_id),
+                            "chat_id": str(chat_id),
+                            "platform": "telegram"
+                        },
+                        "state": {}  # Empty state since we don't have the graph state here
                     }
                     
                     # Set expiry for 30 minutes from now
                     expires_at = (datetime.now() + timedelta(minutes=30)).isoformat()
                     
                     memory_data = {
+                        "id": str(uuid.uuid4()),
                         "patient_id": patient_id,
                         "conversation_id": conversation_id,
-                        "context": context,
+                        "context": context_data,
                         "expires_at": expires_at
                     }
                     
@@ -953,7 +1075,7 @@ class TelegramBot:
 
     async def _get_conversation_history(self, chat_id: int, user_id: int, max_messages: int = 10) -> List[Dict[str, Any]]:
         """
-        Get conversation history combining both short-term memory and database records.
+        Get conversation history from Supabase short-term memory.
         
         Args:
             chat_id: Telegram chat ID
@@ -964,108 +1086,127 @@ class TelegramBot:
             List of message pairs (user message and bot response)
         """
         try:
-            # First get recent memories which are fastest to access
+            # Generate session ID in the same format used when storing
             session_id = f"telegram-{chat_id}-{user_id}"
-            memories = await self._get_recent_memories(chat_id, user_id, limit=max_messages)
             
-            # If we have enough messages from memory, just return those
-            if len(memories) >= max_messages:
-                return memories[:max_messages]
-            
-            # Get patient_id and conversation_id from memory if available
-            patient_id = None
-            conversation_id = None
-            
-            # Check if any of the memories have patient/conversation IDs
-            for memory in memories:
-                metadata = memory.get("metadata", {})
-                if "patient_id" in metadata and not patient_id:
-                    patient_id = metadata["patient_id"]
-                if "conversation_id" in metadata and not conversation_id:
-                    conversation_id = metadata["conversation_id"]
-            
-            # If we have a conversation_id, get additional history from database
-            if conversation_id:
+            # Try to get history from Supabase
+            if self.supabase:
                 try:
-                    supabase = get_supabase_client()
-                    if not supabase:
-                        return memories
-                    
-                    # Query conversation details
-                    result = supabase.table("conversation_details")\
+                    # Query for recent memories - need to get all and filter
+                    # since session_id is inside the context JSON
+                    result = self.supabase.table("short_term_memory")\
                         .select("*")\
-                        .eq("conversation_id", conversation_id)\
-                        .order("sent_at", {"ascending": False})\
-                        .limit(max_messages * 2)\
+                        .order("expires_at", desc=True)\
+                        .limit(50)\
                         .execute()
                     
-                    if not result.data:
-                        return memories
-                    
-                    # Group messages from same conversation
-                    db_messages = []
-                    messages_by_time = {}
-                    
-                    # Sort messages by timestamp
-                    for msg in result.data:
-                        sent_at = msg.get("sent_at", "")
-                        if sent_at:
-                            messages_by_time[sent_at] = msg
-                    
-                    # Sort timestamps
-                    sorted_times = sorted(messages_by_time.keys(), reverse=True)
-                    
-                    # Reconstruct conversation pairs
-                    i = 0
-                    while i < len(sorted_times) - 1:
-                        user_msg = None
-                        bot_msg = None
+                    if result.data:
+                        memories = []
                         
-                        # Find a user+bot message pair
-                        for j in range(i, min(i+2, len(sorted_times))):
-                            msg = messages_by_time[sorted_times[j]]
-                            if msg.get("sender") == "user":
-                                user_msg = msg
-                            elif msg.get("sender") == "assistant":
-                                bot_msg = msg
+                        # Process each memory, filtering by session_id in metadata
+                        for memory in result.data:
+                            try:
+                                # Get context data
+                                context = memory.get("context", {})
+                                # Check if this memory belongs to our session
+                                metadata = context.get("metadata", {})
+                                if metadata and metadata.get("session_id") == session_id:
+                                    # Get conversation data
+                                    conversation = context.get("conversation", {})
+                                    if conversation:
+                                        # Add metadata
+                                        conversation["memory_id"] = memory.get("id")
+                                        conversation["created_at"] = context.get("created_at")
+                                        conversation["expires_at"] = memory.get("expires_at")
+                                        
+                                        memories.append(conversation)
+                            except Exception as e:
+                                logger.warning(f"Failed to parse memory content: {e}")
                         
-                        # If we found a pair, add to results
-                        if user_msg and bot_msg:
-                            db_messages.append({
-                                "user_message": user_msg.get("message_content", ""),
-                                "bot_response": bot_msg.get("message_content", ""),
-                                "timestamp": user_msg.get("sent_at", ""),
-                                "conversation_id": conversation_id,
-                                "source": "database"
-                            })
+                        # Sort by timestamp if available
+                        memories.sort(
+                            key=lambda m: m.get("timestamp", ""),
+                            reverse=True  # Most recent first
+                        )
                         
-                        i += 2
-                    
-                    # Combine memories and database messages, removing duplicates
-                    seen_responses = set(m.get("bot_response", "")[:100] for m in memories)
-                    
-                    for msg in db_messages:
-                        # Check if this message is already in memories (avoid duplicates)
-                        if msg.get("bot_response", "")[:100] not in seen_responses:
-                            memories.append(msg)
-                            seen_responses.add(msg.get("bot_response", "")[:100])
-                    
-                    # Sort again by timestamp
-                    memories.sort(key=lambda m: m.get("timestamp", ""), reverse=True)
-                    
-                    # Limit results
-                    return memories[:max_messages]
-                    
+                        logger.info(f"Retrieved {len(memories)} memories from Supabase")
+                        return memories[:max_messages]
+                
                 except Exception as e:
-                    logger.warning(f"Error retrieving conversation history from database: {e}")
-                    # Return just the memories we have
-                    return memories
+                    logger.error(f"Error retrieving memory from Supabase: {e}")
             
-            # If we don't have a conversation_id, just return memories
-            return memories
+            # Fallback to using the older database approach if needed
+            return await self._get_conversation_history_from_database(chat_id, user_id, max_messages)
+            
+        except Exception as e:
+            logger.error(f"Error in conversation history retrieval: {e}")
+            return []
+    
+    async def _get_conversation_history_from_database(self, chat_id: int, user_id: int, max_messages: int = 10) -> List[Dict[str, Any]]:
+        """Fallback method to get conversation history from database."""
+        try:
+            # Try to find patient ID in database
+            if self.supabase:
+                try:
+                    # Look for patient ID
+                    platform_query = f'%"platform_id": "{user_id}"%'
+                    result = self.supabase.table("patients").select("id").like("email", platform_query).execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        patient_id = result.data[0]["id"]
+                        
+                        # Query conversation details using patient_id
+                        result = self.supabase.table("conversations")\
+                            .select("id")\
+                            .eq("patient_id", patient_id)\
+                            .order("start_time", desc=True)\
+                            .limit(1)\
+                            .execute()
+                        
+                        if result.data and len(result.data) > 0:
+                            conversation_id = result.data[0]["id"]
+                            
+                            # Get messages from this conversation
+                            details = self.supabase.table("conversation_details")\
+                                .select("*")\
+                                .eq("conversation_id", conversation_id)\
+                                .order("sent_at", desc=True)\
+                                .limit(max_messages * 2)\
+                                .execute()
+                            
+                            if details.data:
+                                # Process messages
+                                messages = []
+                                
+                                # Group by user/assistant pairs
+                                for i in range(0, len(details.data), 2):
+                                    if i+1 < len(details.data):
+                                        user_msg = None
+                                        bot_msg = None
+                                        
+                                        for msg in details.data[i:i+2]:
+                                            if msg.get("sender") == "user":
+                                                user_msg = msg
+                                            elif msg.get("sender") == "assistant":
+                                                bot_msg = msg
+                                        
+                                        if user_msg and bot_msg:
+                                            messages.append({
+                                                "user_message": user_msg.get("message_content", ""),
+                                                "bot_response": bot_msg.get("message_content", ""),
+                                                "timestamp": user_msg.get("sent_at", ""),
+                                                "conversation_id": conversation_id
+                                            })
+                                
+                                return messages[:max_messages]
+                except Exception as e:
+                    logger.error(f"Error getting conversation from database: {e}")
+            
+            # If all else fails, return empty
+            return []
         
         except Exception as e:
-            logger.error(f"Error retrieving conversation history: {e}")
+            logger.error(f"Error in fallback conversation history: {e}")
             return []
 
 async def run_telegram_bot():

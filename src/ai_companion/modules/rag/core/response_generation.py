@@ -31,14 +31,20 @@ class LithuanianResponseGenerator:
         query: str,
         documents: List[Document],
         context: str = "",
+        organized_docs: Optional[Dict[str, List[Document]]] = None,
+        citations: Optional[List[Dict[str, Any]]] = None,
+        detailed: bool = False,
         **kwargs
     ) -> str:
-        """Generate a response considering conversation history and context.
+        """Generate a detailed response considering conversation history and context.
         
         Args:
             query: The user's query
             documents: Retrieved relevant documents
             context: Combined conversation history and memory context
+            organized_docs: Documents organized by source/category
+            citations: Citation information for sources
+            detailed: Whether to generate a more detailed response
             **kwargs: Additional parameters
             
         Returns:
@@ -56,16 +62,52 @@ class LithuanianResponseGenerator:
 
             # Format documents
             doc_texts = []
-            for doc in documents:
-                text = doc.page_content if hasattr(doc, 'page_content') else doc.text
-                metadata = doc.metadata or {}
-                source = metadata.get('source', 'Unknown')
-                doc_texts.append(f"Source ({source}): {text}")
+            organized_text = ""
             
-            documents_text = "\n\n".join(doc_texts)
+            # If documents are organized, format them by source
+            if organized_docs:
+                for source, docs in organized_docs.items():
+                    source_texts = []
+                    for doc in docs:
+                        text = doc.page_content if hasattr(doc, 'page_content') else doc.text
+                        metadata = doc.metadata or {}
+                        doc_id = metadata.get('id', 'unknown')
+                        source_texts.append(f"Document ID {doc_id}: {text}")
+                    
+                    if source_texts:
+                        organized_text += f"\nSource: {source}\n" + "\n".join(source_texts) + "\n"
+            
+            # If not using organized docs, just format all documents linearly
+            if not organized_text:
+                for i, doc in enumerate(documents):
+                    text = doc.page_content if hasattr(doc, 'page_content') else doc.text
+                    metadata = doc.metadata or {}
+                    source = metadata.get('source', 'Unknown')
+                    doc_texts.append(f"Document {i+1} (Source: {source}): {text}")
+                
+                organized_text = "\n\n".join(doc_texts)
 
-            # Create prompt with enhanced context
-            prompt = f"""As a Lithuanian-speaking AI assistant, generate a response to the user's query.
+            # Format citations for reference
+            citations_text = ""
+            if citations:
+                citations_text = "Citations:\n"
+                for cite in citations:
+                    citations_text += f"[{cite['id']}] {cite['title']} - {cite['source']} {cite['url']}\n"
+
+            # Create detail level instruction
+            detail_instruction = ""
+            if detailed:
+                detail_instruction = """
+                This query requires a very detailed and comprehensive response:
+                - Provide detailed explanations of key concepts
+                - Include specific facts, figures, and examples from the sources
+                - Structure your response with clear sections where appropriate
+                - Reference specific sources using citation numbers
+                - Ensure the response is thorough and complete
+                """
+
+            # Create prompt with enhanced context and detail level
+            prompt = f"""As a Lithuanian-speaking AI assistant, generate a {'comprehensive and detailed' if detailed else 'clear and informative'} response to the user's query.
             Consider the conversation history and memory context to maintain continuity.
 
             Chat History:
@@ -75,17 +117,28 @@ class LithuanianResponseGenerator:
             {memory_info}
 
             Retrieved Information:
-            {documents_text}
+            {organized_text}
+
+            {citations_text}
 
             User Query: {query}
 
+            {detail_instruction}
+
             Instructions:
-            1. Use the retrieved information to answer the query
-            2. Maintain conversation context from chat history
-            3. Consider memory context for personalization
-            4. Respond in Lithuanian language
-            5. Be concise but informative
-            6. If information is unclear or missing, acknowledge it
+            1. Provide a thorough and detailed response using the retrieved information
+            2. Include relevant facts, figures, and examples to support your answer
+            3. Structure your response with clear sections when appropriate
+            4. Explain complex concepts in an accessible way
+            5. Cite specific sources when referencing information using citation numbers [#]
+            6. Maintain conversation context from chat history
+            7. Consider memory context for personalization
+            8. Respond in Lithuanian language with proper grammar and style
+            9. If information is incomplete, acknowledge limitations while providing the best available answer
+            10. When applicable, offer additional context or related information that may be helpful
+
+            Your response should be comprehensive yet well-organized. Aim to fully address the query with 
+            sufficient detail while maintaining clarity. Include specific information rather than general statements.
 
             Response:"""
 

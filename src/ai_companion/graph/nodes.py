@@ -171,12 +171,35 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
         rag_context = rag_response.get("context", "")
         memory_context = state.get("memory_context", "")
         
+        # Check for conversation history in metadata for Telegram
+        last_message = state["messages"][-1] if state["messages"] else None
+        telegram_history = []
+        
+        if last_message and hasattr(last_message, "metadata"):
+            metadata = last_message.metadata or {}
+            # Check if we have conversation history in metadata (used by Telegram)
+            if "conversation_history" in metadata and isinstance(metadata["conversation_history"], list):
+                telegram_history = metadata["conversation_history"]
+                logger.info(f"Found {len(telegram_history)} conversation history entries in metadata")
+        
         # Format contexts
         formatted_context = []
         if rag_context and rag_response.get("response") != "no info":
             formatted_context.append(f"Relevant Knowledge:\n{rag_context}")
         if memory_context:
             formatted_context.append(f"Previous Context:\n{memory_context}")
+        
+        # Add Telegram conversation history to context if available
+        if telegram_history:
+            telegram_context = "Previous Conversation:\n"
+            for entry in telegram_history[:10]:  # Limit to 10 entries
+                if isinstance(entry, dict):
+                    role = entry.get("role", "")
+                    content = entry.get("content", "")
+                    if role and content:
+                        telegram_context += f"{role.capitalize()}: {content}\n"
+            
+            formatted_context.append(telegram_context)
         
         combined_context = "\n\n".join(formatted_context)
         logger.debug(f"Combined context for conversation: {combined_context}")
@@ -193,6 +216,45 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
         )
         
         response_content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Check for repetitiveness in the conversation
+        if telegram_history and len(telegram_history) >= 4:
+            # Get the last two bot responses
+            bot_responses = []
+            for entry in telegram_history:
+                if isinstance(entry, dict) and entry.get("role") == "ai":
+                    bot_responses.append(entry.get("content", ""))
+            
+            if len(bot_responses) >= 2:
+                # Check similarity between last responses
+                last_response = bot_responses[-1]
+                previous_response = bot_responses[-2]
+                
+                # Simple string similarity check (for demo purposes)
+                if last_response and previous_response and last_response[:50] == previous_response[:50]:
+                    logger.warning("Detected repetitive responses, adding diversity instruction")
+                    
+                    # Add instruction to avoid repetition
+                    diversity_prompt = f"""
+                    I notice my responses are becoming repetitive. The user's current question is: "{current_input}"
+                    
+                    My previous response was: "{last_response}"
+                    
+                    Please provide a new, diverse response that avoids repeating the same greeting or structure 
+                    while still maintaining a helpful and friendly tone. Focus on answering the user's actual 
+                    question or moving the conversation forward.
+                    """
+                    
+                    # Get a more diverse response
+                    try:
+                        model = get_chat_model()
+                        diverse_response = await model.ainvoke([HumanMessage(content=diversity_prompt)])
+                        response_content = diverse_response.content if hasattr(diverse_response, 'content') else str(diverse_response)
+                        logger.info("Generated more diverse response to avoid repetition")
+                    except Exception as e:
+                        logger.error(f"Error generating diverse response: {e}")
+                        # Keep the original response if the diversity attempt fails
+        
         logger.info(f"Conversation response: {response_content}")
         
         # Store the response in memory
@@ -243,11 +305,21 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
         
         # Query the RAG chain with enhanced features
         try:
+            # Extract options from message metadata if available
+            message_metadata = {}
+            if hasattr(state["messages"][-1], 'metadata') and state["messages"][-1].metadata:
+                message_metadata = state["messages"][-1].metadata
+            
+            detailed_response = message_metadata.get('detailed_response', True)  # Default to True for detailed responses
+            with_citations = message_metadata.get('with_citations', True)  # Default to including citations
+            
             response, relevant_docs = await rag_chain.query(
                 query=last_message,
                 memory_context=combined_context,  # Pass combined context
                 max_retries=3,
-                min_confidence=0.5  # Lower similarity threshold from 0.7 to 0.5
+                min_confidence=0.5,  # Lower similarity threshold from 0.7 to 0.5
+                detailed=detailed_response,  # Request detailed response
+                with_citations=with_citations  # Include citations in the response
             )
             
             # Format sources with proper error handling
