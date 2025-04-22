@@ -47,7 +47,7 @@ const getRiskColor = (risk: string) => {
     case 'low':
       return 'success';
     default:
-      return 'default';
+      return 'info';
   }
 };
 

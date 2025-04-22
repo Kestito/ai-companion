@@ -50,4 +50,23 @@ Please follow these steps when contributing to the web-ui:
 2. Follow the code standards and patterns established
 3. Write tests for new features
 4. Update documentation when making significant changes
-5. Submit a pull request for review 
+5. Submit a pull request for review
+
+## Recent Updates
+
+### 2025-04-22
+
+- **Fixed Build Issues**: Resolved TypeScript type errors and missing module references
+  - Added Supabase database type definitions in `src/types/database.types.ts`
+  - Fixed Material UI color type errors in risk assessment components
+  - Added proper TypeScript typing to state variables and function parameters
+  - Implemented fallback mechanism for OpenAI API key
+
+### Using the Project Documentation
+
+This documentation is intended to serve as a comprehensive guide to the AI Companion application. Each file provides specific information about different aspects of the project:
+
+- **overview.md**: High-level overview of the project, its vision, and objectives
+- **tech-specs.md**: Technical details including tech stack, database schema, and coding standards
+- **known-issues.md**: Documentation of known issues and their solutions
+- **folder-structure.md**: Overview of the project's file and folder organization 

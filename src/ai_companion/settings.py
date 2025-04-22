@@ -14,12 +14,16 @@ class Settings:
     
     def __init__(self):
         """Initialize settings with defaults and environment variables."""
-        # Supabase settings
-        self.supabase_url = os.environ.get("SUPABASE_URL", "http://localhost:8000")
-        self.supabase_key = os.environ.get("SUPABASE_KEY", "")
+        # Supabase settings - hardcoded values
+        self.supabase_url = "https://aubulhjfeszmsheonmpy.supabase.co"
+        self.supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc"
         # Also add uppercase versions for compatibility
         self.SUPABASE_URL = self.supabase_url
         self.SUPABASE_KEY = self.supabase_key
+        
+        # Add Next.js specific environment variable names for frontend compatibility
+        self.NEXT_PUBLIC_SUPABASE_URL = self.supabase_url
+        self.NEXT_PUBLIC_SUPABASE_ANON_KEY = self.supabase_key
         
         # Logging
         self.debug = os.environ.get("DEBUG", "false").lower() in ("true", "1", "yes")

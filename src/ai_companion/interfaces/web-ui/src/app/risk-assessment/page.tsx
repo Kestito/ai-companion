@@ -37,7 +37,7 @@ const getRiskColor = (risk: string) => {
     case 'low':
       return 'success';
     default:
-      return 'default';
+      return 'info';
   }
 };
 
@@ -55,7 +55,22 @@ export default function RiskAssessmentPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
   
-  const [assessments, setAssessments] = useState([]);
+  // Define the type for assessment objects
+  type Assessment = {
+    id: string;
+    assessment_date: string;
+    risk_level: string;
+    follow_up_date: string;
+    status: string;
+    patients: {
+      id: string;
+      first_name: string;
+      last_name: string;
+    };
+    [key: string]: any; // For any additional properties
+  };
+  
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   

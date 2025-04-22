@@ -4,6 +4,10 @@ import { Database } from '@/lib/supabase/types'
 import { Socket, Server } from 'net'
 import http from 'http'
 
+// Hardcoded Supabase credentials
+const SUPABASE_URL = "https://aubulhjfeszmsheonmpy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc";
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -21,8 +25,8 @@ export async function middleware(request: NextRequest) {
   }
 
   const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
     {
       cookies: {
         get(name: string) {

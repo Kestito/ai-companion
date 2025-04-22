@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Hardcoded Supabase credentials
+const supabaseUrl = 'https://aubulhjfeszmsheonmpy.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc';
 
 /**
  * Hook to access the Supabase client
@@ -15,10 +16,10 @@ export const useSupabase = () => {
     // Log issues with Supabase configuration in development
     if (process.env.NODE_ENV === 'development') {
       if (!supabaseUrl) {
-        console.warn('Supabase URL is not configured. Set NEXT_PUBLIC_SUPABASE_URL in .env.local');
+        console.warn('Supabase URL is not configured.');
       }
       if (!supabaseAnonKey) {
-        console.warn('Supabase anonymous key is not configured. Set NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+        console.warn('Supabase anonymous key is not configured.');
       }
     }
   }, []);

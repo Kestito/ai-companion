@@ -45,7 +45,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 
-import { ScheduledMessage, getScheduledMessages, createScheduledMessage, updateScheduledMessage, cancelScheduledMessage, sendScheduledMessageNow } from '@/services/telegramSchedulerService';
+import { ScheduledMessage, getScheduledMessages, createScheduledMessage, updateScheduledMessage, cancelScheduledMessage, sendScheduledMessageNow } from '@/lib/services/telegramSchedulerService';
 import { format, parseISO } from 'date-fns';
 import { 
   CalendarToday, 
@@ -392,7 +392,11 @@ function ScheduledMessagesContent() {
       loadSchedules();
     } catch (err) {
       console.error('Failed to send message:', err);
-      enqueueSnackbar('Failed to send message', { variant: 'error' });
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'Unknown error occurred when sending message';
+      enqueueSnackbar(`Failed to send message: ${errorMessage}`, { variant: 'error' });
+      setError(`Failed to send message: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }

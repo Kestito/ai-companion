@@ -10,6 +10,7 @@ import {
   InputLabel, 
   MenuItem, 
   Select,
+  SelectChangeEvent,
   TextField,
   CircularProgress,
   Alert,
@@ -39,15 +40,21 @@ export default function CreateRiskAssessmentPage() {
   const supabase = createClientComponentClient();
   
   // State
-  const [patients, setPatients] = useState([]);
-  const [conversations, setConversations] = useState([]);
+  const [patients, setPatients] = useState<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string | null;
+    phone: string | null;
+  }[]>([]);
+  const [conversations, setConversations] = useState<any[]>([]);
   const [selectedPatient, setSelectedPatient] = useState('');
-  const [selectedConversations, setSelectedConversations] = useState([]);
+  const [selectedConversations, setSelectedConversations] = useState<string[]>([]);
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [patientLoading, setPatientLoading] = useState(true);
   const [error, setError] = useState('');
-  const [assessmentResult, setAssessmentResult] = useState(null);
+  const [assessmentResult, setAssessmentResult] = useState<any>(null);
   
   // Steps in the process
   const steps = [
@@ -110,13 +117,13 @@ export default function CreateRiskAssessmentPage() {
   }, [selectedPatient]);
   
   // Handle patient selection
-  const handlePatientChange = (event) => {
+  const handlePatientChange = (event: SelectChangeEvent) => {
     setSelectedPatient(event.target.value);
     setSelectedConversations([]);
   };
   
   // Handle conversation selection
-  const handleConversationToggle = (conversationId) => {
+  const handleConversationToggle = (conversationId: string) => {
     setSelectedConversations(prev => {
       if (prev.includes(conversationId)) {
         return prev.filter(id => id !== conversationId);
@@ -127,7 +134,7 @@ export default function CreateRiskAssessmentPage() {
   };
   
   // Format date for display
-  const formatDate = (dateString) => {
+  const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -175,14 +182,18 @@ export default function CreateRiskAssessmentPage() {
       handleNext();
     } catch (err) {
       console.error('Error generating assessment:', err);
-      setError(err.message || 'Failed to generate assessment. Please try again.');
+      setError(
+        err instanceof Error 
+          ? err.message 
+          : 'Failed to generate assessment. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
   
   // Get color based on risk level
-  const getRiskColor = (risk) => {
+  const getRiskColor = (risk: string | undefined) => {
     switch (risk?.toLowerCase()) {
       case 'high':
         return 'error';
@@ -191,7 +202,7 @@ export default function CreateRiskAssessmentPage() {
       case 'low':
         return 'success';
       default:
-        return 'default';
+        return 'info';
     }
   };
   
@@ -208,7 +219,7 @@ export default function CreateRiskAssessmentPage() {
   };
   
   // Render step content
-  const getStepContent = (step) => {
+  const getStepContent = (step: number) => {
     switch (step) {
       case 0:
         return (
@@ -405,7 +416,7 @@ export default function CreateRiskAssessmentPage() {
                 </Typography>
                 
                 <List dense>
-                  {assessmentResult?.risk_factors?.map((factor, index) => (
+                  {assessmentResult?.risk_factors?.map((factor: string, index: number) => (
                     <ListItem key={index}>
                       <ListItemText primary={factor} />
                     </ListItem>

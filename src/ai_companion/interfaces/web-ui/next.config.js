@@ -33,6 +33,8 @@ const nextConfig = {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
     // Include the specific Azure Container App URL
     const azureContainerAppUrl = 'https://backend-app.redstone-957fece8.eastus.azurecontainerapps.io';
+    // Hardcoded Supabase URL
+    const supabaseUrl = 'https://aubulhjfeszmsheonmpy.supabase.co';
     
     return [
       {
@@ -41,11 +43,11 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: `
-              default-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL};
+              default-src 'self' ${supabaseUrl};
               script-src 'self' 'unsafe-inline' 'unsafe-eval';
               style-src 'self' 'unsafe-inline';
               img-src 'self' data:;
-              connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL} ${apiUrl} ${azureContainerAppUrl} https://*.azure.com https://*.azurecontainerapps.io https://*.azure.io;
+              connect-src 'self' ${supabaseUrl} ${apiUrl} ${azureContainerAppUrl} https://*.azure.com https://*.azurecontainerapps.io https://*.azure.io;
               frame-src 'self';
               form-action 'self';
             `.replace(/\n/g, ' ')

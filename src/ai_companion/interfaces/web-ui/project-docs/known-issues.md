@@ -58,7 +58,47 @@ Type error: Module './client' has already exported a member named 'ApiError'. Co
 
 (No issues documented yet)
 
----
+## Build Issues
+
+### Missing Type Definitions (FIXED)
+
+**Issue:**  
+When building the Docker image, the build would fail due to missing type definitions for Supabase database.
+
+**Error:**  
+```
+Failed to compile.
+Type error: Cannot find module '@/types/database.types' or its corresponding type declarations.
+
+  2 | import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+  3 | import { cookies } from 'next/headers';
+> 4 | import { Database } from '@/types/database.types';
+```
+
+**Resolution:**  
+Created the file `src/types/database.types.ts` with the appropriate TypeScript interfaces for the database schema.
+
+**Prevention:**  
+When adding new database tables or modifying existing ones, make sure to update the type definitions in `database.types.ts` to match the schema.
+
+### OpenAI API Key Missing (FIXED)
+
+**Issue:**  
+Build failed during page data collection due to missing OpenAI API key.
+
+**Error:**  
+```
+[Error]: The OPENAI_API_KEY environment variable is missing or empty; either provide it, or instantiate the OpenAI client with an apiKey option, like new OpenAI({ apiKey: 'My API Key' }).
+```
+
+**Resolution:**  
+Added a fallback mechanism in the risk assessment generator to use either:
+1. The `OPENAI_API_KEY` environment variable
+2. The `NEXT_PUBLIC_AZURE_OPENAI_API_KEY` environment variable
+3. A mock response if no API keys are available
+
+**Prevention:**  
+Always use conditional initialization for external services like OpenAI, with proper error handling and fallbacks for development environments.
 
 ## How to Add New Issues
 

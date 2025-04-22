@@ -34,8 +34,20 @@ export async function getScheduledMessages(patientId?: string): Promise<Schedule
       : '/api/telegram-scheduler';
     
     const data = await fetcher(url);
+    console.log('Raw response data:', data);
     console.log('Received scheduled messages:', data.messages?.length || 0);
-    return data.messages || [];
+    
+    // Check both messages and schedules properties
+    if (data.messages) {
+      console.log('Using data.messages');
+      return data.messages;
+    } else if (data.schedules) {
+      console.log('Using data.schedules');
+      return data.schedules;
+    } else {
+      console.log('No messages or schedules found in response');
+      return [];
+    }
   } catch (error) {
     console.error('Error fetching scheduled messages:', error);
     throw new Error('Failed to fetch scheduled messages');
@@ -54,8 +66,19 @@ export async function createScheduledMessage(schedule: ScheduleInput): Promise<S
       body: JSON.stringify(schedule),
     });
     
-    console.log('Created schedule:', data.schedule);
-    return data.schedule;
+    console.log('Response from create schedule:', data);
+    
+    // Check for both messageData (new format) and schedule (old format)
+    if (data.messageData) {
+      console.log('Using data.messageData');
+      return data.messageData;
+    } else if (data.schedule) {
+      console.log('Using data.schedule');
+      return data.schedule;
+    } else {
+      console.error('No message data found in response');
+      throw new Error('No message data found in response');
+    }
   } catch (error) {
     console.error('Error creating scheduled message:', error);
     throw new Error('Failed to create scheduled message');
@@ -91,8 +114,19 @@ export async function updateScheduledMessage(
       body: JSON.stringify({ id, ...updates }),
     });
     
-    console.log('Updated schedule:', data.schedule);
-    return data.schedule;
+    console.log('Response from update schedule:', data);
+    
+    // Check for both messageData (new format) and schedule (old format)
+    if (data.messageData) {
+      console.log('Using data.messageData');
+      return data.messageData;
+    } else if (data.schedule) {
+      console.log('Using data.schedule');
+      return data.schedule;
+    } else {
+      console.error('No message data found in response');
+      throw new Error('No message data found in response');
+    }
   } catch (error) {
     console.error('Error updating scheduled message:', error);
     throw new Error('Failed to update scheduled message');
@@ -103,13 +137,20 @@ export async function updateScheduledMessage(
 export async function sendScheduledMessageNow(id: string): Promise<void> {
   try {
     console.log('Sending scheduled message immediately:', id);
-    await fetcher(`/api/telegram-scheduler/send-now`, {
+    const data = await fetcher(`/api/telegram-scheduler/send-now`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ id }),
     });
+    
+    console.log('Send immediate response:', data);
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to send message immediately');
+    }
+    
     console.log('Successfully sent message');
   } catch (error) {
     console.error('Error sending scheduled message:', error);

@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
     console.log('First processed scheduled message:', processedData[0]);
     
     return NextResponse.json({ 
-      schedules: processedData 
+      messages: processedData 
     });
     
   } catch (error) {
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
     // Added 'platform' field which is required by the database schema (NOT NULL constraint)
     const minimalSchedule = {
       patient_id: patientId,
-      message_content: enhancedMessageContent,
+      message_content: messageContent,
       scheduled_time: scheduledTime,
       platform: 'telegram', // Add platform field to fix the NOT NULL constraint error
       status: 'pending'
@@ -283,8 +283,8 @@ export async function POST(request: NextRequest) {
         
         console.log('SQL insert succeeded:', sqlData);
         return NextResponse.json({ 
-          message: 'Schedule created successfully (via SQL)', 
-          schedule: sqlData?.[0] || minimalSchedule
+          messageText: 'Schedule created successfully (via SQL)', 
+          messageData: sqlData?.[0] || minimalSchedule
         }, { status: 201 });
         
       } catch (sqlErr) {
@@ -302,8 +302,8 @@ export async function POST(request: NextRequest) {
         }
         
         return NextResponse.json({ 
-          message: 'Schedule created successfully (mock)', 
-          schedule: mockResponse 
+          messageText: 'Schedule created successfully (mock)', 
+          messageData: mockResponse 
         }, { status: 201 });
       }
     }
@@ -317,8 +317,8 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json({ 
-      message: 'Schedule created successfully', 
-      schedule: responseData 
+      messageText: 'Schedule created successfully', 
+      messageData: responseData 
     }, { status: 201 });
     
   } catch (error) {
@@ -423,8 +423,8 @@ export async function PATCH(request: NextRequest) {
     }
     
     return NextResponse.json({ 
-      message: 'Schedule updated successfully', 
-      schedule: responseData 
+      messageText: 'Schedule updated successfully', 
+      messageData: responseData 
     });
   } catch (error) {
     console.error('Error in PATCH handler:', error);

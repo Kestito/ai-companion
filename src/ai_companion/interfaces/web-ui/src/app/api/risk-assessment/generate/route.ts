@@ -4,10 +4,31 @@ import { cookies } from 'next/headers';
 import { Database } from '@/types/database.types';
 import OpenAI from 'openai';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Initialize OpenAI client with proper error handling for missing API key
+const getOpenAIClient = () => {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_AZURE_OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    console.warn('OpenAI API key is missing. Using mock response for development.');
+    // Return null to indicate we should use a mock response
+    return null;
+  }
+  
+  return new OpenAI({
+    apiKey
+  });
+};
+
+// Mock response for development without API key
+const getMockAssessmentResponse = () => {
+  return {
+    riskLevel: "medium",
+    riskFactors: ["Inconsistent medication adherence", "Reported dizziness", "Limited mobility"],
+    assessmentDetails: { "key observations": "Patient has expressed difficulty in medication adherence and reports dizziness after taking medication." },
+    actionItems: [{"title": "Medication review", "description": "Schedule appointment with physician to review current medications and side effects."}],
+    recommendedFollowUp: "2025-05-01T00:00:00Z"
+  };
+};
 
 // POST handler to generate a risk assessment from conversations
 export async function POST(request: Request) {
@@ -71,40 +92,55 @@ export async function POST(request: Request) {
       return `${sender}: ${msg.content}`;
     }).join('\n');
     
-    // Generate risk assessment using AI
-    const prompt = `
-      Analyze the following conversation with a patient and assess their risk level.
+    // Check for OpenAI client
+    const openai = getOpenAIClient();
+    let assessmentResult;
+    
+    if (openai) {
+      // Generate risk assessment using AI
+      const prompt = `
+        Analyze the following conversation with a patient and assess their risk level.
+        
+        Patient Information:
+        - Name: ${patientData.first_name} ${patientData.last_name}
+        - Current risk status: ${patientData.risk || 'Unknown'}
+        
+        Conversation:
+        ${conversationText}
+        
+        Please provide a risk assessment with the following information:
+        1. Overall risk level (low, medium, high)
+        2. Key risk factors identified in the conversation
+        3. Recommended actions
+        4. Follow-up timeline
+        
+        Format your response as JSON with the following structure:
+        {
+          "riskLevel": "low|medium|high",
+          "riskFactors": ["factor1", "factor2", ...],
+          "assessmentDetails": { "key observations": "..." },
+          "actionItems": [{"title": "action1", "description": "..."}],
+          "recommendedFollowUp": "2023-12-01T00:00:00Z"
+        }
+      `;
       
-      Patient Information:
-      - Name: ${patientData.first_name} ${patientData.last_name}
-      - Current risk status: ${patientData.risk || 'Unknown'}
+      const completion = await openai.chat.completions.create({
+        messages: [{ role: 'system', content: prompt }],
+        model: process.env.CHAT_MODEL || 'gpt-4o',
+        response_format: { type: 'json_object' }
+      });
       
-      Conversation:
-      ${conversationText}
-      
-      Please provide a risk assessment with the following information:
-      1. Overall risk level (low, medium, high)
-      2. Key risk factors identified in the conversation
-      3. Recommended actions
-      4. Follow-up timeline
-      
-      Format your response as JSON with the following structure:
-      {
-        "riskLevel": "low|medium|high",
-        "riskFactors": ["factor1", "factor2", ...],
-        "assessmentDetails": { "key observations": "..." },
-        "actionItems": [{"title": "action1", "description": "..."}],
-        "recommendedFollowUp": "2023-12-01T00:00:00Z"
+      // Add null check for the content
+      const content = completion.choices[0].message.content;
+      if (!content) {
+        return NextResponse.json({ error: 'AI did not generate a valid response' }, { status: 500 });
       }
-    `;
-    
-    const completion = await openai.chat.completions.create({
-      messages: [{ role: 'system', content: prompt }],
-      model: process.env.CHAT_MODEL || 'gpt-4o',
-      response_format: { type: 'json_object' }
-    });
-    
-    const assessmentResult = JSON.parse(completion.choices[0].message.content);
+      
+      assessmentResult = JSON.parse(content);
+    } else {
+      // Use mock response for development
+      assessmentResult = getMockAssessmentResponse();
+    }
     
     // Store the risk assessment in the database
     const { data: riskReport, error: insertError } = await supabase
