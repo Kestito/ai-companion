@@ -103,7 +103,7 @@ async def main():
                         time_status = f"OVERDUE by {abs(time_diff)}"
                     else:
                         time_status = f"Due in {time_diff}"
-                except:
+                except Exception:
                     time_status = "Unknown"
 
                 # Get chat ID (handle missing metadata safely)

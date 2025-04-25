@@ -83,8 +83,6 @@ class SchedulerWorker:
         """Process a single scheduled message."""
         message_id = message.get("id")
         platform = message.get("platform")
-        message_content = message.get("message_content")
-        metadata = message.get("metadata", {})
 
         logger.info(
             f"Processing scheduled message {message_id} for platform {platform}"
@@ -197,7 +195,6 @@ class SchedulerWorker:
             base_time = datetime.fromisoformat(
                 message["scheduled_time"].replace("Z", "+00:00")
             )
-            now = datetime.utcnow()
 
             if recurrence_type == "daily":
                 # Daily recurrence - just add one day

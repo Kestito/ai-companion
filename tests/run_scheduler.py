@@ -30,8 +30,6 @@ async def main(duration=300):
         # Patch the runtime_seconds value
         from types import MethodType
 
-        original_test_run_scheduler = runner.test_run_scheduler
-
         async def patched_test_run_scheduler(self):
             # Import here to avoid circular imports
             from datetime import datetime, timedelta

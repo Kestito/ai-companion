@@ -63,12 +63,9 @@ def fix_scheduled_messages(fix_types: List[str] = None) -> Dict[str, Any]:
                 message_ids = [msg["id"] for msg in past_due_messages]
                 # Update messages to reset due_time to now + 5 minutes
                 new_due_time = (now + timedelta(minutes=5)).isoformat()
-                update_result = (
-                    supabase.table("scheduled_messages")
-                    .update({"due_time": new_due_time})
-                    .in_("id", message_ids)
-                    .execute()
-                )
+                supabase.table("scheduled_messages").update(
+                    {"due_time": new_due_time}
+                ).in_("id", message_ids).execute()
 
                 fixes_applied += len(past_due_messages)
                 fixes_by_type["past_due"] = len(past_due_messages)
@@ -89,12 +86,9 @@ def fix_scheduled_messages(fix_types: List[str] = None) -> Dict[str, Any]:
                 message_ids = [msg["id"] for msg in missing_metadata]
                 # Add empty metadata object
                 default_metadata = {"fixed_at": now.isoformat()}
-                update_result = (
-                    supabase.table("scheduled_messages")
-                    .update({"metadata": default_metadata})
-                    .in_("id", message_ids)
-                    .execute()
-                )
+                supabase.table("scheduled_messages").update(
+                    {"metadata": default_metadata}
+                ).in_("id", message_ids).execute()
 
                 fixes_applied += len(missing_metadata)
                 fixes_by_type["missing_metadata"] = len(missing_metadata)
@@ -117,18 +111,13 @@ def fix_scheduled_messages(fix_types: List[str] = None) -> Dict[str, Any]:
                 message_ids = [msg["id"] for msg in stuck_processing]
                 # Reset to pending and set due_time to now + 10 minutes
                 new_due_time = (now + timedelta(minutes=10)).isoformat()
-                update_result = (
-                    supabase.table("scheduled_messages")
-                    .update(
-                        {
-                            "status": "pending",
-                            "due_time": new_due_time,
-                            "updated_at": now.isoformat(),
-                        }
-                    )
-                    .in_("id", message_ids)
-                    .execute()
-                )
+                supabase.table("scheduled_messages").update(
+                    {
+                        "status": "pending",
+                        "due_time": new_due_time,
+                        "updated_at": now.isoformat(),
+                    }
+                ).in_("id", message_ids).execute()
 
                 fixes_applied += len(stuck_processing)
                 fixes_by_type["stuck_processing"] = len(stuck_processing)
@@ -147,18 +136,13 @@ def fix_scheduled_messages(fix_types: List[str] = None) -> Dict[str, Any]:
                 message_ids = [msg["id"] for msg in failed_messages]
                 # Reset to pending and set due_time to now + 15 minutes
                 new_due_time = (now + timedelta(minutes=15)).isoformat()
-                update_result = (
-                    supabase.table("scheduled_messages")
-                    .update(
-                        {
-                            "status": "pending",
-                            "due_time": new_due_time,
-                            "updated_at": now.isoformat(),
-                        }
-                    )
-                    .in_("id", message_ids)
-                    .execute()
-                )
+                supabase.table("scheduled_messages").update(
+                    {
+                        "status": "pending",
+                        "due_time": new_due_time,
+                        "updated_at": now.isoformat(),
+                    }
+                ).in_("id", message_ids).execute()
 
                 fixes_applied += len(failed_messages)
                 fixes_by_type["failed"] = len(failed_messages)

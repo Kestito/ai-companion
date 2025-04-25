@@ -69,7 +69,7 @@ class ScheduledMessageService:
 
         # Insert into Supabase
         try:
-            result = self.supabase.table(self.table_name).insert(message_data).execute()
+            self.supabase.table(self.table_name).insert(message_data).execute()
             logger.info(f"Created scheduled message: {message_id}")
             return message_id
         except Exception as e:

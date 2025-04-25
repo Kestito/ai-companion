@@ -231,8 +231,7 @@ class TestSchedulerIntegration:
             # Manually initiate the scheduler cycle
             worker.running = True
 
-            # Get initial message count
-            initial_message_count = len(self.scheduled_messages)
+            # Get initial pending count
             initial_pending_count = sum(
                 1 for msg in self.scheduled_messages if msg["status"] == "pending"
             )

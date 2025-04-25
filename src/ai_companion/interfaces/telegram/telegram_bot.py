@@ -5,6 +5,7 @@ import signal
 from datetime import datetime, timedelta
 import os
 import random
+import aiohttp
 
 import httpx
 
@@ -68,12 +69,9 @@ class TelegramBot:
             logger.info("Successfully initialized ScheduledMessageService")
 
             # Test connection to scheduled_messages table
-            test_result = (
-                self.scheduled_message_service.supabase.table("scheduled_messages")
-                .select("id")
-                .limit(1)
-                .execute()
-            )
+            self.scheduled_message_service.supabase.table("scheduled_messages").select(
+                "id"
+            ).limit(1).execute()
             logger.info("Test connection to scheduled_messages table successful")
         except Exception as e:
             logger.error(
@@ -1176,37 +1174,33 @@ class TelegramBot:
                 logger.error(f"Failed to send error message: {e2}", exc_info=True)
 
     async def _extract_message_content(self, message: Dict) -> Optional[tuple]:
-        """Extract content from different types of messages."""
-        message_type = None
+        """Extract and process different types of content from a message."""
+        try:
+            content_type = None
+            content = None
 
-        if "text" in message:
-            return message["text"], None
+            if "text" in message:
+                content_type = "text"
+                content = message["text"]
+            elif "voice" in message:
+                content_type = "voice"
+                file_id = message["voice"]["file_id"]
+                voice_data = await self._download_file(file_id)
+                content = await speech_to_text.transcribe(voice_data)
+            elif "photo" in message:
+                content_type = "photo"
+                # Get the largest photo (last in the array)
+                file_id = message["photo"][-1]["file_id"]
+                photo_data = await self._download_file(file_id)
+                content = await image_to_text.process_image(photo_data)
 
-        elif "voice" in message:
-            file_id = message["voice"]["file_id"]
-            audio_data = await self._download_file(file_id)
-            transcript = await speech_to_text.transcribe(audio_data)
-            # Return both the transcript and mark this as a voice message
-            return transcript, "voice"
+            if content_type and content:
+                return content_type, content
 
-        elif "photo" in message:
-            # Get the largest photo (last in array)
-            photo = message["photo"][-1]
-            file_id = photo["file_id"]
-            image_data = await self._download_file(file_id)
-
-            caption = message.get("caption", "")
-            try:
-                description = await image_to_text.analyze_image(
-                    image_data,
-                    "Please describe what you see in this image in the context of our conversation.",
-                )
-                return f"{caption}\n[Image Analysis: {description}]", None
-            except Exception as e:
-                logger.warning(f"Failed to analyze image: {e}")
-                return caption or "Image received but could not be analyzed", None
-
-        return None, None
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting message content: {e}")
+            return None
 
     def _clean_response_text(self, text: str) -> str:
         """
@@ -1688,7 +1682,6 @@ class TelegramBot:
             The memory ID if successful, None otherwise
         """
         try:
-            user_id = user_metadata.get("user_id")
             platform = "telegram"
 
             # Store through memory service using standardized approach
@@ -1705,7 +1698,7 @@ class TelegramBot:
             # Store using memory service
             memory_id = await self.memory_service.store_session_memory(
                 platform=platform,
-                user_id=str(user_id),
+                user_id=str(user_metadata.get("user_id")),
                 state=state,
                 conversation=conversation_data,
                 ttl_minutes=1440,  # Standard 24-hour TTL
