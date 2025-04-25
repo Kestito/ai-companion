@@ -70,7 +70,10 @@ export default function ReportsPage() {
     status: 'all'
   });
   const logger = useLogger({ component: 'ReportsPage' });
-  const supabase = createClientComponentClient();
+  const supabase = createClientComponentClient({
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aubulhjfeszmsheonmpy.supabase.co',
+    supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc'
+  });
 
   useEffect(() => {
     fetchReports();
@@ -88,11 +91,10 @@ export default function ReportsPage() {
         .select('id')
         .limit(1);
 
-      // If there's an error accessing the reports table, use sample data
+      // If there's an error accessing the reports table, show error
       if (tableError) {
-        logger.warn('Reports table not accessible, using sample data');
-        const sampleReports = generateSampleReports();
-        setReports(sampleReports);
+        logger.warn('Reports table not accessible', tableError);
+        setError('Unable to access reports data: ' + tableError.message);
         setLoading(false);
         return;
       }
@@ -107,69 +109,18 @@ export default function ReportsPage() {
         throw error;
       }
 
-      if (data && data.length > 0) {
+      if (data) {
         setReports(data as ReportType[]);
       } else {
-        // If no data, use sample data
-        logger.info('No reports found, using sample data');
-        const sampleReports = generateSampleReports();
-        setReports(sampleReports);
+        setReports([]);
       }
     } catch (err: any) {
       logger.error('Error fetching reports', err);
       setError(err.message || 'Failed to load reports');
-      // Fallback to sample data
-      const sampleReports = generateSampleReports();
-      setReports(sampleReports);
+      setReports([]);
     } finally {
       setLoading(false);
     }
-  }
-
-  // Generate sample report data for demonstration
-  function generateSampleReports(): ReportType[] {
-    return [
-      {
-        id: 'rep-001',
-        title: 'Patient Growth Summary',
-        description: 'Monthly patient registration and activity metrics',
-        created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        type: 'analytics',
-        status: 'completed'
-      },
-      {
-        id: 'rep-002',
-        title: 'Message Engagement Report',
-        description: 'User engagement with messaging platform',
-        created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        type: 'engagement',
-        status: 'completed'
-      },
-      {
-        id: 'rep-003',
-        title: 'Health Records Summary',
-        description: 'Summary of patient health record activity',
-        created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        type: 'records',
-        status: 'completed'
-      },
-      {
-        id: 'rep-004',
-        title: 'System Usage Analytics',
-        description: 'Platform usage statistics and metrics',
-        created_at: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
-        type: 'analytics',
-        status: 'completed'
-      },
-      {
-        id: 'rep-005',
-        title: 'Monthly Executive Summary',
-        description: 'High-level overview for leadership team',
-        created_at: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-        type: 'summary',
-        status: 'pending'
-      }
-    ];
   }
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
