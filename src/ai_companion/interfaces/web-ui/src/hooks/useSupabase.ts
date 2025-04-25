@@ -1,16 +1,39 @@
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { getSupabaseCredentials } from '@/lib/supabase/client';
 
-// Hardcoded Supabase credentials
-const supabaseUrl = 'https://aubulhjfeszmsheonmpy.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc';
+// Get credentials from our central configuration
+const { supabaseUrl, supabaseKey } = getSupabaseCredentials();
 
 /**
  * Hook to access the Supabase client
+ * 
+ * IMPORTANT: This hook creates a Supabase client using createClientComponentClient
+ * which is compatible with Next.js App Router and properly handles auth.
+ * 
  * @returns The Supabase client instance
  */
 export const useSupabase = () => {
-  const [client] = useState(() => createClient(supabaseUrl, supabaseAnonKey));
+  // Use the auth-helpers client for better Next.js integration
+  const [client] = useState(() => {
+    try {
+      // First try to use auth-helpers (preferred method)
+      return createClientComponentClient({
+        supabaseUrl,
+        supabaseKey
+      });
+    } catch (error) {
+      // Fallback to direct client creation if auth-helpers fail
+      console.warn('Falling back to direct Supabase client creation:', error);
+      return createClient(supabaseUrl, supabaseKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true
+        }
+      });
+    }
+  });
   
   useEffect(() => {
     // Log issues with Supabase configuration in development
@@ -18,7 +41,7 @@ export const useSupabase = () => {
       if (!supabaseUrl) {
         console.warn('Supabase URL is not configured.');
       }
-      if (!supabaseAnonKey) {
+      if (!supabaseKey) {
         console.warn('Supabase anonymous key is not configured.');
       }
     }

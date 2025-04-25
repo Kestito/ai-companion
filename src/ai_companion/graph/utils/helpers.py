@@ -1,7 +1,6 @@
 import re
 from typing import Dict, List, Any, Optional
 import logging
-from datetime import datetime
 import uuid
 
 from langchain_core.output_parsers import StrOutputParser
@@ -50,73 +49,73 @@ class AsteriskRemovalParser(StrOutputParser):
 
 
 async def load_memory_to_graph(
-    graph: Any, 
-    messages: List[BaseMessage], 
-    session_id: Optional[str] = None
+    graph: Any, messages: List[BaseMessage], session_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Load memory into a graph state for processing.
-    
+
     Args:
         graph: The graph instance to invoke
         messages: List of messages to process
         session_id: Optional session identifier
-        
+
     Returns:
         The result of the graph invocation
     """
     try:
         # Get memory service
         memory_service = get_memory_service()
-        
+
         # Create config for graph with standardized settings
         config = {
             "messages": messages,
             "configurable": {
                 "memory_manager": memory_service.short_term_memory,
                 "use_supabase_only": True,  # Always use Supabase for memory, no local checkpoints
-                "session_id": session_id if session_id else str(uuid.uuid4())
-            }
+                "session_id": session_id if session_id else str(uuid.uuid4()),
+            },
         }
-        
+
         # Add session_id to config if provided
         if session_id:
             # Extract platform and user_id from session
-            parts = session_id.split('-')
+            parts = session_id.split("-")
             platform = parts[0] if len(parts) > 0 else "unknown"
-            
+
             # Try to get existing memories for context enhancement
             try:
                 recent_memories = await memory_service.get_session_memory(
-                    platform=platform, 
+                    platform=platform,
                     user_id=session_id.replace(f"{platform}-", ""),
-                    limit=10
+                    limit=10,
                 )
-                
+
                 if recent_memories:
                     # Format memories for LLM consumption
                     formatted_history = []
                     for memory in recent_memories:
                         if "content" in memory and memory["content"]:
-                            formatted_history.append({
-                                "role": "human", 
-                                "content": memory.get("content", "")
-                            })
+                            formatted_history.append(
+                                {"role": "human", "content": memory.get("content", "")}
+                            )
                         if "response" in memory and memory["response"]:
-                            formatted_history.append({
-                                "role": "ai", 
-                                "content": memory.get("response", "")
-                            })
-                    
+                            formatted_history.append(
+                                {"role": "ai", "content": memory.get("response", "")}
+                            )
+
                     # Add conversation history to config
                     config["configurable"]["conversation_history"] = formatted_history
-                    logger.debug(f"Added {len(formatted_history)} conversation turns from memory")
+                    logger.debug(
+                        f"Added {len(formatted_history)} conversation turns from memory"
+                    )
             except Exception as e:
                 logger.warning(f"Error retrieving previous conversation turns: {e}")
-            
+
             # Use memory service to load memory into graph
-            result = memory_service.load_memory_to_graph(graph, config, session_id)
-            
+            result = await memory_service.load_memory_to_graph(
+                graph, config, session_id
+            )
+
             return result
         else:
             # Invoke graph directly with standard config

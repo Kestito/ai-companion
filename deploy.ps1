@@ -1,17 +1,79 @@
 # Check for command line parameters
 param (
-    [switch]$ForceRebuild = $false,
-    [string]$CustomTag,
-    [switch]$SkipChangeDetection = $false,  # Add parameter to skip change detection
-    [switch]$AutoIncrement = $true,        # Auto-increment version by default
-    [switch]$CleanupLocalImages = $false,    # Add parameter to clean up local images after deployment
-    [switch]$ForceUpdate = $false,           # Force update container apps to latest image by default
-    [switch]$SkipTelegramSetup = $false,      # Skip setting up Telegram scheduler
-    [switch]$RunTelegramScheduler = $true,    # Run Telegram scheduler immediately after setup by default
-    [switch]$UseContainerJobs = $true,        # Use Container App Jobs for scheduling by default
-    [string]$CronExpression = "*/5 * * * *",   # Default CRON expression (every 5 minutes)
-    [switch]$UseFallbackScheduler = $false,    # Use fallback simple Container App instead of Jobs if jobs fail
-    [switch]$DiagnoseOnly = $false            # Only run diagnostics without making changes
+    [Parameter(Mandatory = $false)]
+    [string]$SubscriptionId = $env:AZURE_SUBSCRIPTION_ID,
+
+    [Parameter(Mandatory = $false)]
+    [string]$ResourceGroupName = "rg-aicompanion",
+
+    [Parameter(Mandatory = $false)]
+    [string]$Location = "eastus",
+
+    [Parameter(Mandatory = $false)]
+    [string]$ImageTag = "latest",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipLogin = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipResourceGroup = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipVault = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipRegistry = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipStorageAccount = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipContainerAppEnv = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipCustomizedContainers = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipAPILayer = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipBackendContainer = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipFrontendSetup = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipFrontendBuild = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipDeployFrontend = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipRemovedOldBackendRevisions = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipOldResourcesCleanup = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipPostDeploymentChecks = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$CheckScheduledMessages = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$FixScheduledMessages = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$FixMissingMetadata = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ResetFailedMessages = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipScheduledMessagesSetup = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$BypassImageCheck = $false
 )
 
 # Set variables
@@ -23,7 +85,6 @@ $RESOURCE_GROUP = "evelina-rg-20250308115110"  # Use existing resource group
 $ACR_NAME = "evelinaacr8677"  # Use existing ACR
 $BACKEND_APP_NAME = "backend-app"
 $FRONTEND_APP_NAME = "frontend-app"
-$TELEGRAM_SCHEDULER_APP_NAME = "telegram-scheduler-app"  # Define the Telegram scheduler app name
 $LOCATION = "eastus"
 $SUBSCRIPTION_ID = "7bf9df5a-7a8c-42dc-ad54-81aa4bf09b3e"
 $CONTAINER_ENV_NAME = "production-env-20250308115110"  # Use existing environment
@@ -51,9 +112,8 @@ Write-Host "Use -ForceUpdate:$false to disable automatic updates" -ForegroundCol
 Write-Host "Version will be auto-incremented on each deployment (AutoIncrement=true by default)" -ForegroundColor Green
 Write-Host "Use -AutoIncrement:$false to keep the same version" -ForegroundColor Green
 
-# Show Telegram scheduler message
-Write-Host "Telegram message scheduler setup will be included (use -SkipTelegramSetup to disable)" -ForegroundColor Green
-Write-Host "Telegram scheduler will run automatically after setup (use -RunTelegramScheduler:$false to disable)" -ForegroundColor Green
+# Inform users about integrated Telegram functionality
+Write-Host "Telegram functionality is now integrated into the main backend app" -ForegroundColor Green
 
 # Handle version auto-incrementing (now enabled by default)
 if (-not $AutoIncrement) {
@@ -371,6 +431,377 @@ function Test-DirectoryChanged {
 function Test-Admin {
     $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     $currentUser.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+}
+
+# Function to check scheduled messages
+function Check-ScheduledMessages {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "Checking scheduled messages for issues..." -ForegroundColor Cyan
+
+    $tempScriptPath = [System.IO.Path]::GetTempFileName() + ".py"
+    
+    try {
+        # Create a temporary Python script to check scheduled messages
+        @"
+import os
+import sys
+import json
+from datetime import datetime, timedelta
+from supabase import create_client, Client
+
+try:
+    # Use hardcoded credentials rather than environment variables
+    supabase_url = "https://aubulhjfeszmsheonmpy.supabase.co"
+    supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc"
+    
+    # Initialize Supabase client
+    supabase: Client = create_client(supabase_url, supabase_key)
+    
+    # First, get the table structure to discover the correct column names
+    try:
+        # Try to get the first row to determine column names
+        response = supabase.table("scheduled_messages").select("*").limit(1).execute()
+        sample_data = response.data[0] if response.data else {}
+        
+        # Identify the due time column based on what exists in the data
+        time_related_columns = ['scheduled_at', 'due_at', 'send_at', 'execute_at']
+        due_time_column = next((col for col in time_related_columns if col in sample_data), 'scheduled_at')
+        
+        # Debug info goes to stderr
+        sys.stderr.write(f"Using '{due_time_column}' as the due time column\\n")
+    except Exception:
+        # If we can't determine the column, default to 'scheduled_at'
+        due_time_column = 'scheduled_at'
+        sys.stderr.write(f"Using default column name '{due_time_column}' for due time\\n")
+    
+    # Get current time
+    now = datetime.now().isoformat()
+    
+    # Check for past due messages that are still pending
+    past_due_result = supabase.table("scheduled_messages").select("id", "status").eq("status", "pending").execute()
+    past_due_messages = []
+    
+    # Manually filter for past due messages based on the detected column
+    if past_due_result.data:
+        for msg in past_due_result.data:
+            msg_details = supabase.table("scheduled_messages").select("*").eq("id", msg["id"]).execute().data
+            if msg_details and msg_details[0].get(due_time_column) and msg_details[0][due_time_column] < now:
+                past_due_messages.append(msg)
+    
+    # Check for messages with missing metadata
+    missing_metadata_result = supabase.table("scheduled_messages").select("id", "metadata").is_("metadata", "null").execute()
+    missing_metadata = missing_metadata_result.data if missing_metadata_result.data else []
+    
+    # Check for messages stuck in processing (more than 30 minutes)
+    thirty_min_ago = (datetime.now() - timedelta(minutes=30)).isoformat()
+    stuck_processing_result = supabase.table("scheduled_messages").select("id", "status", "updated_at").eq("status", "processing").execute()
+    stuck_processing = []
+    
+    # Manually filter for stuck processing messages
+    if stuck_processing_result.data:
+        for msg in stuck_processing_result.data:
+            if msg.get("updated_at") and msg["updated_at"] < thirty_min_ago:
+                stuck_processing.append(msg)
+    
+    # Check for failed messages
+    failed_result = supabase.table("scheduled_messages").select("id", "status").eq("status", "failed").execute()
+    failed_messages = failed_result.data if failed_result.data else []
+    
+    # Prepare result summary
+    issues_found = len(past_due_messages) > 0 or len(missing_metadata) > 0 or len(stuck_processing) > 0 or len(failed_messages) > 0
+    
+    result = {
+        "issues_found": issues_found,
+        "past_due_messages": len(past_due_messages),
+        "missing_metadata": len(missing_metadata),
+        "stuck_processing": len(stuck_processing),
+        "failed_messages": len(failed_messages),
+        "past_due_message_ids": [msg["id"] for msg in past_due_messages],
+        "missing_metadata_ids": [msg["id"] for msg in missing_metadata],
+        "stuck_processing_ids": [msg["id"] for msg in stuck_processing],
+        "failed_message_ids": [msg["id"] for msg in failed_messages],
+        "due_time_column": due_time_column
+    }
+    
+    print(json.dumps(result))
+
+except Exception as e:
+    print(json.dumps({
+        "error": str(e),
+        "issues_found": False,
+        "past_due_messages": 0,
+        "missing_metadata": 0,
+        "stuck_processing": 0,
+        "failed_messages": 0
+    }))
+    sys.exit(1)
+"@ | Out-File -FilePath $tempScriptPath -Encoding utf8
+        
+        # Run the Python script and capture the output, redirecting stderr to null
+        $pythonOutput = python $tempScriptPath 2>$null
+        
+        # Parse the JSON output
+        $result = $pythonOutput | ConvertFrom-Json
+        
+        if ($result.error) {
+            Write-Host "Error checking scheduled messages: $($result.error)" -ForegroundColor Red
+            return $false
+        }
+        
+        if ($result.issues_found) {
+            Write-Host "Issues found with scheduled messages:" -ForegroundColor Yellow
+            Write-Host "  - Past due messages: $($result.past_due_messages)" -ForegroundColor Yellow
+            Write-Host "  - Messages with missing metadata: $($result.missing_metadata)" -ForegroundColor Yellow
+            Write-Host "  - Messages stuck in processing: $($result.stuck_processing)" -ForegroundColor Yellow
+            Write-Host "  - Failed messages: $($result.failed_messages)" -ForegroundColor Yellow
+            
+            return $result
+        } else {
+            Write-Host "No issues found with scheduled messages." -ForegroundColor Green
+            return $false
+        }
+    }
+    catch {
+        Write-Host "Error checking scheduled messages: $_" -ForegroundColor Red
+        return $false
+    }
+    finally {
+        # Clean up the temporary file
+        if (Test-Path $tempScriptPath) {
+            Remove-Item $tempScriptPath -Force
+        }
+    }
+}
+
+# Function to fix scheduled messages
+function Fix-ScheduledMessages {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false)]
+        [PSCustomObject]$IssuesResult,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$AutoConfirm = $false,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$FixPastDueMessages = $true,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$FixMissingMetadata = $true,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$FixStuckProcessing = $true,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$ResetFailedMessages = $true
+    )
+
+    # If no issues result provided, run the check
+    if (-not $IssuesResult) {
+        $IssuesResult = Check-ScheduledMessages
+        if (-not $IssuesResult) {
+            Write-Host "No issues to fix." -ForegroundColor Green
+            return
+        }
+    }
+    
+    # Get the due time column from the issues result
+    $dueTimeColumn = $IssuesResult.due_time_column
+    if (-not $dueTimeColumn) {
+        $dueTimeColumn = "scheduled_at"  # Default fallback
+    }
+    
+    # Prompt for confirmation if auto-confirm not enabled
+    if (-not $AutoConfirm) {
+        $confirmFix = Read-Host "Would you like to fix these issues? (y/n)"
+        if ($confirmFix -ne "y") {
+            Write-Host "Fix operation cancelled." -ForegroundColor Yellow
+            return
+        }
+    }
+    
+    Write-Host "Fixing scheduled message issues..." -ForegroundColor Cyan
+    
+    $tempScriptPath = [System.IO.Path]::GetTempFileName() + ".py"
+    
+    try {
+        # Create temporary Python script to fix issues
+        @"
+import os
+import sys
+import json
+from datetime import datetime, timedelta
+from supabase import create_client, Client
+
+try:
+    # Use hardcoded credentials rather than environment variables
+    supabase_url = "https://aubulhjfeszmsheonmpy.supabase.co"
+    supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc"
+    
+    # Initialize Supabase client
+    supabase: Client = create_client(supabase_url, supabase_key)
+    
+    # First, get the table structure to discover the correct column names
+    try:
+        # Try to get the first row to determine column names
+        response = supabase.table("scheduled_messages").select("*").limit(1).execute()
+        sample_data = response.data[0] if response.data else {}
+        
+        # Identify the due time column based on what exists in the data
+        time_related_columns = ['scheduled_at', 'due_at', 'send_at', 'execute_at']
+        due_time_column = next((col for col in time_related_columns if col in sample_data), 'scheduled_at')
+        
+        # Debug info goes to stderr
+        sys.stderr.write(f"Using '{due_time_column}' as the due time column\\n")
+    except Exception:
+        # If we can't determine the column, default to 'scheduled_at'
+        due_time_column = '$dueTimeColumn'
+        sys.stderr.write(f"Using specified column name '{due_time_column}' for due time\\n")
+    
+    fixes_applied = 0
+    fix_details = {
+        "past_due_fixed": 0,
+        "metadata_fixed": 0,
+        "stuck_processing_fixed": 0,
+        "failed_messages_reset": 0
+    }
+    
+    # Parse command line arguments
+    fix_past_due = $($FixPastDueMessages.ToString().ToLower())
+    fix_metadata = $($FixMissingMetadata.ToString().ToLower())
+    fix_stuck = $($FixStuckProcessing.ToString().ToLower())
+    reset_failed = $($ResetFailedMessages.ToString().ToLower())
+    now = datetime.now().isoformat()
+    
+    # Fix past due messages that are still pending
+    if fix_past_due:
+        # Get pending messages
+        past_due_result = supabase.table("scheduled_messages").select("*").eq("status", "pending").execute()
+        past_due_messages = []
+        
+        # Manually filter for past due messages based on the detected column
+        if past_due_result.data:
+            for msg in past_due_result.data:
+                if msg.get(due_time_column) and msg[due_time_column] < now:
+                    past_due_messages.append(msg)
+        
+        for msg in past_due_messages:
+            # Set a new time 5 minutes in the future
+            new_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+            update_data = {due_time_column: new_time}
+            
+            supabase.table("scheduled_messages").update(update_data).eq("id", msg["id"]).execute()
+            fix_details["past_due_fixed"] += 1
+            fixes_applied += 1
+    
+    # Fix messages with missing metadata
+    if fix_metadata:
+        default_metadata = {"priority": "normal", "retry_count": 0}
+        missing_metadata_result = supabase.table("scheduled_messages").select("id").is_("metadata", "null").execute()
+        missing_metadata = missing_metadata_result.data if missing_metadata_result.data else []
+        
+        for msg in missing_metadata:
+            supabase.table("scheduled_messages").update({"metadata": default_metadata}).eq("id", msg["id"]).execute()
+            fix_details["metadata_fixed"] += 1
+            fixes_applied += 1
+    
+    # Fix messages stuck in processing
+    if fix_stuck:
+        thirty_min_ago = (datetime.now() - timedelta(minutes=30)).isoformat()
+        stuck_processing_result = supabase.table("scheduled_messages").select("*").eq("status", "processing").execute()
+        stuck_processing = []
+        
+        # Manually filter for stuck processing messages
+        if stuck_processing_result.data:
+            for msg in stuck_processing_result.data:
+                if msg.get("updated_at") and msg["updated_at"] < thirty_min_ago:
+                    stuck_processing.append(msg)
+        
+        for msg in stuck_processing:
+            # Set a new time 10 minutes in the future
+            new_time = (datetime.now() + timedelta(minutes=10)).isoformat()
+            update_data = {
+                "status": "pending",
+                due_time_column: new_time,
+                "updated_at": now
+            }
+            
+            supabase.table("scheduled_messages").update(update_data).eq("id", msg["id"]).execute()
+            fix_details["stuck_processing_fixed"] += 1
+            fixes_applied += 1
+    
+    # Reset failed messages to pending
+    if reset_failed:
+        failed_result = supabase.table("scheduled_messages").select("id").eq("status", "failed").execute()
+        failed_messages = failed_result.data if failed_result.data else []
+        
+        for msg in failed_messages:
+            # Set a new time 15 minutes in the future
+            new_time = (datetime.now() + timedelta(minutes=15)).isoformat()
+            update_data = {
+                "status": "pending",
+                due_time_column: new_time,
+                "error": None
+            }
+            
+            supabase.table("scheduled_messages").update(update_data).eq("id", msg["id"]).execute()
+            fix_details["failed_messages_reset"] += 1
+            fixes_applied += 1
+    
+    # Prepare result summary
+    result = {
+        "success": True,
+        "fixes_applied": fixes_applied,
+        "fix_details": fix_details
+    }
+    
+    print(json.dumps(result))
+
+except Exception as e:
+    print(json.dumps({
+        "error": str(e),
+        "success": False,
+        "fixes_applied": 0
+    }))
+    sys.exit(1)
+"@ | Out-File -FilePath $tempScriptPath -Encoding utf8
+        
+        # Run the Python script and capture the output, redirecting stderr to null
+        $pythonOutput = python $tempScriptPath 2>$null
+        
+        # Parse the JSON output
+        $result = $pythonOutput | ConvertFrom-Json
+        
+        if ($result.error) {
+            Write-Host "Error fixing scheduled messages: $($result.error)" -ForegroundColor Red
+            return $false
+        }
+        
+        if ($result.success) {
+            Write-Host "Successfully applied $($result.fixes_applied) fixes to scheduled messages:" -ForegroundColor Green
+            Write-Host "  - Fixed past due messages: $($result.fix_details.past_due_fixed)" -ForegroundColor Green
+            Write-Host "  - Fixed missing metadata: $($result.fix_details.metadata_fixed)" -ForegroundColor Green
+            Write-Host "  - Fixed stuck processing: $($result.fix_details.stuck_processing_fixed)" -ForegroundColor Green
+            Write-Host "  - Reset failed messages: $($result.fix_details.failed_messages_reset)" -ForegroundColor Green
+            
+            return $true
+        } else {
+            Write-Host "No fixes were applied to scheduled messages." -ForegroundColor Yellow
+            return $false
+        }
+    }
+    catch {
+        Write-Host "Error fixing scheduled messages: $_" -ForegroundColor Red
+        return $false
+    }
+    finally {
+        # Clean up the temporary file
+        if (Test-Path $tempScriptPath) {
+            Remove-Item $tempScriptPath -Force
+        }
+    }
 }
 
 # Start deployment process
@@ -737,15 +1168,10 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
             --resource-group $RESOURCE_GROUP `
             --environment $CONTAINER_ENV_NAME `
             --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}" `
-            --registry-server "${ACR_NAME}.azurecr.io" `
-            --registry-username $ACR_USERNAME `
-            --registry-password $ACR_PASSWORD `
             --target-port 8000 `
             --ingress external `
             --min-replicas 1 `
-            --max-replicas 10 `
-            --cpu 1.0 `
-            --memory 2.0Gi `
+            --max-replicas 5 `
             --env-vars `
               INTERFACE=all `
               PORT=8000 `
@@ -1121,223 +1547,38 @@ $telegramSchedulerAppNeedsUpdate = $false
 $telegramJobExists = $false
 $telegramContainerAppExists = $false
 
-# Check if the telegram scheduler container app exists
-try {
-    $telegramAppCheck = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
-    if ($telegramAppCheck) {
-        Write-ColorOutput -Message "Telegram scheduler job exists, checking if update is needed" -Color Yellow -Prefix "→"
-        $telegramJobExists = $true
-        
-        # Check the current image version used by the job
-        $currentJobImage = az containerapp job show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.template.containers[0].image" -o tsv 2>$null
-        Write-ColorOutput -Message "Current job image: $currentJobImage" -Color Yellow -Prefix "→"
-        
-        # Check if current image matches desired version
-        $desiredJobImage = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
-        if ($currentJobImage -eq $desiredJobImage) {
-            Write-ColorOutput -Message "Telegram scheduler job is already using the latest image" -Color Green -Prefix "✅"
-            $telegramSchedulerAppRunning = $true
-        } else {
-            Write-ColorOutput -Message "Telegram scheduler job needs to be updated to image: $desiredJobImage" -Color Yellow -Prefix "→"
-            $telegramSchedulerAppNeedsUpdate = $true
-        }
-    }
-} catch {
-    # Check if it exists as a regular Container App instead
-    try {
-        $telegramAppCheckRegular = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
-        if ($telegramAppCheckRegular) {
-            Write-ColorOutput -Message "Telegram scheduler exists as a regular Container App, will use fallback mode" -Color Yellow -Prefix "→"
-            $telegramContainerAppExists = $true
-            $UseFallbackScheduler = $true
-            
-            # Check if needs update
-            $currentAppImage = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv 2>$null
-            $desiredAppImage = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
-            
-            if ($currentAppImage -eq $desiredAppImage) {
-                Write-ColorOutput -Message "Telegram scheduler app is already using the latest image" -Color Green -Prefix "✅"
-                $telegramSchedulerAppRunning = $true
-            } else {
-                Write-ColorOutput -Message "Telegram scheduler app needs to be updated to image: $desiredAppImage" -Color Yellow -Prefix "→"
-                $telegramSchedulerAppNeedsUpdate = $true
-            }
-        } else {
-            Write-ColorOutput -Message "Telegram scheduler does not exist, needs to be created" -Color Yellow -Prefix "→"
-        }
-    } catch {
-        Write-ColorOutput -Message "Telegram scheduler does not exist, needs to be created" -Color Yellow -Prefix "→"
-        }
-    }
-    
-    # Only create if app doesn't exist or was deleted
-    if (-not $telegramSchedulerAppRunning) {
-        # Hardcode Telegram Bot Token
-        $telegramBotToken = "7602202107:AAH-7E6Dy6DGy1yaYQoZYFeJNpf4Z1m_Vmk"
-        
-    # Verify that the image exists before attempting to deploy
-    $imageToUse = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
-    Write-ColorOutput -Message "Verifying image exists: $imageToUse" -Color Yellow -Prefix "→"
-    $imageExists = Test-ImageExists -AcrName $ACR_NAME -ImageName $IMAGE_NAME -Tag $TAG -Username $ACR_USERNAME -Password $ACR_PASSWORD
-    
-    if (-not $imageExists) {
-        # Check if we have a previous tag we can use
-        Write-ColorOutput -Message "Attempting to find a previous valid tag to use" -Color Yellow -Prefix "→"
-        $allTags = az acr repository show-tags --name $ACR_NAME --repository $IMAGE_NAME --orderby time_desc --output tsv 2>$null
-        
-        if ($allTags) {
-            $latestValidTag = $allTags[0]
-            Write-ColorOutput -Message "Found valid tag: $latestValidTag, will use this instead" -Color Green -Prefix "✅"
-            $TAG = $latestValidTag
-            $imageToUse = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}"
-        } else {
-            Write-ColorOutput -Message "No valid tags found for $IMAGE_NAME, cannot deploy" -Color Red -Prefix "❌"
-            Write-ColorOutput -Message "Please build and push the image first" -Color Yellow -Prefix "→"
-            return
-        }
-    }
-    
-    if ($UseContainerJobs -and -not $UseFallbackScheduler) {
-        # Try to create Container App Job with CRON scheduling
-        Write-ColorOutput -Message "Creating Telegram Scheduler as Container App Job" -Color Green -Prefix "⏱️"
-        Write-ColorOutput -Message "Using CRON schedule: $CronExpression" -Color Yellow -Prefix "→"
-        
-        # Create Container App Job with CRON scheduling
-        $jobCreated = $false
-        try {
-            # Updated command with required parameters
-            az containerapp job create `
-                --name $TELEGRAM_SCHEDULER_APP_NAME `
-                --resource-group $RESOURCE_GROUP `
-                --environment $CONTAINER_ENV_NAME `
-                --image $imageToUse `
-                --registry-server "${ACR_NAME}.azurecr.io" `
-                --registry-username $ACR_USERNAME `
-                --registry-password $ACR_PASSWORD `
-                --command '["python", "-m", "src.ai_companion.interfaces.telegram.scheduled_message_processor"]' `
-                --cpu 0.5 `
-                --memory 1.0Gi `
-                --replica-timeout 1800 `
-                --replica-retry-limit 3 `
-                --replica-completion-count 1 `
-                --parallelism 1 `
-                --min-executions 0 `
-                --max-executions 10 `
-                --trigger-type Schedule `
-                --cron-expression "$CronExpression" `
-                --env-vars TELEGRAM_BOT_TOKEN=$telegramBotToken `
-                           PYTHONUNBUFFERED=1 `
-                           PYTHONPATH=/app `
-                           SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-                           SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
-            
-            $jobCreated = $true
-            Write-ColorOutput -Message "Telegram Scheduler Job created successfully" -Color Green -Prefix "✅"
-            Write-ColorOutput -Message "Job will run according to CRON schedule: $CronExpression" -Color Green -Prefix "⏱️"
-            
-            # Create a function to trigger a job execution with better error handling
-            function Invoke-JobExecution {
-                param (
-                    [string]$JobName,
-                    [string]$ResourceGroup,
-                    [int]$MaxRetries = 3,
-                    [int]$RetryDelaySeconds = 5
-                )
-                
-                Write-ColorOutput -Message "Triggering manual execution of job $JobName" -Color Yellow -Prefix "→"
-                
-                for ($retryCount = 0; $retryCount -lt $MaxRetries; $retryCount++) {
-                    if ($retryCount -gt 0) {
-                        Write-ColorOutput -Message "Retrying job execution trigger (attempt $($retryCount+1) of $MaxRetries)..." -Color Yellow -Prefix "⚠️"
-                        Start-Sleep -Seconds $RetryDelaySeconds
-                    }
-                    
-                    try {
-                        # First check if the job exists
-                        $jobExists = az containerapp job show --name $JobName --resource-group $ResourceGroup 2>$null
-                        
-                        if (-not $jobExists) {
-                            Write-ColorOutput -Message "Job $JobName does not exist in resource group $ResourceGroup" -Color Red -Prefix "❌"
-                            return $false
-                        }
-                        
-                        # Use the correct command format with explicit parameter names
-                        $result = az containerapp job execution start --name $JobName --resource-group $ResourceGroup 2>$null
-                        
-                        if ($LASTEXITCODE -eq 0 -and $result) {
-                            Write-ColorOutput -Message "Job triggered successfully" -Color Green -Prefix "✅"
-                            return $true
-                        }
-                    }
-                    catch {
-                        Write-ColorOutput -Message "Error triggering job: $_" -Color Red -Prefix "❌"
-                    }
-                }
-                
-                Write-ColorOutput -Message "Failed to trigger manual execution after $MaxRetries attempts" -Color Red -Prefix "❌"
-                Write-ColorOutput -Message "Try manually triggering the job with:" -Color Yellow -Prefix "→"
-                Write-ColorOutput -Message "  az containerapp job execution start --name $JobName --resource-group $ResourceGroup" -Color White
-                
-                return $false
-            }
-            
-            # Manually trigger the job once to initialize it - fixed command
-            Write-ColorOutput -Message "Manually triggering the job once to initialize" -Color Yellow -Prefix "→"
-            $jobExecutionResult = Invoke-JobExecution -JobName $TELEGRAM_SCHEDULER_APP_NAME -ResourceGroup $RESOURCE_GROUP
-            if ($jobExecutionResult) {
-                Write-ColorOutput -Message "Job triggered successfully" -Color Green -Prefix "✅"
-            } else {
-                Write-ColorOutput -Message "Failed to trigger job execution" -Color Yellow -Prefix "⚠️"
-                Write-ColorOutput -Message "Job may still be created and will run according to schedule" -Color Yellow -Prefix "→"
-            }
-        } catch {
-            Write-ColorOutput -Message "Error creating Container App Job: $_" -Color Red -Prefix "❌"
-            Write-ColorOutput -Message "Falling back to regular Container App deployment" -Color Yellow -Prefix "→"
-            $UseFallbackScheduler = $true
-        }
-    }
-    
-    # If Job creation failed or fallback is active, deploy as regular Container App
-    if ($UseFallbackScheduler -or -not $jobCreated) {
-        Write-ColorOutput -Message "Creating Telegram Scheduler as regular Container App (fallback mode)" -Color Yellow -Prefix "→"
-        Write-ColorOutput -Message "Note: This will run continuously instead of on a schedule" -Color Yellow -Prefix "→"
-        
-        # Deploy as a regular Container App with a continuous process
-        az containerapp create `
-            --name $TELEGRAM_SCHEDULER_APP_NAME `
-            --resource-group $RESOURCE_GROUP `
-            --environment $CONTAINER_ENV_NAME `
-            --image $imageToUse `
-            --registry-server "${ACR_NAME}.azurecr.io" `
-            --registry-username $ACR_USERNAME `
-            --registry-password $ACR_PASSWORD `
-            --ingress 'external' `
-            --target-port 8080 `
-            --command '["python", "-m", "src.ai_companion.interfaces.telegram.scheduled_message_processor"]' `
-            --min-replicas 1 `
-            --max-replicas 1 `
-            --cpu 0.5 `
-            --memory 1.0Gi `
-            --env-vars `
-              TELEGRAM_BOT_TOKEN=$telegramBotToken `
-              PYTHONUNBUFFERED=1 `
-              PYTHONPATH=/app `
-              SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
-              SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc
+# Check if the telegram-scheduler container app exists
+$telegramContainerAppExists = $false
+# Default is to skip since the scheduler is now integrated in the main backend
+$runTelegramSetup = -not $SkipTelegramSetup
 
-        if (-not (Test-CommandSuccess -SuccessMessage "Telegram Scheduler App deployed successfully" -ErrorMessage "Failed to deploy Telegram Scheduler App")) {
-            Write-ColorOutput -Message "Failed to deploy Telegram scheduler, even in fallback mode" -Color Red -Prefix "❌"
-            Write-ColorOutput -Message "Please check your Azure permissions and resource group" -Color Yellow -Prefix "→"
-        } else {
-            Write-ColorOutput -Message "Telegram Scheduler App deployed successfully (fallback mode)" -Color Green -Prefix "✅"
-            Write-ColorOutput -Message "Note: This runs continuously rather than on a schedule" -Color Yellow -Prefix "→"
-            
-            # Set variable to indicate we're using a regular app not a job
-            $telegramContainerAppExists = $true
-            $telegramJobExists = $false
-        }
+Write-Host ""
+Write-Host "Checking if Telegram scheduler app exists: $TELEGRAM_SCHEDULER_APP_NAME"
+$telegramContainerApp = az containerapp show --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+if ($telegramContainerApp) {
+    $telegramContainerAppExists = $true
+    Write-Host " - Telegram scheduler container app exists in resource group: $RESOURCE_GROUP" -ForegroundColor Green
+}
+else {
+    Write-Host " - Telegram scheduler container app not found in resource group: $RESOURCE_GROUP" -ForegroundColor Yellow
+}
+
+if ($runTelegramSetup) {
+    Write-Host "Preparing to deploy Telegram scheduler container app" -ForegroundColor Green
+    # ... existing code ...
+} else {
+    Write-Host ""
+    Write-Host "Skipping Telegram scheduler deployment (SkipTelegramSetup = $SkipTelegramSetup)" -ForegroundColor Yellow
+    Write-Host " - Note: Telegram functionality is now integrated in the main backend application" -ForegroundColor Cyan
+    Write-Host " - No separate container is needed for the scheduler anymore" -ForegroundColor Cyan
+    if ($telegramContainerAppExists) {
+        Write-Host ""
+        Write-Host " - A Telegram scheduler container app currently exists: $TELEGRAM_SCHEDULER_APP_NAME" -ForegroundColor Cyan
+        Write-Host " - If you want to remove it to save resources, you can delete it manually from Azure portal" -ForegroundColor Cyan
+        Write-Host " - Or run: az containerapp delete --name $TELEGRAM_SCHEDULER_APP_NAME --resource-group $RESOURCE_GROUP" -ForegroundColor Cyan
     }
 }
+# ... existing code ...
 
 # Step 11: Deployment Summary
 Write-ColorOutput -Message "Deployment Summary" -Color Green -Prefix "📋"
@@ -1695,3 +1936,243 @@ if ($telegramJobExists) {
         }
     }
 }
+
+# Update environment variables for the backend app
+$BACKEND_ENV_VARS = @(
+    "INTERFACE=all",
+    "PORT=8000",
+    "QDRANT_URL=https://b88198bc-6212-4390-bbac-b1930f543812.europe-west3-0.gcp.cloud.qdrant.io",
+    "QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw",
+    "AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com",
+    "AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl",
+    "AZURE_OPENAI_API_VERSION=2024-08-01-preview",
+    "AZURE_OPENAI_DEPLOYMENT=gpt-4o",
+    "AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small",
+    "OPENAI_API_TYPE=azure",
+    "OPENAI_API_VERSION=2024-08-01-preview",
+    "EMBEDDING_MODEL=text-embedding-3-small",
+    "LLM_MODEL=gpt-4o",
+    "SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co",
+    "SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc",
+    "CONTAINER_APP_ENV=prod",
+    "USE_MANAGED_IDENTITY=true",
+    "ENABLE_SCHEDULER=true",
+    "ENABLE_TELEGRAM=true",
+    "TELEGRAM_BOT_TOKEN=7602202107:AAH-7E6Dy6DGy1yaYQoZYFeJNpf4Z1m_Vmk"
+)
+
+# Line where backend app is created or updated
+if ($backendAppExists -ne $true) {
+    # Creating new backend app
+    Write-ColorOutput -Message "Creating new backend app: $BACKEND_APP_NAME" -Color Green
+    
+    az containerapp create `
+        --resource-group $RESOURCE_GROUP `
+        --name $BACKEND_APP_NAME `
+        --environment $CONTAINER_ENV_NAME `
+        --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}" `
+        --target-port 8000 `
+        --ingress external `
+        --min-replicas 1 `
+        --max-replicas 5 `
+        --env-vars $BACKEND_ENV_VARS `
+        --cpu 1.0 `
+        --memory 2.0 `
+        --registry-server "${ACR_NAME}.azurecr.io"
+    
+    $backendAppCreated = $LASTEXITCODE -eq 0
+    
+    if ($backendAppCreated) {
+        Write-ColorOutput -Message "Backend app created successfully" -Color Green
+    } else {
+        Write-ColorOutput -Message "Failed to create backend app" -Color Red
+        exit 1
+    }
+} else {
+    # Updating existing backend app
+    Write-ColorOutput -Message "Updating existing backend app: $BACKEND_APP_NAME" -Color Green
+    
+    az containerapp update `
+        --resource-group $RESOURCE_GROUP `
+        --name $BACKEND_APP_NAME `
+        --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${TAG}" `
+        --set-env-vars $BACKEND_ENV_VARS
+    
+    $backendAppUpdated = $LASTEXITCODE -eq 0
+    
+    if ($backendAppUpdated) {
+        Write-ColorOutput -Message "Backend app updated successfully" -Color Green
+    } else {
+        Write-ColorOutput -Message "Failed to update backend app" -Color Red
+        exit 1
+    }
+}
+
+# Build and deploy backend with integrated Telegram functionality
+# Update backend Dockerfile to include Telegram bot functionality
+Write-Host "Deploying backend with integrated Telegram functionality" -ForegroundColor Green
+
+# Build combined container with both backend and Telegram functionality
+$backendTag = "ai-companion:$TAG"
+$backendImage = "$ACR_NAME.azurecr.io/$backendTag"
+$buildTime = Measure-Command {
+    docker build -t $backendImage -f Dockerfile .
+}
+Write-Host "Backend Docker image with integrated Telegram functionality built in $($buildTime.TotalSeconds) seconds" -ForegroundColor Green
+
+# Push backend image to ACR
+docker push $backendImage
+Write-Host "Backend Docker image pushed to ACR: $backendImage" -ForegroundColor Green
+
+# Step 16: Check and fix scheduled messages
+if ($CheckScheduledMessages -or $FixScheduledMessages -or $FixMissingMetadata -or $ResetFailedMessages) {
+    Write-ColorOutput -Message "Step 16: Checking and maintaining scheduled messages" -Color Cyan -Prefix "🔍"
+    
+    # Check if python is installed
+    $pythonInstalled = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pythonInstalled) {
+        Write-ColorOutput -Message "Python is required for scheduled message maintenance but was not found" -Color Red -Prefix "❌"
+    } else {
+        # Ensure supabase library is installed
+        Write-ColorOutput -Message "Ensuring required Python packages are installed..." -Color Yellow -Prefix "→"
+        python -m pip install supabase --quiet
+        
+        # Set environment variables for Supabase access
+        $env:SUPABASE_URL = $supabaseUrl
+        $env:SUPABASE_KEY = $supabaseAnonKey
+        
+        # Check scheduled messages
+        $issuesFound = Check-ScheduledMessages
+        
+        # Handle fixing if issues were found or explicitly requested
+        if ($issuesFound -or $FixScheduledMessages -or $FixMissingMetadata -or $ResetFailedMessages) {
+            if ($FixScheduledMessages -or $FixMissingMetadata -or $ResetFailedMessages) {
+                Fix-ScheduledMessages -AutoConfirm:$FixScheduledMessages -ResetFailedMessages:$ResetFailedMessages -FixMissingMetadata:$FixMissingMetadata
+            } else {
+                $fixConfirmation = Read-Host "Issues found in scheduled messages. Would you like to fix them? (y/n)"
+                if ($fixConfirmation -eq "y") {
+                    Fix-ScheduledMessages
+                } else {
+                    Write-ColorOutput -Message "Skipping scheduled message fixes as requested" -Color Yellow -Prefix "⚠️"
+                }
+            }
+        } else {
+            Write-ColorOutput -Message "No issues found in scheduled messages" -Color Green -Prefix "✅"
+        }
+        
+        # Clear environment variables
+        Remove-Item Env:\SUPABASE_URL
+        Remove-Item Env:\SUPABASE_KEY
+    }
+}
+
+# Summarize the deployment
+Write-ColorOutput -Message "Deployment Summary" -Color Cyan
+
+Write-Host "Telegram functionality is integrated in the main backend app" -ForegroundColor Green
+
+Write-Host "Deployment completed successfully!" -ForegroundColor Green
+
+# Display deployment summary
+Write-ColorOutput -Message "🎉 Deployment Complete 🎉" -Color Green
+
+# Show summary information about the deployment
+Write-ColorOutput -Message "💻 Environment Details" -Color Cyan -Prefix "📋"
+Write-Host "Resource Group: $RESOURCE_GROUP"
+Write-Host "Container App Environment: $CONTAINER_ENV_NAME"
+Write-Host "Azure Container Registry: $ACR_NAME"
+Write-Host "Version: $TAG"
+
+# Show backend status and URL
+if ($backendAppExists -or $backendAppCreated) {
+    $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    Write-ColorOutput -Message "🌐 Backend App ($BACKEND_APP_NAME)" -Color Cyan -Prefix "📋"
+    Write-Host "URL: https://$backendAppUrl"
+    Write-Host "Health: https://$backendAppUrl/monitor/health"
+}
+
+# Show frontend status and URL
+if ($frontendAppExists -or $frontendAppCreated) {
+    $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
+    Write-ColorOutput -Message "🌐 Frontend App ($FRONTEND_APP_NAME)" -Color Cyan -Prefix "📋"
+    Write-Host "URL: https://$frontendAppUrl"
+}
+
+# Show Telegram functionality status
+Write-ColorOutput -Message "🤖 Telegram Functionality" -Color Cyan -Prefix "📋"
+Write-Host "Telegram bot functionality is integrated directly in the main backend application" -ForegroundColor Green
+Write-Host "The scheduler will process messages every 5 minutes automatically" -ForegroundColor Green
+
+# Check and fix scheduled messages if requested
+if ($CheckScheduledMessages -or $FixScheduledMessages) {
+    Write-ColorOutput -Message "Checking Scheduled Messages" -Color Cyan -Prefix "📋"
+    
+    # Check for issues with scheduled messages
+    $checkResult = Check-ScheduledMessages
+    
+    if ($checkResult -and $checkResult.issues_found) {
+        # Show detailed information about issues found
+        Write-Host "Issues found with scheduled messages:" -ForegroundColor Yellow
+        Write-Host "  - Past due messages: $($checkResult.past_due_messages)" -ForegroundColor Yellow
+        Write-Host "  - Messages with missing metadata: $($checkResult.missing_metadata)" -ForegroundColor Yellow
+        Write-Host "  - Messages stuck in processing: $($checkResult.stuck_processing)" -ForegroundColor Yellow
+        Write-Host "  - Failed messages: $($checkResult.failed_messages)" -ForegroundColor Yellow
+        
+        # Determine if we should fix these issues
+        $shouldFix = $FixScheduledMessages
+        if (-not $shouldFix) {
+            if (-not $AutoConfirm) {
+                $confirmFix = Read-Host "Would you like to fix these issues? (y/n)"
+                $shouldFix = $confirmFix -eq "y"
+            }
+        }
+        
+        if ($shouldFix) {
+            Write-ColorOutput -Message "Fixing Scheduled Messages" -Color Cyan -Prefix "🔧"
+            
+            # Set up parameters for the Fix-ScheduledMessages function
+            $fixParams = @{
+                IssuesResult = $checkResult
+                AutoConfirm = $AutoConfirm
+                FixPastDueMessages = $true  # Always fix past due messages by default
+                FixMissingMetadata = $FixMissingMetadata
+                FixStuckProcessing = $true  # Always fix stuck processing by default
+                ResetFailedMessages = $ResetFailedMessages
+            }
+            
+            # Run the fix function
+            $fixResult = Fix-ScheduledMessages @fixParams
+            
+            if ($fixResult) {
+                Write-ColorOutput -Message "Scheduled message issues have been fixed" -Color Green -Prefix "✅"
+            } else {
+                Write-ColorOutput -Message "Failed to fix scheduled message issues" -Color Red -Prefix "❌"
+            }
+        } else {
+            Write-ColorOutput -Message "Scheduled message fixes were skipped" -Color Yellow -Prefix "⚠️"
+        }
+    } else {
+        Write-ColorOutput -Message "No issues found with scheduled messages" -Color Green -Prefix "✅"
+    }
+}
+
+# Inform user about Python scripts for managing scheduled messages
+Write-ColorOutput -Message "Managing Scheduled Messages" -Color Cyan -Prefix "📋"
+Write-Host "You can use the following Python scripts to manage scheduled messages:"
+Write-Host "  - check_scheduled_messages.py: Check for issues with scheduled messages"
+Write-Host "  - fix_scheduled_messages.py: Fix issues with scheduled messages"
+Write-Host ""
+Write-Host "Example usage:"
+Write-Host "  python check_scheduled_messages.py"
+Write-Host "  python fix_scheduled_messages.py --all"
+Write-Host ""
+Write-Host "Add them to your deployment script with the following parameters:"
+Write-Host "  -CheckScheduledMessages: Check for issues with scheduled messages"
+Write-Host "  -FixScheduledMessages: Fix all issues with scheduled messages"
+Write-Host "  -FixMissingMetadata: Fix messages with missing metadata"
+Write-Host "  -ResetFailedMessages: Reset failed messages to pending"
+Write-Host "  -AutoConfirm: Automatically confirm fixes without prompting"
+Write-Host ""
+Write-Host "Example: .\deploy.ps1 -CheckScheduledMessages -FixScheduledMessages -AutoConfirm"
+
+Write-ColorOutput -Message "Deployment process completed" -Color Green -Prefix "🏁"

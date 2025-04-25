@@ -1,91 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { v4 as uuidv4 } from 'uuid';
 
-// Avoid using imported helper functions that might have "use server" directives
-// Instead, create a direct client here
-const createSupabaseClient = async () => {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Missing Supabase credentials');
-  }
-  
-  return createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  });
-};
+// Using provided Supabase credentials
+const supabaseUrl = 'https://aubulhjfeszmsheonmpy.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.ovHMLKm5nN4o7_P_Pld1vEzPpL1uKZK1xxtWn3RMMJw';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Scheduled messages table name without schema prefix
-const SCHEDULED_MESSAGES_TABLE = 'scheduled_messages';
-
-// GET /api/scheduled-messages
+/**
+ * GET handler for retrieving scheduled messages
+ */
 export async function GET(request: NextRequest) {
+  console.log('API called: GET /api/scheduled-messages');
+  const searchParams = request.nextUrl.searchParams;
+  const patientId = searchParams.get('patientId');
+  
   try {
-    const supabase = await createSupabaseClient();
+    // Query scheduled_messages table
+    console.log('Querying scheduled_messages table...');
+    let query = supabase
+      .from('scheduled_messages')
+      .select('*');
+      
+    if (patientId) {
+      query = query.eq('patient_id', patientId);
+    }
     
-    const { data, error } = await supabase
-      .from(SCHEDULED_MESSAGES_TABLE)
-      .select('*')
-      .order('scheduled_time', { ascending: true });
+    // Order by scheduled_time (newest first)
+    query = query.order('scheduled_time', { ascending: false });
+    
+    const { data, error } = await query;
     
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('Error querying scheduled_messages table:', error);
+      return NextResponse.json({ 
+        messages: [],
+        error: 'Failed to query scheduled_messages table: ' + error.message
+      }, { status: 500 });
     }
     
-    return NextResponse.json(data);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Failed to fetch scheduled messages: ' + error.message },
-      { status: 500 }
-    );
-  }
-}
-
-// POST /api/scheduled-messages
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const supabase = await createSupabaseClient();
-    
-    // Validate required fields
-    if (!body.recipientId || !body.platform || !body.message || !body.scheduledTime) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+    if (data && data.length > 0) {
+      console.log(`Found ${data.length} scheduled messages`);
+      
+      // Process the messages to ensure consistent format
+      const messages = data.map(msg => ({
+        ...msg,
+        // Ensure these properties exist with defaults if not present
+        platform: msg.platform || 'telegram',
+        status: msg.status || 'pending',
+        priority: msg.priority || 5
+      }));
+      
+      return NextResponse.json({ 
+        messages: messages,
+        count: messages.length
+      });
     }
     
-    const messageData = {
-      id: uuidv4(),
-      recipient_id: body.recipientId,
-      platform: body.platform.toLowerCase(),
-      message_content: body.message,
-      scheduled_time: body.scheduledTime,
-      recurrence_pattern: body.recurrence || null,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    };
-    
-    const { data, error } = await supabase
-      .from(SCHEDULED_MESSAGES_TABLE)
-      .insert(messageData)
-      .select()
-      .single();
-    
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    
-    return NextResponse.json(data);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Failed to create scheduled message: ' + error.message },
-      { status: 500 }
-    );
+    // If no data found, return empty array
+    console.log('No scheduled messages found');
+    return NextResponse.json({ 
+      messages: [],
+      count: 0
+    });
+  } catch (error) {
+    console.error('Error in GET handler:', error);
+    return NextResponse.json({ 
+      messages: [],
+      error: 'Error processing request: ' + (error instanceof Error ? error.message : String(error))
+    }, { status: 500 });
   }
 } 

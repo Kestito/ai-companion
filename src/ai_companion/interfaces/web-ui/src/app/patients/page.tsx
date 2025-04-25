@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '@/lib/supabase/client';
 import { 
   Typography, 
   Box, 
@@ -38,6 +37,8 @@ interface Patient {
   risk?: string;
   first_name?: string;
   last_name?: string;
+  telegram_id?: string;
+  channel?: string;
   [key: string]: any;
 }
 
@@ -50,27 +51,23 @@ export default function PatientsPage() {
     const fetchPatients = async () => {
       try {
         setLoading(true);
-        const supabase = getSupabaseClient();
         
-        // Try direct table access (in public schema)
-        let data, error;
+        // Use the API endpoint instead of direct Supabase access
+        console.log('Fetching patients from API endpoint');
+        const response = await fetch('/api/patients');
         
-        try {
-          // Direct table access - tables should be in public schema
-          const result = await supabase
-            .from('patients')
-            .select('*');
-              
-          data = result.data;
-          error = result.error;
-        } catch (directAccessError) {
-          console.error('Direct access failed:', directAccessError);
-          throw directAccessError;
+        if (!response.ok) {
+          throw new Error(`Failed to fetch patients: ${response.status} ${response.statusText}`);
         }
         
-        if (error) throw error;
+        const data = await response.json();
+        console.log('Patients data from API:', data);
         
-        setPatients(data || []);
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        
+        setPatients(data.patients || []);
       } catch (err: any) {
         console.error('Error fetching patients:', err);
         setError(err.message);

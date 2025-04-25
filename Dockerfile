@@ -89,7 +89,7 @@ case "$INTERFACE" in\n\
     /app/.venv/bin/chainlit run ai_companion/interfaces/chainlit/app.py --host 0.0.0.0 --port 8000\n\
     ;;\n\
   "telegram")\n\
-    echo "Starting Telegram interface..."\n\
+    echo "Starting Telegram interface separately (legacy mode)..."\n\
     /app/.venv/bin/python -m ai_companion.interfaces.telegram.telegram_bot\n\
     ;;\n\
   "monitor")\n\
@@ -97,16 +97,14 @@ case "$INTERFACE" in\n\
     /app/.venv/bin/uvicorn ai_companion.interfaces.monitor.app:app --host 0.0.0.0 --port 8090\n\
     ;;\n\
   "all")\n\
-    echo "Starting all interfaces..."\n\
-    # Start Chainlit on port 8080 first\n\
+    echo "Starting all interfaces with integrated Telegram bot..."\n\
+    # Start Chainlit on port 8080\n\
     /app/.venv/bin/chainlit run ai_companion/interfaces/chainlit/app.py --host 0.0.0.0 --port 8080 & \\\n\
     # Wait for Chainlit to be ready\n\
-    echo "Waiting for Chainlit to start..." && sleep 10 && \\\n\
-    # Start Telegram bot\n\
-    /app/.venv/bin/python -m ai_companion.interfaces.telegram.telegram_bot & \\\n\
+    echo "Waiting for Chainlit to start..." && sleep 5 && \\\n\
     # Start monitoring interface on port 8090\n\
     /app/.venv/bin/uvicorn ai_companion.interfaces.monitor.app:app --host 0.0.0.0 --port 8090 & \\\n\
-    # Start main FastAPI app on port 8000 (handles WhatsApp and proxies to Chainlit)\n\
+    # Start main FastAPI app on port 8000 (handles WhatsApp and now also runs Telegram bot)\n\
     /app/.venv/bin/uvicorn ai_companion.main:app --host 0.0.0.0 --port 8000 & \\\n\
     wait\n\
     ;;\n\

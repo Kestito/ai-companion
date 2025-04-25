@@ -1,17 +1,12 @@
 import asyncio
 import logging
-from io import BytesIO
 from typing import Dict, Optional, Union, Any, List
 import signal
-import json
-import uuid
 from datetime import datetime, timedelta
-import sqlite3
 import os
 import random
 
 import httpx
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from ai_companion.graph import graph_builder
 from ai_companion.modules.image import ImageToText
@@ -19,7 +14,10 @@ from ai_companion.modules.speech import SpeechToText, TextToSpeech
 from ai_companion.settings import settings
 from ai_companion.utils.supabase import get_supabase_client
 from ai_companion.modules.memory.service import get_memory_service
-from ai_companion.modules.memory.short_term import get_short_term_memory_manager, ShortTermMemoryManager
+from ai_companion.modules.scheduler import (
+    get_scheduler_worker,
+    get_scheduled_message_service,
+)
 
 # Define color codes for terminal output
 GREEN = "\033[32m"
@@ -27,8 +25,7 @@ RESET = "\033[0m"
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -37,10 +34,12 @@ speech_to_text = SpeechToText()
 text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
 
+
 # Helper function to print colored messages to terminal
 def print_green(message: str):
     """Print message in green color to terminal."""
     print(f"{GREEN}{message}{RESET}")
+
 
 class TelegramBot:
     def __init__(self):
@@ -51,15 +50,43 @@ class TelegramBot:
         self.client = httpx.AsyncClient(timeout=60.0)
         self._running = True
         self._setup_signal_handlers()
-        
+
         # Use standard memory service exclusively for all operations
         self.memory_service = get_memory_service()
-        
-        # Remove direct Supabase client access and memory_manager references
-        # Only connect to databases through memory_service
-        self.supabase = None
-        
-        logger.info("Initialized Telegram bot with standardized memory service approach")
+
+        # Initialize Supabase client directly
+        try:
+            self.supabase = get_supabase_client()
+            logger.info("Successfully initialized Supabase client for TelegramBot")
+        except Exception as e:
+            logger.error(f"Failed to initialize Supabase client: {e}")
+            self.supabase = None
+
+        # Initialize scheduled message service
+        try:
+            self.scheduled_message_service = get_scheduled_message_service()
+            logger.info("Successfully initialized ScheduledMessageService")
+
+            # Test connection to scheduled_messages table
+            test_result = (
+                self.scheduled_message_service.supabase.table("scheduled_messages")
+                .select("id")
+                .limit(1)
+                .execute()
+            )
+            logger.info("Test connection to scheduled_messages table successful")
+        except Exception as e:
+            logger.error(
+                f"Error initializing ScheduledMessageService: {e}", exc_info=True
+            )
+            self.scheduled_message_service = None
+
+        # Initialize scheduler worker with this bot instance for sending messages
+        self.scheduler_worker = get_scheduler_worker(self)
+
+        logger.info(
+            "Initialized Telegram bot with standardized memory service approach"
+        )
 
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
@@ -77,14 +104,21 @@ class TelegramBot:
         try:
             # Check bot health before starting
             await self._check_health()
-            
+
             me = await self._make_request("getMe")
             logger.info(f"Bot started successfully: @{me['result']['username']}")
+
+            # Start the scheduler worker
+            await self.scheduler_worker.start(self)
+            logger.info("Started scheduler worker")
+
             await self._poll_updates()
         except Exception as e:
             logger.error(f"Failed to start bot: {e}")
             raise
         finally:
+            # Stop the scheduler worker
+            self.scheduler_worker.stop()
             await self.client.aclose()
             logger.info("Bot shutdown complete")
 
@@ -96,29 +130,32 @@ class TelegramBot:
             start_time = asyncio.get_event_loop().time()
             me = await self._make_request("getMe")
             api_time = asyncio.get_event_loop().time() - start_time
-            
+
             if not me.get("ok"):
-                logger.error(f"Health check failed: Unable to connect to Telegram API")
+                logger.error("Health check failed: Unable to connect to Telegram API")
                 raise Exception("Telegram API connection failed")
-                
-            logger.info(f"Telegram API connection successful ({api_time:.2f}s): @{me['result']['username']}")
-            
+
+            logger.info(
+                f"Telegram API connection successful ({api_time:.2f}s): @{me['result']['username']}"
+            )
+
             # 2. Check if we can connect to Supabase for memory storage
             try:
                 # Check Supabase connection via memory manager
+                test_user_id = "test_health_check_user"  # Use a fixed test user ID for health checks
                 test_memories = await self.memory_service.get_session_memory(
-                    platform="telegram", 
-                    user_id=str(user_id),
-                    limit=10
+                    platform="telegram", user_id=test_user_id, limit=10
                 )
-                logger.info(f"Supabase connection successful, found {len(test_memories)} active memories")
+                logger.info(
+                    f"Supabase connection successful, found {len(test_memories)} active memories"
+                )
             except Exception as e:
                 logger.warning(f"Supabase memory check warning: {e}")
                 # Not critical, continue with warning
-            
+
             logger.info("Health check completed successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             raise
@@ -131,21 +168,28 @@ class TelegramBot:
                 params = {
                     "offset": self.offset,
                     "timeout": 30,
-                    "allowed_updates": ["message"]
+                    "allowed_updates": ["message"],
                 }
-                
+
                 # Get updates with error handling for conflict
                 try:
                     updates = await self._make_request("getUpdates", params=params)
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 409:
                         # Handle conflict error - reset offset and wait
-                        logger.warning("Conflict detected in getUpdates, resetting offset")
+                        logger.warning(
+                            "Conflict detected in getUpdates, resetting offset"
+                        )
                         # Get the latest updates to reset
                         reset_params = {"timeout": 1, "allowed_updates": ["message"]}
                         try:
-                            reset_updates = await self._make_request("getUpdates", params=reset_params)
-                            if reset_updates.get("result") and len(reset_updates["result"]) > 0:
+                            reset_updates = await self._make_request(
+                                "getUpdates", params=reset_params
+                            )
+                            if (
+                                reset_updates.get("result")
+                                and len(reset_updates["result"]) > 0
+                            ):
                                 # Update offset to the latest update_id + 1
                                 latest = reset_updates["result"][-1]
                                 self.offset = latest["update_id"] + 1
@@ -153,24 +197,26 @@ class TelegramBot:
                             else:
                                 # If no updates, advance offset by 1 as a fallback
                                 self.offset += 1
-                                logger.info(f"No updates found, advanced offset to {self.offset}")
+                                logger.info(
+                                    f"No updates found, advanced offset to {self.offset}"
+                                )
                         except Exception as reset_err:
                             logger.error(f"Failed to reset offset: {reset_err}")
                             self.offset += 1  # Still advance offset as last resort
-                        
+
                         await asyncio.sleep(2)  # Wait before retrying
                         continue
                     else:
                         # Re-raise other HTTP errors
                         raise
-                
+
                 # Process each update
                 for update in updates.get("result", []):
                     if not self._running:
                         break
                     await self._process_update(update)
                     self.offset = update["update_id"] + 1
-                    
+
             except httpx.TimeoutException:
                 logger.debug("Polling timeout, continuing...")
                 continue
@@ -189,22 +235,30 @@ class TelegramBot:
             if "message" not in update:
                 logger.warning(f"Update contains no message: {update}")
                 return
-            
+
             message = update["message"]
             chat_id = message.get("chat", {}).get("id")
             user_id = message.get("from", {}).get("id")
-            
+
             if not chat_id or not user_id:
                 logger.warning(f"Missing chat_id or user_id in message: {message}")
                 return
-            
+
+            # Generate a unique session ID for this chat using standard format
+            session_id = f"telegram-{user_id}"
+
+            # Check for command messages first
+            if "text" in message and message["text"].startswith("/"):
+                # Handle command message
+                command_result = await self._handle_command(message)
+                if command_result:
+                    # Command was handled, stop processing
+                    return
+
             # Check if this is a file or text message
             message_type = None
             content = None
-            
-            # Generate a unique session ID for this chat using standard format
-            session_id = f"telegram-{user_id}"
-            
+
             # Extract message content based on type
             if "text" in message:
                 message_type = "text"
@@ -213,7 +267,7 @@ class TelegramBot:
                 message_type = "voice"
                 file_id = message["voice"]["file_id"]
                 voice_data = await self._download_file(file_id)
-                
+
                 # Convert voice to text
                 content = await speech_to_text.transcribe(voice_data)
                 logger.info(f"Transcribed voice message: {content}")
@@ -222,45 +276,48 @@ class TelegramBot:
                 # Get the largest photo (last in array)
                 file_id = message["photo"][-1]["file_id"]
                 photo_data = await self._download_file(file_id)
-                
+
                 # Extract text from image
                 content = await image_to_text.process_image(photo_data)
                 logger.info(f"Extracted text from image: {content}")
             else:
                 # Handle other message types or send a response about unsupported format
                 logger.warning(f"Unsupported message type: {message}")
-                await self._send_message(chat_id, 
-                    "I can process text, voice messages, and images. Please send one of these formats.")
+                await self._send_message(
+                    chat_id,
+                    "I can process text, voice messages, and images. Please send one of these formats.",
+                )
                 return
-            
+
             # Print user message in green to terminal
             print_green(f"USER ({chat_id}): {content}")
-            
+
             # Collect user metadata
             username = message.get("from", {}).get("username")
             first_name = message.get("from", {}).get("first_name", "")
             last_name = message.get("from", {}).get("last_name", "")
-            
+
             user_metadata = {
                 "user_id": user_id,
                 "username": username,
                 "first_name": first_name,
                 "last_name": last_name,
                 "chat_id": chat_id,
-                "platform": "telegram"
+                "platform": "telegram",
             }
-            
+
             # Process the message and generate response
             await self._send_typing_action(chat_id)
-            
+
             # Process message through the graph agent using standardized LangGraph approach
             try:
                 logger.debug("Starting graph processing with LangGraph")
-                
+
                 # Create a human message from the content
                 from langchain_core.messages import HumanMessage
+
                 human_message = HumanMessage(content=content)
-                
+
                 # Standard LangGraph configuration with use_supabase_only flag
                 config = {
                     "configurable": {
@@ -273,46 +330,52 @@ class TelegramBot:
                         "user_metadata": user_metadata,
                     }
                 }
-                
+
                 # Try to get existing memories for context enhancement
                 try:
                     recent_memories = await self.memory_service.get_session_memory(
-                        platform="telegram", 
-                        user_id=str(user_id),
-                        limit=10
+                        platform="telegram", user_id=str(user_id), limit=10
                     )
-                    
+
                     if recent_memories:
                         # Format memories for LLM consumption
                         formatted_history = []
                         for memory in recent_memories:
                             if "content" in memory and memory["content"]:
-                                formatted_history.append({
-                                    "role": "human", 
-                                    "content": memory.get("content", "")
-                                })
+                                formatted_history.append(
+                                    {
+                                        "role": "human",
+                                        "content": memory.get("content", ""),
+                                    }
+                                )
                             if "response" in memory and memory["response"]:
-                                formatted_history.append({
-                                    "role": "ai", 
-                                    "content": memory.get("response", "")
-                                })
-                        
+                                formatted_history.append(
+                                    {
+                                        "role": "ai",
+                                        "content": memory.get("response", ""),
+                                    }
+                                )
+
                         # Add conversation history to config
-                        config["configurable"]["conversation_history"] = formatted_history
-                        logger.debug(f"Added {len(formatted_history)} conversation turns from memory")
+                        config["configurable"]["conversation_history"] = (
+                            formatted_history
+                        )
+                        logger.debug(
+                            f"Added {len(formatted_history)} conversation turns from memory"
+                        )
                 except Exception as e:
                     logger.warning(f"Error retrieving previous conversation turns: {e}")
-                
+
                 # Create a new graph instance with the standardized config
                 graph = graph_builder.with_config(config)
-                
+
                 # Invoke the graph with the human message
                 result = await graph.ainvoke({"messages": [human_message]})
-                
+
                 # Get the response from the result
                 response_message = None
                 workflow = "conversation"
-                
+
                 # Handle different result types
                 if isinstance(result, dict) and "messages" in result:
                     messages = result["messages"]
@@ -320,9 +383,12 @@ class TelegramBot:
                         last_message = messages[-1]
                         if hasattr(last_message, "content"):
                             response_message = last_message.content
-                            
+
                             # Get workflow info
-                            if hasattr(last_message, "metadata") and last_message.metadata:
+                            if (
+                                hasattr(last_message, "metadata")
+                                and last_message.metadata
+                            ):
                                 metadata = last_message.metadata
                                 if "workflow" in metadata:
                                     workflow = metadata["workflow"]
@@ -332,7 +398,7 @@ class TelegramBot:
                         response_message = "I'm not sure how to respond to that."
                 elif isinstance(result, dict) and "response" in result:
                     response_message = result["response"]
-                    
+
                     # Check for workflow specification
                     if "workflow" in result:
                         workflow = result["workflow"]
@@ -343,42 +409,687 @@ class TelegramBot:
                     # Fallback for unrecognized format
                     logger.warning(f"Unrecognized result format: {type(result)}")
                     response_message = "I processed your message but couldn't formulate a proper response."
-                
+
                 # Extract the complete graph state using aget_state
                 try:
                     # Get the graph state using LangGraph's aget_state method
                     graph_state = await graph.aget_state(config)
                     logger.info("Retrieved graph state from LangGraph using aget_state")
-                    
+
                     # Store in memory service with the complete state
                     conversation_data = {
                         "user_message": content,
-                        "bot_response": response_message
+                        "bot_response": response_message,
                     }
-                    
+
                     # Store the memory with the conversation data and complete state
                     memory_id = await self.memory_service.store_session_memory(
                         platform="telegram",
                         user_id=str(user_id),
                         state=graph_state,  # Store complete graph state
                         conversation=conversation_data,
-                        ttl_minutes=1440  # 24 hours default
+                        ttl_minutes=1440,  # 24 hours default
                     )
-                    
+
                     logger.info(f"Stored complete memory state with ID: {memory_id}")
                 except Exception as e:
                     logger.error(f"Error extracting or storing graph state: {e}")
-                
+
                 # Send the response directly from the node-based workflow
-                await self._send_direct_response(chat_id, response_message, workflow, result, message_type)
-            
+                await self._send_direct_response(
+                    chat_id, response_message, workflow, result, message_type
+                )
+
             except Exception as e:
                 logger.error(f"Error in graph processing: {e}", exc_info=True)
-                await self._send_message(chat_id, "Sorry, I encountered an error processing your message.")
+                await self._send_message(
+                    chat_id, "Sorry, I encountered an error processing your message."
+                )
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
-            await self._send_message(chat_id, "Sorry, I encountered an error processing your message.")
+            await self._send_message(
+                chat_id, "Sorry, I encountered an error processing your message."
+            )
+
+    async def _handle_command(self, message: Dict) -> bool:
+        """
+        Handle command messages starting with /.
+
+        Args:
+            message: The message containing the command
+
+        Returns:
+            True if the command was handled, False otherwise
+        """
+        chat_id = message.get("chat", {}).get("id")
+        user_id = message.get("from", {}).get("id")
+        text = message.get("text", "")
+
+        # Extract command and params
+        parts = text.split()
+        command = parts[0].lower()
+        params = parts[1:] if len(parts) > 1 else []
+
+        logger.info(f"Received command: {command} with params: {params}")
+
+        if command == "/schedule":
+            # Command format: /schedule <time> <message>
+            # Example: /schedule 2023-12-31T12:00:00 Happy New Year!
+            if len(params) < 2:
+                await self._send_message(
+                    chat_id,
+                    "📝 *USAGE INSTRUCTIONS:* /schedule <time> <message>\n\n"
+                    "*Examples:*\n"
+                    "- One-time: `/schedule 2023-12-31T12:00:00 Happy New Year!`\n"
+                    "- Daily: `/schedule daily 09:00 Good morning!`\n"
+                    "- Weekly: `/schedule weekly mon,wed,fri 08:00 Weekly reminder`\n"
+                    "- Monthly: `/schedule monthly 1 10:00 Monthly report`\n"
+                    "- Custom: `/schedule every 30m Time for a break`\n"
+                    "- Relative: `/schedule after 2m Send this message in 2 minutes`",
+                )
+                return True
+
+            try:
+                # Parse scheduled time based on format
+                scheduled_time = None
+                recurrence_pattern = None
+                message_start_idx = 1
+
+                # Check for recurrence pattern
+                if params[0].lower() == "daily":
+                    # Daily recurrence: /schedule daily 09:00 Message
+                    if len(params) < 3:
+                        await self._send_message(
+                            chat_id,
+                            "Please provide time and message for daily schedule",
+                        )
+                        return True
+
+                    time_str = params[1]
+                    message_start_idx = 2
+
+                    # Parse time (HH:MM format)
+                    hour, minute = map(int, time_str.split(":"))
+
+                    # Use today's date with specified time for first occurrence
+                    now = datetime.utcnow()
+                    scheduled_time = datetime(
+                        year=now.year,
+                        month=now.month,
+                        day=now.day,
+                        hour=hour,
+                        minute=minute,
+                    )
+
+                    # If time already passed today, start tomorrow
+                    if scheduled_time < now:
+                        scheduled_time += timedelta(days=1)
+
+                    # Create recurrence pattern
+                    recurrence_pattern = {"type": "daily", "interval": 1}
+
+                    # Add state confirmation with emoji
+                    await self._send_message(
+                        chat_id, "⏳ *Processing daily schedule request...*"
+                    )
+
+                elif params[0].lower() == "weekly":
+                    # Weekly recurrence: /schedule weekly mon,wed,fri 08:00 Message
+                    if len(params) < 3:
+                        await self._send_message(
+                            chat_id,
+                            "Please provide days, time and message for weekly schedule",
+                        )
+                        return True
+
+                    days_str = params[1].lower()
+                    time_str = params[2]
+                    message_start_idx = 3
+
+                    # Parse days (comma-separated day abbreviations)
+                    day_mapping = {
+                        "mon": 0,
+                        "tue": 1,
+                        "wed": 2,
+                        "thu": 3,
+                        "fri": 4,
+                        "sat": 5,
+                        "sun": 6,
+                    }
+
+                    days = []
+                    for day_abbr in days_str.split(","):
+                        if day_abbr in day_mapping:
+                            days.append(day_mapping[day_abbr])
+
+                    if not days:
+                        await self._send_message(
+                            chat_id,
+                            "Please provide valid days (mon,tue,wed,thu,fri,sat,sun)",
+                        )
+                        return True
+
+                    # Parse time (HH:MM format)
+                    hour, minute = map(int, time_str.split(":"))
+
+                    # Find the next occurrence
+                    now = datetime.utcnow()
+                    current_day = now.weekday()
+
+                    # Find the next day in the list
+                    days_sorted = sorted(days)
+                    next_day = None
+
+                    for day in days_sorted:
+                        if day > current_day:
+                            next_day = day
+                            break
+
+                    if next_day is not None:
+                        # Found a day later this week
+                        days_diff = next_day - current_day
+                    else:
+                        # Wrap to next week
+                        days_diff = 7 - current_day + days_sorted[0]
+
+                    # Create scheduled time
+                    scheduled_time = datetime(
+                        year=now.year,
+                        month=now.month,
+                        day=now.day,
+                        hour=hour,
+                        minute=minute,
+                    ) + timedelta(days=days_diff)
+
+                    # Create recurrence pattern
+                    recurrence_pattern = {"type": "weekly", "interval": 1, "days": days}
+
+                elif params[0].lower() == "monthly":
+                    # Monthly recurrence: /schedule monthly 15 10:00 Message
+                    if len(params) < 3:
+                        await self._send_message(
+                            chat_id,
+                            "Please provide day, time and message for monthly schedule",
+                        )
+                        return True
+
+                    day = int(params[1])
+                    time_str = params[2]
+                    message_start_idx = 3
+
+                    if day < 1 or day > 31:
+                        await self._send_message(
+                            chat_id, "Please provide a valid day of month (1-31)"
+                        )
+                        return True
+
+                    # Parse time (HH:MM format)
+                    hour, minute = map(int, time_str.split(":"))
+
+                    # Use current month with specified day for first occurrence
+                    now = datetime.utcnow()
+
+                    # Handle month length issues
+                    import calendar
+
+                    _, last_day = calendar.monthrange(now.year, now.month)
+                    day = min(day, last_day)
+
+                    scheduled_time = datetime(
+                        year=now.year,
+                        month=now.month,
+                        day=day,
+                        hour=hour,
+                        minute=minute,
+                    )
+
+                    # If day already passed this month, move to next month
+                    if scheduled_time < now:
+                        month = now.month + 1
+                        year = now.year
+
+                        if month > 12:
+                            month = 1
+                            year += 1
+
+                        # Validate day in next month
+                        _, last_day = calendar.monthrange(year, month)
+                        day = min(day, last_day)
+
+                        scheduled_time = datetime(
+                            year=year, month=month, day=day, hour=hour, minute=minute
+                        )
+
+                    # Create recurrence pattern
+                    recurrence_pattern = {"type": "monthly", "interval": 1, "day": day}
+
+                elif params[0].lower() == "every":
+                    # Custom interval: /schedule every 30m Message
+                    if len(params) < 2:
+                        await self._send_message(
+                            chat_id,
+                            "Please provide interval and message for custom schedule",
+                        )
+                        return True
+
+                    interval_str = params[1].lower()
+                    message_start_idx = 2
+
+                    # Parse interval (e.g., 30m, 2h, 1d)
+                    if interval_str[-1] == "m":
+                        minutes = int(interval_str[:-1])
+                    elif interval_str[-1] == "h":
+                        minutes = int(interval_str[:-1]) * 60
+                    elif interval_str[-1] == "d":
+                        minutes = int(interval_str[:-1]) * 60 * 24
+                    else:
+                        # Assume minutes if no unit specified
+                        minutes = int(interval_str)
+
+                    if minutes < 5:
+                        await self._send_message(
+                            chat_id, "Interval must be at least 5 minutes"
+                        )
+                        return True
+
+                    # Start from current time
+                    scheduled_time = datetime.utcnow() + timedelta(minutes=1)
+
+                    # Create recurrence pattern
+                    recurrence_pattern = {"type": "custom", "minutes": minutes}
+
+                elif params[0].lower() == "after":
+                    # Relative time: /schedule after 2m Message
+                    if len(params) < 2:
+                        await self._send_message(
+                            chat_id,
+                            "Please provide time interval and message for scheduling",
+                        )
+                        return True
+
+                    interval_str = params[1].lower()
+                    message_start_idx = 2
+
+                    # Parse interval (e.g., 2m, 1h, 30s)
+                    time_value = 0
+                    try:
+                        if interval_str[-1] == "m":
+                            time_value = int(interval_str[:-1])
+                            scheduled_time = datetime.utcnow() + timedelta(
+                                minutes=time_value
+                            )
+                        elif interval_str[-1] == "h":
+                            time_value = int(interval_str[:-1])
+                            scheduled_time = datetime.utcnow() + timedelta(
+                                hours=time_value
+                            )
+                        elif interval_str[-1] == "d":
+                            time_value = int(interval_str[:-1])
+                            scheduled_time = datetime.utcnow() + timedelta(
+                                days=time_value
+                            )
+                        elif interval_str[-1] == "s":
+                            time_value = int(interval_str[:-1])
+                            scheduled_time = datetime.utcnow() + timedelta(
+                                seconds=time_value
+                            )
+                        else:
+                            # Assume minutes if no unit specified
+                            time_value = int(interval_str)
+                            scheduled_time = datetime.utcnow() + timedelta(
+                                minutes=time_value
+                            )
+
+                        # Ensure the scheduled time is not in the past
+                        if scheduled_time <= datetime.utcnow():
+                            # Minimum 10 seconds in the future
+                            scheduled_time = datetime.utcnow() + timedelta(seconds=10)
+                            logger.info(
+                                f"Adjusted scheduled_time to ensure it's in the future: {scheduled_time.isoformat()}"
+                            )
+
+                    except ValueError:
+                        await self._send_message(
+                            chat_id,
+                            f"❌ *ERROR:* Invalid time format: {interval_str}\nPlease use a number followed by m (minutes), h (hours), d (days), or s (seconds)",
+                        )
+                        return True
+
+                    # No recurrence pattern for "after" - it's a one-time message
+                    recurrence_pattern = None
+
+                    # Confirm the scheduling
+                    unit_text = (
+                        "minutes"
+                        if interval_str[-1] == "m" or interval_str[-1].isdigit()
+                        else "hours"
+                        if interval_str[-1] == "h"
+                        else "days"
+                        if interval_str[-1] == "d"
+                        else "seconds"
+                    )
+                    await self._send_message(
+                        chat_id,
+                        f"⏳ *Processing schedule request for {time_value} {unit_text} from now...*",
+                    )
+
+                    # Add specific debug logging for after command
+                    logger.info(
+                        f"Scheduling 'after' message: chat_id={chat_id}, time_value={time_value}, scheduled_time={scheduled_time.isoformat()}"
+                    )
+
+                else:
+                    # One-time schedule: /schedule 2023-12-31T12:00:00 Message
+                    time_str = params[0]
+                    message_start_idx = 1
+
+                    # Try different time formats
+                    try:
+                        # Try ISO format first
+                        scheduled_time = datetime.fromisoformat(time_str)
+                    except ValueError:
+                        try:
+                            # Try date+time format
+                            scheduled_time = datetime.strptime(
+                                time_str, "%Y-%m-%d %H:%M:%S"
+                            )
+                        except ValueError:
+                            try:
+                                # Try date with default time (00:00:00)
+                                scheduled_time = datetime.strptime(time_str, "%Y-%m-%d")
+                            except ValueError:
+                                await self._send_message(
+                                    chat_id,
+                                    "Invalid time format. Please use YYYY-MM-DDThh:mm:ss or see examples with /schedule.",
+                                )
+                                return True
+
+                # Check if scheduled time is in the past
+                if scheduled_time < datetime.utcnow() and not recurrence_pattern:
+                    await self._send_message(
+                        chat_id, "❌ *ERROR:* Cannot schedule messages in the past"
+                    )
+                    return True
+
+                # Extract message content
+                message_content = " ".join(params[message_start_idx:])
+
+                # Create scheduled message
+                try:
+                    # Log detailed parameters before scheduling
+                    logger.info("About to create scheduled message with parameters:")
+                    logger.info(f"  - chat_id: {chat_id}")
+                    logger.info(f"  - scheduled_time: {scheduled_time.isoformat()}")
+                    logger.info(f"  - message_content: '{message_content}'")
+                    logger.info(f"  - recurrence_pattern: {recurrence_pattern}")
+
+                    message_id = await self.create_scheduled_message(
+                        chat_id=chat_id,
+                        message_content=message_content,
+                        scheduled_time=scheduled_time,
+                        recurrence_pattern=recurrence_pattern,
+                    )
+
+                    # Verify the message was created
+                    scheduled_message = (
+                        await self.scheduled_message_service.get_message_by_id(
+                            message_id
+                        )
+                    )
+                    if not scheduled_message:
+                        logger.error(
+                            f"Message created but not found in database: {message_id}"
+                        )
+                        error_message = (
+                            "❌ *ERROR:* Message scheduled but verification failed\n\n"
+                            "🔴 Please try again or contact support if the issue persists."
+                        )
+                        await self._send_message(chat_id, error_message)
+                        return True
+
+                    logger.info(
+                        f"Successfully verified message in database: {message_id}"
+                    )
+
+                    # Create confirmation message with status info
+                    if recurrence_pattern:
+                        recurrence_type = recurrence_pattern["type"]
+                        if recurrence_type == "daily":
+                            pattern_desc = "daily"
+                        elif recurrence_type == "weekly":
+                            days = recurrence_pattern["days"]
+                            day_names = [
+                                "Mon",
+                                "Tue",
+                                "Wed",
+                                "Thu",
+                                "Fri",
+                                "Sat",
+                                "Sun",
+                            ]
+                            day_list = [day_names[d] for d in days]
+                            pattern_desc = f"weekly on {', '.join(day_list)}"
+                        elif recurrence_type == "monthly":
+                            day = recurrence_pattern["day"]
+                            pattern_desc = f"monthly on day {day}"
+                        elif recurrence_type == "custom":
+                            minutes = recurrence_pattern["minutes"]
+                            if minutes < 60:
+                                pattern_desc = f"every {minutes} minutes"
+                            elif minutes < 60 * 24:
+                                hours = minutes / 60
+                                pattern_desc = f"every {hours:.1f} hours"
+                            else:
+                                days = minutes / (60 * 24)
+                                pattern_desc = f"every {days:.1f} days"
+                        else:
+                            pattern_desc = "on a recurring schedule"
+
+                        confirmation = (
+                            f"✅ *SUCCESS:* Message scheduled {pattern_desc}\n\n"
+                            f"🕒 First occurrence: `{scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                            f"📝 Message: \"{message_content}\"\n\n"
+                            f"🆔 ID: `{message_id}`\n\n"
+                            f"ℹ️ Use `/scheduled` to see all your scheduled messages\n"
+                            f"ℹ️ Use `/cancel_schedule {message_id}` to cancel"
+                        )
+                    else:
+                        confirmation = (
+                            f"✅ *SUCCESS:* Message scheduled for one-time delivery\n\n"
+                            f"🕒 Scheduled time: `{scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                            f"📝 Message: \"{message_content}\"\n\n"
+                            f"🆔 ID: `{message_id}`\n\n"
+                            f"ℹ️ Use `/scheduled` to see all your scheduled messages\n"
+                            f"ℹ️ Use `/cancel_schedule {message_id}` to cancel"
+                        )
+
+                    await self._send_message(chat_id, confirmation)
+                except Exception as e:
+                    error_message = (
+                        f"❌ *ERROR:* Failed to schedule message\n\n"
+                        f"🔴 Error details: `{str(e)}`\n\n"
+                        f"Please try again or contact support if the issue persists."
+                    )
+                    await self._send_message(chat_id, error_message)
+                    logger.error(f"Error scheduling message: {e}", exc_info=True)
+
+            except Exception as e:
+                error_message = (
+                    f"❌ *ERROR:* Could not process scheduling command\n\n"
+                    f"🔴 Error details: `{str(e)}`\n\n"
+                    f"Please check the command format:\n"
+                    f"`/schedule <time> <message>`\n\n"
+                    f"Use `/schedule` without parameters for help."
+                )
+                await self._send_message(chat_id, error_message)
+                logger.error(f"Error scheduling message: {e}", exc_info=True)
+
+            return True
+
+        elif command == "/scheduled":
+            # List scheduled messages for this chat
+            try:
+                await self._send_message(
+                    chat_id, "⏳ *Fetching your scheduled messages...*"
+                )
+
+                messages = await self.get_scheduled_messages_for_chat(chat_id)
+
+                # Check if there was a database connection error
+                if messages and len(messages) == 1 and messages[0].get("error") is True:
+                    error_details = messages[0].get("message", "Unknown database error")
+                    await self._send_message(
+                        chat_id,
+                        f"❌ *DATABASE CONNECTION ERROR*\n\n"
+                        f"There was a problem connecting to the database: {error_details}\n\n"
+                        f"Your scheduled messages exist, but can't be displayed right now.\n"
+                        f"Please try again in a few minutes.",
+                    )
+                    logger.error(f"Database error shown to user: {error_details}")
+                    return True
+
+                if not messages:
+                    await self._send_message(
+                        chat_id,
+                        "📭 *No scheduled messages found*\n\nYou don't have any pending scheduled messages.",
+                    )
+                    return True
+
+                # Format message list
+                response = "📋 *Your Scheduled Messages:*\n\n"
+
+                for i, msg in enumerate(messages):
+                    scheduled_time = datetime.fromisoformat(
+                        msg["scheduled_time"].replace("Z", "+00:00")
+                    )
+                    status = msg["status"].capitalize()
+                    message_preview = msg["message_content"]
+
+                    # Add status emoji
+                    status_emoji = (
+                        "⏳"
+                        if status == "Pending"
+                        else "✅"
+                        if status == "Sent"
+                        else "❌"
+                        if status == "Failed"
+                        else "🔄"
+                        if status == "Rescheduled"
+                        else "⚠️"
+                    )
+
+                    # Truncate long messages
+                    if len(message_preview) > 30:
+                        message_preview = message_preview[:27] + "..."
+
+                    # Check if recurring
+                    metadata = msg.get("metadata", {})
+                    recurrence = metadata.get("recurrence")
+                    recurring = "🔄 " if recurrence else "📅 "
+
+                    response += (
+                        f"{i+1}. {recurring}{scheduled_time.strftime('%Y-%m-%d %H:%M')}"
+                        f" ({status_emoji} {status}): {message_preview}\n"
+                        f"   🆔 ID: `{msg['id']}`\n\n"
+                    )
+
+                response += "ℹ️ To cancel a message, use `/cancel_schedule <message_id>`"
+                await self._send_message(chat_id, response)
+
+            except Exception as e:
+                error_message = (
+                    f"❌ *ERROR:* Failed to retrieve scheduled messages\n\n"
+                    f"🔴 Error details: `{str(e)}`\n\n"
+                    f"There might be a connection issue with the Telegram API or database.\n"
+                    f"Please try again later."
+                )
+                await self._send_message(chat_id, error_message)
+                logger.error(f"Error listing scheduled messages: {e}", exc_info=True)
+
+            return True
+
+        elif command == "/cancel_schedule":
+            # Cancel a scheduled message
+            # Usage: /cancel_schedule <message_id>
+            if len(params) != 1:
+                await self._send_message(
+                    chat_id,
+                    "📝 *USAGE:* `/cancel_schedule <message_id>`\n\nUse `/scheduled` to see your message IDs.",
+                )
+                return True
+
+            message_id = params[0]
+
+            await self._send_message(
+                chat_id,
+                f"⏳ *Processing cancellation request for message* `{message_id}`...",
+            )
+
+            try:
+                # Get message to verify ownership
+                message = await self.scheduled_message_service.get_message_by_id(
+                    message_id
+                )
+
+                if not message:
+                    await self._send_message(
+                        chat_id, f"❌ *ERROR:* Message with ID `{message_id}` not found"
+                    )
+                    return True
+
+                # Verify that this message belongs to this chat
+                metadata = message.get("metadata", {})
+                platform_data = metadata.get("platform_data", {})
+                message_chat_id = platform_data.get("chat_id")
+
+                if message_chat_id != chat_id:
+                    await self._send_message(
+                        chat_id,
+                        "⛔ *ACCESS DENIED:* You don't have permission to cancel this message",
+                    )
+                    return True
+
+                # Get message details for confirmation
+                scheduled_time = datetime.fromisoformat(
+                    message.get("scheduled_time", "").replace("Z", "+00:00")
+                )
+                message_content = message.get("message_content", "")
+                current_status = message.get("status", "unknown")
+
+                # Cancel the message
+                success = await self.cancel_scheduled_message(message_id)
+
+                if success:
+                    confirmation = (
+                        f"✅ *SUCCESS:* Scheduled message cancelled\n\n"
+                        f"🆔 ID: `{message_id}`\n"
+                        f"📝 Message: \"{message_content}\"\n"
+                        f"🕒 Was scheduled for: `{scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                        f"📊 Previous status: {current_status}"
+                    )
+                    await self._send_message(chat_id, confirmation)
+                else:
+                    error_message = (
+                        f"❌ *ERROR:* Failed to cancel message\n\n"
+                        f"This could be because the message has already been sent or has an invalid status.\n\n"
+                        f"Current status: {current_status}"
+                    )
+                    await self._send_message(chat_id, error_message)
+
+            except Exception as e:
+                error_message = (
+                    f"❌ *ERROR:* Failed to cancel scheduled message\n\n"
+                    f"🔴 Error details: `{str(e)}`\n\n"
+                    f"Please try again with a valid message ID."
+                )
+                await self._send_message(chat_id, error_message)
+                logger.error(f"Error cancelling scheduled message: {e}", exc_info=True)
+
+            return True
+
+        # Command not recognized or handled
+        return False
 
     async def _send_direct_response(
         self,
@@ -386,7 +1097,7 @@ class TelegramBot:
         response_text: str,
         workflow: str,
         result: Union[Dict, Any],
-        message_type: Optional[str] = None
+        message_type: Optional[str] = None,
     ):
         """Send response directly from conversation_node without modifications."""
         try:
@@ -394,12 +1105,14 @@ class TelegramBot:
             if not response_text or not isinstance(response_text, str):
                 logger.warning(f"Invalid response text: {response_text}")
                 response_text = "Sorry, I encountered an error generating a response."
-            
+
             # Print bot response in green to terminal
             print_green(f"BOT → {chat_id}: {response_text}")
-            
-            logger.info(f"Sending direct response with workflow '{workflow}', length: {len(response_text)} chars")
-            
+
+            logger.info(
+                f"Sending direct response with workflow '{workflow}', length: {len(response_text)} chars"
+            )
+
             # Handle the case where result is not a dictionary
             if not isinstance(result, dict):
                 if message_type == "voice":
@@ -409,7 +1122,9 @@ class TelegramBot:
                         await self._send_voice(chat_id, audio_data)
                         await self._send_message(chat_id, response_text)
                     except Exception as e:
-                        logger.error(f"Error generating voice response: {e}", exc_info=True)
+                        logger.error(
+                            f"Error generating voice response: {e}", exc_info=True
+                        )
                         await self._send_message(chat_id, response_text)
                 else:
                     await self._send_message(chat_id, response_text)
@@ -422,7 +1137,7 @@ class TelegramBot:
                     await self._send_voice(chat_id, audio_buffer, response_text)
                 else:
                     await self._send_message(chat_id, response_text)
-            
+
             elif workflow == "image":
                 image_path = result.get("image_path")
                 if image_path:
@@ -435,7 +1150,7 @@ class TelegramBot:
                         await self._send_message(chat_id, response_text)
                 else:
                     await self._send_message(chat_id, response_text)
-            
+
             elif message_type == "voice":
                 # For voice input messages, also generate and send a voice response
                 try:
@@ -445,12 +1160,12 @@ class TelegramBot:
                 except Exception as e:
                     logger.error(f"Error generating voice response: {e}", exc_info=True)
                     await self._send_message(chat_id, response_text)
-            
+
             else:  # Default to conversation workflow
                 await self._send_message(chat_id, response_text)
-                
+
             logger.info(f"Successfully sent response to chat {chat_id}")
-                
+
         except Exception as e:
             logger.error(f"Error sending response: {e}", exc_info=True)
             try:
@@ -463,23 +1178,23 @@ class TelegramBot:
     async def _extract_message_content(self, message: Dict) -> Optional[tuple]:
         """Extract content from different types of messages."""
         message_type = None
-        
+
         if "text" in message:
             return message["text"], None
-        
+
         elif "voice" in message:
             file_id = message["voice"]["file_id"]
             audio_data = await self._download_file(file_id)
             transcript = await speech_to_text.transcribe(audio_data)
             # Return both the transcript and mark this as a voice message
             return transcript, "voice"
-            
+
         elif "photo" in message:
             # Get the largest photo (last in array)
             photo = message["photo"][-1]
             file_id = photo["file_id"]
             image_data = await self._download_file(file_id)
-            
+
             caption = message.get("caption", "")
             try:
                 description = await image_to_text.analyze_image(
@@ -490,29 +1205,29 @@ class TelegramBot:
             except Exception as e:
                 logger.warning(f"Failed to analyze image: {e}")
                 return caption or "Image received but could not be analyzed", None
-                
+
         return None, None
 
     def _clean_response_text(self, text: str) -> str:
         """
         Remove markdown formatting symbols from response text.
-        
+
         Args:
             text: The response text to clean
-            
+
         Returns:
             Cleaned text without markdown symbols
         """
         if not text:
             return text
-        
+
         # Remove asterisks (used for bold formatting in markdown)
         cleaned_text = text.replace("*", "")
-        
+
         # Other potential formatting to clean if needed:
         # cleaned_text = cleaned_text.replace("_", "")  # Remove underscores (italic)
         # cleaned_text = cleaned_text.replace("`", "")  # Remove backticks (code)
-        
+
         return cleaned_text
 
     async def _send_response(
@@ -521,7 +1236,7 @@ class TelegramBot:
         response_text: str,
         workflow: str,
         result: Union[Dict, Any],
-        message_type: Optional[str] = None
+        message_type: Optional[str] = None,
     ):
         """Send response based on workflow type."""
         try:
@@ -529,27 +1244,44 @@ class TelegramBot:
             if not response_text or not isinstance(response_text, str):
                 logger.warning(f"Invalid response text: {response_text}")
                 response_text = "Sorry, I encountered an error generating a response."
-            
+
             # Check if response contains structured RAG information - don't modify these
-            contains_structured_info = any(marker in response_text for marker in [
-                "**", "##", "1.", "2.", "3.", "4.", "5.", "•", "*Registracija*", "*Dokument", "*Patvirtinim"
-            ])
-            
+            contains_structured_info = any(
+                marker in response_text
+                for marker in [
+                    "**",
+                    "##",
+                    "1.",
+                    "2.",
+                    "3.",
+                    "4.",
+                    "5.",
+                    "•",
+                    "*Registracija*",
+                    "*Dokument",
+                    "*Patvirtinim",
+                ]
+            )
+
             # Only apply response variations if it's NOT a structured RAG response
             if not contains_structured_info:
                 response_text = self._add_response_variation(response_text)
             else:
-                logger.info("Detected structured RAG response - preserving original format")
-            
+                logger.info(
+                    "Detected structured RAG response - preserving original format"
+                )
+
             # Clean response text to remove markdown formatting ONLY if it's not a RAG response
             if not contains_structured_info:
                 response_text = self._clean_response_text(response_text)
-            
+
             # Print bot response in green to terminal
             print_green(f"BOT → {chat_id}: {response_text}")
-            
-            logger.info(f"Sending response with workflow '{workflow}', length: {len(response_text)} chars")
-            
+
+            logger.info(
+                f"Sending response with workflow '{workflow}', length: {len(response_text)} chars"
+            )
+
             # Handle the case where result is not a dictionary
             if not isinstance(result, dict):
                 if message_type == "voice":
@@ -559,7 +1291,9 @@ class TelegramBot:
                         await self._send_voice(chat_id, audio_data)
                         await self._send_message(chat_id, response_text)
                     except Exception as e:
-                        logger.error(f"Error generating voice response: {e}", exc_info=True)
+                        logger.error(
+                            f"Error generating voice response: {e}", exc_info=True
+                        )
                         await self._send_message(chat_id, response_text)
                 else:
                     await self._send_message(chat_id, response_text)
@@ -572,7 +1306,7 @@ class TelegramBot:
                     await self._send_voice(chat_id, audio_buffer, response_text)
                 else:
                     await self._send_message(chat_id, response_text)
-            
+
             elif workflow == "image":
                 image_path = result.get("image_path")
                 if image_path:
@@ -585,7 +1319,7 @@ class TelegramBot:
                         await self._send_message(chat_id, response_text)
                 else:
                     await self._send_message(chat_id, response_text)
-            
+
             elif message_type == "voice":
                 # For voice input messages, also generate and send a voice response
                 try:
@@ -595,12 +1329,12 @@ class TelegramBot:
                 except Exception as e:
                     logger.error(f"Error generating voice response: {e}", exc_info=True)
                     await self._send_message(chat_id, response_text)
-            
+
             else:  # Default to conversation workflow
                 await self._send_message(chat_id, response_text)
-                
+
             logger.info(f"Successfully sent response to chat {chat_id}")
-                
+
         except Exception as e:
             logger.error(f"Error sending response: {e}", exc_info=True)
             try:
@@ -613,19 +1347,25 @@ class TelegramBot:
     def _add_response_variation(self, text: str) -> str:
         """
         Detect and break repetitive patterns in responses to make them more natural.
-        
+
         Args:
             text: The original response text
-            
+
         Returns:
             Modified response with more variation
         """
         # Check for overused starting phrases
-        common_starts = ["Žinoma!", "Žinoma, ", "Sveiki!", "Labas!", "Suprantu tavo klausimą"]
-        
+        common_starts = [
+            "Žinoma!",
+            "Žinoma, ",
+            "Sveiki!",
+            "Labas!",
+            "Suprantu tavo klausimą",
+        ]
+
         # Alternative starters in Lithuanian
         alt_starters = [
-            "", # Sometimes start directly without a greeting
+            "",  # Sometimes start directly without a greeting
             "Žiūrėk, ",
             "Na, ",
             "Hmm, ",
@@ -638,30 +1378,32 @@ class TelegramBot:
             "Na gerai, ",
             "Okay, ",
         ]
-        
+
         modified_text = text
-        
+
         # Replace standard openings with more varied ones
         for start in common_starts:
             if text.startswith(start):
                 # 70% chance to replace with alternative
                 if random.random() < 0.7:
                     replacement = random.choice(alt_starters)
-                    modified_text = replacement + text[len(start):].lstrip()
+                    modified_text = replacement + text[len(start) :].lstrip()
                 break
-                
+
         # Detect if the message follows the "I need more context" pattern
         context_phrases = [
             "reikia daugiau konteksto",
             "galėčiau tiksliai atsakyti",
             "reikėtų daugiau informacijos",
             "galėtumėte patikslinti",
-            "norėčiau daugiau konteksto"
+            "norėčiau daugiau konteksto",
         ]
-        
+
         # Check if the message is asking for clarification
-        asks_for_clarification = any(phrase in modified_text.lower() for phrase in context_phrases)
-        
+        asks_for_clarification = any(
+            phrase in modified_text.lower() for phrase in context_phrases
+        )
+
         if asks_for_clarification and random.random() < 0.6:
             # Replace with more direct response 60% of the time
             simple_responses = [
@@ -675,55 +1417,57 @@ class TelegramBot:
                 "Sakyk drąsiai, kuo domiesi? Padėsiu kuo galėsiu!",
             ]
             modified_text = random.choice(simple_responses)
-            
-        # Break up long sentences - if we have more than 3 commas, 
+
+        # Break up long sentences - if we have more than 3 commas,
         # have a 50% chance to split into multiple sentences
-        if modified_text.count(',') > 3 and random.random() < 0.5:
-            parts = modified_text.split(',')
+        if modified_text.count(",") > 3 and random.random() < 0.5:
+            parts = modified_text.split(",")
             if len(parts) > 3:
                 # Convert some commas to periods
-                for i in range(1, len(parts)-1):
+                for i in range(1, len(parts) - 1):
                     if random.random() < 0.4:  # 40% chance to convert each comma
                         parts[i] = parts[i].strip().capitalize() + "."
-                modified_text = ' '.join([p.strip() for p in parts])
-                
+                modified_text = " ".join([p.strip() for p in parts])
+
         # Add some filler words and speech particles randomly
         filler_words = ["nu", "tai", "na", "žinai", "tipo", "mmm", "ane"]
-        
+
         words = modified_text.split()
         if len(words) > 5 and random.random() < 0.3:  # 30% chance to add filler
-            insert_pos = random.randint(1, min(4, len(words)-1))
+            insert_pos = random.randint(1, min(4, len(words) - 1))
             filler = random.choice(filler_words)
             words.insert(insert_pos, filler)
-            modified_text = ' '.join(words)
-            
+            modified_text = " ".join(words)
+
         # Add an emoji at the end sometimes
         emojis = ["😊", "👍", "🙂", "😉", "🤔", "👌", "💪", "👏", "😁", "😄"]
-        if random.random() < 0.2 and not any(emoji in modified_text for emoji in emojis):
+        if random.random() < 0.2 and not any(
+            emoji in modified_text for emoji in emojis
+        ):
             modified_text += f" {random.choice(emojis)}"
-            
+
         return modified_text
 
     async def _send_message(self, chat_id: int, text: str) -> Dict:
         """Send text message with chunking for long messages."""
         # Telegram has a 4096 character limit per message
         MAX_MESSAGE_LENGTH = 4000  # Using 4000 to be safe
-        
+
         if not text:
             logger.warning("Attempted to send empty message")
             return {"ok": False, "description": "Empty message"}
-            
+
         # Check if we need to split the message
         if len(text) <= MAX_MESSAGE_LENGTH:
             return await self._send_single_message(chat_id, text)
-        
+
         # Split long messages into chunks
         chunks = []
         for i in range(0, len(text), MAX_MESSAGE_LENGTH):
-            chunks.append(text[i:i + MAX_MESSAGE_LENGTH])
-            
+            chunks.append(text[i : i + MAX_MESSAGE_LENGTH])
+
         logger.info(f"Splitting long message into {len(chunks)} chunks")
-        
+
         # Send each chunk with progress indicator
         results = []
         for i, chunk in enumerate(chunks):
@@ -731,22 +1475,21 @@ class TelegramBot:
             if len(chunks) > 1:
                 chunk_header = f"[Part {i+1}/{len(chunks)}]\n"
                 chunk = chunk_header + chunk
-            
+
             result = await self._send_single_message(chat_id, chunk)
             results.append(result)
-            
+
             # Small delay between chunks to avoid rate limiting
             if i < len(chunks) - 1:
                 await asyncio.sleep(0.5)
-                
+
         # Return the last result as the overall result
         return results[-1]
-        
+
     async def _send_single_message(self, chat_id: int, text: str) -> Dict:
         """Send a single text message with improved error handling."""
         return await self._make_request(
-            "sendMessage",
-            params={"chat_id": chat_id, "text": text}
+            "sendMessage", params={"chat_id": chat_id, "text": text}
         )
 
     async def _make_request(
@@ -755,69 +1498,106 @@ class TelegramBot:
         params: Dict = None,
         files: Dict = None,
         data: Dict = None,
-        retries: int = 5  # Increased from 3 to 5
+        retries: int = 5,  # Increased from 3 to 5
     ) -> Dict:
-        """Make request to Telegram Bot API with improved retry logic and exponential backoff."""
-        url = f"{self.base_url}/{method}"
-        
-        for attempt in range(retries):
+        """
+        Make an HTTP request to the Telegram API.
+
+        Args:
+            method: API method name
+            params: Request parameters
+            files: Files to upload
+            data: Form data
+            retries: Maximum number of retry attempts
+
+        Returns:
+            The API response as a dict
+        """
+        if params is None:
+            params = {}
+
+        url = f"{self.api_url}{method}"
+        attempt = 0
+        last_exception = None
+
+        while attempt < retries:
             try:
+                headers = {}
+                attempt += 1
+
                 if files:
-                    response = await self.client.post(
-                        url, 
-                        params=params, 
-                        files=files, 
-                        data=data,
-                        timeout=60.0  # Increased from 30 to 60 seconds
+                    # Multipart form request (file upload)
+                    response = await self.session.post(
+                        url, params=params, data=data, files=files
                     )
                 else:
-                    response = await self.client.post(
-                        url, 
-                        json=params if params else {},
-                        timeout=60.0  # Increased from 30 to 60 seconds
+                    # Regular JSON request
+                    headers["Content-Type"] = "application/json"
+                    response = await self.session.post(
+                        url, headers=headers, json=params
                     )
-                
-                # Check specifically for 409 Conflict and other client errors
-                # Let these propagate up immediately for special handling
-                if response.status_code == 409 or (response.status_code >= 400 and response.status_code < 500):
-                    response.raise_for_status()
-                    
-                # For other status codes, use normal error handling
-                response.raise_for_status()
-                return response.json()
-                
-            except httpx.TimeoutException:
-                if attempt == retries - 1:
-                    logger.error(f"Request timed out after {retries} attempts")
-                    raise
-                # Exponential backoff with jitter
-                backoff_time = min(2 ** attempt + (0.1 * attempt), 30)
-                logger.warning(f"Request timeout, attempt {attempt + 1}/{retries}, retrying in {backoff_time:.2f}s")
-                await asyncio.sleep(backoff_time)
-                
-            except httpx.HTTPStatusError as e:
-                # Don't retry for client errors - let the caller handle these
-                if e.response.status_code == 409 or (400 <= e.response.status_code < 500):
-                    raise
-                
-                if attempt == retries - 1:
-                    logger.error(f"API request failed after {retries} attempts: {e}")
-                    raise
-                    
-                # Exponential backoff with jitter for server errors
-                backoff_time = min(2 ** attempt + (0.1 * attempt), 30)
-                logger.warning(f"Request failed with status {e.response.status_code}, attempt {attempt + 1}/{retries}, retrying in {backoff_time:.2f}s: {e}")
-                await asyncio.sleep(backoff_time)
-                
+
+                result = await response.json()
+
+                if not result.get("ok", False):
+                    error_msg = result.get("description", "Unknown error")
+                    logger.error(f"Telegram API error in {method}: {error_msg}")
+
+                    if "retry_after" in result:
+                        retry_after = result["retry_after"]
+                        logger.warning(
+                            f"Rate limited, retrying after {retry_after} seconds"
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+
+                    raise Exception(f"Telegram API error: {error_msg}")
+
+                return result
+
+            except aiohttp.ClientError as e:
+                last_exception = e
+                logger.error(f"Network error in Telegram API request to {method}: {e}")
+                wait_time = min(2**attempt, 30)  # Exponential backoff, max 30 seconds
+                logger.info(
+                    f"Retrying in {wait_time} seconds... (attempt {attempt}/{retries})"
+                )
+                await asyncio.sleep(wait_time)
             except Exception as e:
-                if attempt == retries - 1:
-                    logger.error(f"API request failed after {retries} attempts: {e}")
-                    raise
-                    
-                # Exponential backoff with jitter for other errors
-                backoff_time = min(2 ** attempt + (0.1 * attempt), 30)
-                logger.warning(f"Request failed, attempt {attempt + 1}/{retries}, retrying in {backoff_time:.2f}s: {e}")
-                await asyncio.sleep(backoff_time)
+                last_exception = e
+                logger.error(f"Error in Telegram API request to {method}: {e}")
+                if attempt < retries:
+                    wait_time = min(2**attempt, 30)
+                    logger.info(
+                        f"Retrying in {wait_time} seconds... (attempt {attempt}/{retries})"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    break
+
+        # If we get here, all retries failed
+        error_message = (
+            str(last_exception) if last_exception else "Maximum retries reached"
+        )
+        logger.error(
+            f"Telegram API connection failed after {retries} attempts: {error_message}"
+        )
+
+        # Provide more specific error message
+        if isinstance(last_exception, aiohttp.ClientConnectorError):
+            raise Exception(
+                f"Telegram API connection failed - Network connectivity issue: {error_message}"
+            )
+        elif isinstance(last_exception, aiohttp.ServerTimeoutError):
+            raise Exception(
+                f"Telegram API connection failed - Server timeout: {error_message}"
+            )
+        elif isinstance(last_exception, aiohttp.ClientResponseError):
+            raise Exception(
+                f"Telegram API connection failed - HTTP error: {error_message}"
+            )
+        else:
+            raise Exception(f"Telegram API connection failed: {error_message}")
 
     async def _download_file(self, file_id: str) -> bytes:
         """Download file from Telegram servers."""
@@ -825,7 +1605,7 @@ class TelegramBot:
             # Get file path
             file_info = await self._make_request("getFile", params={"file_id": file_id})
             file_path = file_info["result"]["file_path"]
-            
+
             # Download file
             download_url = f"{self.api_base}/file/bot{self.token}/{file_path}"
             response = await self.client.get(download_url)
@@ -835,185 +1615,192 @@ class TelegramBot:
             logger.error(f"Failed to download file: {e}")
             raise
 
-    async def _send_photo(self, chat_id: int, photo: bytes, caption: str = None) -> Dict:
+    async def _send_photo(
+        self, chat_id: int, photo: bytes, caption: str = None
+    ) -> Dict:
         """Send photo message with proper handling of long captions."""
         files = {"photo": ("image.jpg", photo, "image/jpeg")}
         data = {"chat_id": chat_id}
-        
+
         # Clean caption to remove markdown formatting
         if caption:
             caption = self._clean_response_text(caption)
-        
+
         # Telegram has a 1024 character limit for photo captions
         MAX_CAPTION_LENGTH = 1000  # Using 1000 to be safe
-        
+
         if not caption:
             return await self._make_request("sendPhoto", data=data, files=files)
-        
+
         # If caption is short enough, send it with the photo
         if len(caption) <= MAX_CAPTION_LENGTH:
             data["caption"] = caption
             return await self._make_request("sendPhoto", data=data, files=files)
-        
+
         # For long captions, send the photo first, then the caption as a separate message
         logger.info(f"Caption too long ({len(caption)} chars), sending separately")
         photo_result = await self._make_request("sendPhoto", data=data, files=files)
-        
+
         # Send a shorter caption with the photo to give context
         short_caption = caption[:MAX_CAPTION_LENGTH] + "..."
         data["caption"] = short_caption
         await self._make_request("sendPhoto", data=data, files=files)
-        
+
         # Send the full caption as a separate message
         await self._send_message(chat_id, caption)
-        
+
         return photo_result
 
-    async def _send_voice(self, chat_id: int, voice: bytes, caption: str = None) -> Dict:
+    async def _send_voice(
+        self, chat_id: int, voice: bytes, caption: str = None
+    ) -> Dict:
         """Send voice message with proper handling of captions."""
         files = {"voice": ("voice.ogg", voice, "audio/ogg")}
         data = {"chat_id": chat_id}
-        
+
         # Send voice message first
         voice_result = await self._make_request("sendVoice", data=data, files=files)
-        
+
         # Clean and send caption as a separate message if provided
         if caption and isinstance(caption, str) and caption.strip():
             caption = self._clean_response_text(caption)
             await self._send_message(chat_id, caption)
-        
+
         return voice_result
 
     async def _save_to_database(
-        self, 
-        user_metadata: Dict[str, Any], 
-        user_message: str, 
+        self,
+        user_metadata: Dict[str, Any],
+        user_message: str,
         bot_response: str,
-        patient_id: Optional[str] = None
+        patient_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Save conversation using standardized memory service.
-        
+
         Args:
             user_metadata: User metadata including platform and IDs
             user_message: The user's message
             bot_response: The bot's response
             patient_id: Optional patient ID if already known
-            
+
         Returns:
             The memory ID if successful, None otherwise
         """
         try:
             user_id = user_metadata.get("user_id")
             platform = "telegram"
-            
+
             # Store through memory service using standardized approach
             conversation_data = {
                 "user_message": user_message,
-                "bot_response": bot_response
+                "bot_response": bot_response,
             }
-            
+
             # Create state with patient_id if available
             state = {}
             if patient_id:
                 state["patient_id"] = patient_id
-            
+
             # Store using memory service
             memory_id = await self.memory_service.store_session_memory(
                 platform=platform,
                 user_id=str(user_id),
                 state=state,
                 conversation=conversation_data,
-                ttl_minutes=1440  # Standard 24-hour TTL
+                ttl_minutes=1440,  # Standard 24-hour TTL
             )
-            
-            logger.info(f"Stored memory with ID: {memory_id} using standardized approach")
+
+            logger.info(
+                f"Stored memory with ID: {memory_id} using standardized approach"
+            )
             return memory_id
-                
+
         except Exception as e:
             logger.error(f"Error saving to memory service: {e}")
             return None
 
-    async def _get_recent_memories(self, chat_id: int, user_id: int, limit: int = 5) -> List[Dict[str, Any]]:
+    async def _get_recent_memories(
+        self, chat_id: int, user_id: int, limit: int = 5
+    ) -> List[Dict[str, Any]]:
         """
         Retrieve recent memories using standardized memory service.
-        
+
         Args:
             chat_id: The Telegram chat ID
             user_id: The Telegram user ID
             limit: Maximum number of memories to retrieve
-            
+
         Returns:
             List of memory contents as dictionaries
         """
         try:
             # Use standard session ID format through memory service
             memories = await self.memory_service.get_session_memory(
-                platform="telegram",
-                user_id=str(user_id),
-                limit=limit
+                platform="telegram", user_id=str(user_id), limit=limit
             )
-            
+
             return memories
         except Exception as e:
             logger.error(f"Error retrieving recent memories: {e}", exc_info=True)
             return []
 
-    async def _get_conversation_history(self, chat_id: int, user_id: int, max_messages: int = 20) -> List[Dict[str, Any]]:
+    async def _get_conversation_history(
+        self, chat_id: int, user_id: int, max_messages: int = 20
+    ) -> List[Dict[str, Any]]:
         """
         Get conversation history using standardized memory service.
-        
+
         Args:
             chat_id: Telegram chat ID
             user_id: Telegram user ID
             max_messages: Maximum number of messages to retrieve
-            
+
         Returns:
             List of message dictionaries with content and role
         """
         try:
             # Use memory service directly with standardized approach
             raw_memories = await self.memory_service.get_session_memory(
-                platform="telegram",
-                user_id=str(user_id),
-                limit=max_messages
+                platform="telegram", user_id=str(user_id), limit=max_messages
             )
-            
+
             # Format the conversation history
             conversation_history = []
-            
+
             for memory in raw_memories:
                 try:
                     # Check for new format with both user message and bot response
                     if "response" in memory:
                         # Add user message
-                        conversation_history.append({
-                            "role": "user",
-                            "content": memory.get("content", "")
-                        })
+                        conversation_history.append(
+                            {"role": "user", "content": memory.get("content", "")}
+                        )
                         # Add bot response
-                        conversation_history.append({
-                            "role": "assistant",
-                            "content": memory.get("response", "")
-                        })
+                        conversation_history.append(
+                            {"role": "assistant", "content": memory.get("response", "")}
+                        )
                     else:
                         # Old format may have just content
                         content = memory.get("content", "")
                         if content:
                             # Try to determine the role based on metadata
                             metadata = memory.get("metadata", {})
-                            role = "user" if metadata.get("sender") == "patient" else "assistant"
-                            conversation_history.append({
-                                "role": role,
-                                "content": content
-                            })
+                            role = (
+                                "user"
+                                if metadata.get("sender") == "patient"
+                                else "assistant"
+                            )
+                            conversation_history.append(
+                                {"role": role, "content": content}
+                            )
                 except Exception as e:
                     logger.warning(f"Error parsing conversation history entry: {e}")
                     continue
-            
+
             # Limit to max_messages
             return conversation_history[-max_messages:] if conversation_history else []
-            
+
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {e}", exc_info=True)
             return []
@@ -1021,53 +1808,75 @@ class TelegramBot:
     async def _log_memory_contents(self, chat_id: int, user_id: int):
         """
         Log the contents of short-term memory for debugging.
-        
+
         Args:
             chat_id: Telegram chat ID
             user_id: Telegram user ID
         """
         logger.info(f"=== MEMORY CONTENTS FOR CHAT {chat_id}, USER {user_id} ===")
         print_green(f"=== MEMORY CONTENTS FOR CHAT {chat_id}, USER {user_id} ===")
-        
+
         # Log short-term memory contents from Supabase
         try:
             # Query and log data from Supabase
             if self.supabase:
-                result = self.supabase.table("short_term_memory")\
-                    .select("*")\
-                    .order("expires_at", desc=True)\
-                    .limit(10)\
+                result = (
+                    self.supabase.table("short_term_memory")
+                    .select("*")
+                    .order("expires_at", desc=True)
+                    .limit(10)
                     .execute()
-                
+                )
+
                 if result.data:
-                    logger.info(f"SUPABASE SHORT-TERM MEMORY: Found {len(result.data)} records")
-                    print_green(f"SUPABASE SHORT-TERM MEMORY: Found {len(result.data)} records")
-                    
+                    logger.info(
+                        f"SUPABASE SHORT-TERM MEMORY: Found {len(result.data)} records"
+                    )
+                    print_green(
+                        f"SUPABASE SHORT-TERM MEMORY: Found {len(result.data)} records"
+                    )
+
                     session_id = f"telegram-{chat_id}-{user_id}"
                     for i, record in enumerate(result.data):
                         try:
                             context = record.get("context", {})
                             metadata = context.get("metadata", {})
                             session = metadata.get("session_id", "unknown")
-                            
+
                             if session == session_id:
                                 logger.info(f"  Record {i+1} (matching session):")
                                 print_green(f"  Record {i+1} (matching session):")
                             else:
-                                logger.info(f"  Record {i+1} (different session: {session}):")
-                                print_green(f"  Record {i+1} (different session: {session}):")
-                                
+                                logger.info(
+                                    f"  Record {i+1} (different session: {session}):"
+                                )
+                                print_green(
+                                    f"  Record {i+1} (different session: {session}):"
+                                )
+
                             logger.info(f"    ID: {record.get('id', 'N/A')}")
-                            logger.info(f"    Created: {context.get('created_at', 'N/A')}")
-                            logger.info(f"    Expires: {record.get('expires_at', 'N/A')}")
-                            
+                            logger.info(
+                                f"    Created: {context.get('created_at', 'N/A')}"
+                            )
+                            logger.info(
+                                f"    Expires: {record.get('expires_at', 'N/A')}"
+                            )
+
                             # Print conversation data if available
                             conversation = context.get("conversation", {})
                             if conversation:
-                                logger.info(f"    User message: {conversation.get('user_message', 'N/A')}")
-                                logger.info(f"    Bot response: {conversation.get('bot_response', 'N/A')}")
-                                print_green(f"    User message: {conversation.get('user_message', 'N/A')}")
-                                print_green(f"    Bot response: {conversation.get('bot_response', 'N/A')}")
+                                logger.info(
+                                    f"    User message: {conversation.get('user_message', 'N/A')}"
+                                )
+                                logger.info(
+                                    f"    Bot response: {conversation.get('bot_response', 'N/A')}"
+                                )
+                                print_green(
+                                    f"    User message: {conversation.get('user_message', 'N/A')}"
+                                )
+                                print_green(
+                                    f"    Bot response: {conversation.get('bot_response', 'N/A')}"
+                                )
                         except Exception as e:
                             logger.warning(f"Failed to parse record {i+1}: {e}")
                 else:
@@ -1075,29 +1884,30 @@ class TelegramBot:
                     print_green("SUPABASE SHORT-TERM MEMORY: No records found")
         except Exception as e:
             logger.error(f"Error logging short-term memory: {e}")
-            
+
         logger.info("=== END MEMORY CONTENTS ===")
         print_green("=== END MEMORY CONTENTS ===")
-        
+
     async def _send_typing_action(self, chat_id: int):
         """Send typing action to indicate the bot is processing the message."""
         try:
-            await self._make_request("sendChatAction", params={
-                "chat_id": chat_id,
-                "action": "typing"
-            })
+            await self._make_request(
+                "sendChatAction", params={"chat_id": chat_id, "action": "typing"}
+            )
         except Exception as e:
             logger.warning(f"Failed to send typing action: {e}")
 
-    async def _generate_memory_summary(self, chat_id: int, user_id: int, conversation_history: List[Dict]) -> str:
+    async def _generate_memory_summary(
+        self, chat_id: int, user_id: int, conversation_history: List[Dict]
+    ) -> str:
         """
         Generate a summary of key topics and information from memory to enhance context.
-        
+
         Args:
             chat_id: Telegram chat ID
             user_id: Telegram user ID
             conversation_history: Recent conversation history
-            
+
         Returns:
             A concise summary of important information from memory
         """
@@ -1106,70 +1916,91 @@ class TelegramBot:
             # 1. Check cache memory first
             session_id = f"telegram-{chat_id}-{user_id}"
             cache_path = os.path.join(self.checkpoint_dir, f"{session_id}.json")
-            
+
             # Track important entities and topics mentioned
             important_topics = set()
             user_preferences = {}
             key_facts = []
-            
+
             # Extract topics from conversation history
             for entry in conversation_history:
                 user_msg = entry.get("user_message", "").lower()
                 bot_msg = entry.get("bot_response", "").lower()
-                
+
                 # Look for key entities (names, places, conditions, topics)
                 for msg in [user_msg, bot_msg]:
                     # Simple keyword extraction
                     words = msg.split()
                     for word in words:
-                        if len(word) > 5 and word.isalpha():  # Focus on longer words as potential topics
+                        if (
+                            len(word) > 5 and word.isalpha()
+                        ):  # Focus on longer words as potential topics
                             important_topics.add(word)
-                
+
                 # Extract potential preferences or factual statements
                 if "prefer" in user_msg or "like" in user_msg or "want" in user_msg:
                     key_facts.append(f"User preference: {user_msg}")
-                if "my name is" in user_msg or "i am" in user_msg or "i have" in user_msg:
+                if (
+                    "my name is" in user_msg
+                    or "i am" in user_msg
+                    or "i have" in user_msg
+                ):
                     key_facts.append(f"User info: {user_msg}")
-            
+
             # Get patient information if available
             patient_info = {}
             if self.supabase:
                 try:
                     platform_query = f'%"platform_id": "{user_id}"%'
-                    result = self.supabase.table("patients").select("*").like("email", platform_query).execute()
-                    
+                    result = (
+                        self.supabase.table("patients")
+                        .select("*")
+                        .like("email", platform_query)
+                        .execute()
+                    )
+
                     if result.data and len(result.data) > 0:
                         patient_info = result.data[0]
                         # Extract relevant patient fields
-                        for field in ["first_name", "last_name", "risk", "preferred_language", "support_status"]:
+                        for field in [
+                            "first_name",
+                            "last_name",
+                            "risk",
+                            "preferred_language",
+                            "support_status",
+                        ]:
                             if field in patient_info and patient_info[field]:
-                                key_facts.append(f"Patient {field}: {patient_info[field]}")
+                                key_facts.append(
+                                    f"Patient {field}: {patient_info[field]}"
+                                )
                 except Exception as e:
                     logger.warning(f"Failed to retrieve patient info: {e}")
-            
+
             # Build the summary
             summary = []
-            
+
             if key_facts:
                 summary.append("Key user information:")
                 for fact in key_facts[:5]:  # Limit to most important facts
                     summary.append(f"- {fact}")
-            
+
             if important_topics:
                 summary.append("\nFrequently discussed topics:")
                 topic_list = list(important_topics)
                 topic_summary = ", ".join(topic_list[:10])  # Limit to top topics
                 summary.append(f"- {topic_summary}")
-            
+
             if patient_info:
                 summary.append("\nUser is a registered patient.")
-            
+
             # Add interaction history summary
-            summary.append(f"\nConversation history: {len(conversation_history)} recent interactions.")
-            
+            summary.append(
+                f"\nConversation history: {len(conversation_history)} recent interactions."
+            )
+
             # Combine into one string
             return "\n".join(summary)
-        
+
         except Exception as e:
             logger.error(f"Error generating memory summary: {e}")
             return "No memory summary available."
@@ -1177,28 +2008,47 @@ class TelegramBot:
     async def _generate_personality_variation(self) -> Dict[str, Any]:
         """
         Generate slightly varied personality traits to make responses feel more human and diverse.
-        
+
         Returns:
             Dictionary of personality instructions with slight variations each time
         """
         # Base personality elements
         empathy_levels = ["high", "very high", "warm", "compassionate"]
-        tones = ["warm and friendly", "caring and personal", "casual and approachable", "warm and understanding"]
-        speaking_styles = ["conversational", "friendly chat", "relaxed and informal", "personal and direct"]
-        
+        tones = [
+            "warm and friendly",
+            "caring and personal",
+            "casual and approachable",
+            "warm and understanding",
+        ]
+        speaking_styles = [
+            "conversational",
+            "friendly chat",
+            "relaxed and informal",
+            "personal and direct",
+        ]
+
         # Lithuanian-specific expressions to randomly include
         lt_expressions = [
-            "Tai va", "Na žinai", "Nu gerai", "Žiūrėk", "Klausyk", "Supranti",
-            "Matai kaip", "Tai štai", "Įsivaizduok", "Na tipo", "Nu jo"
+            "Tai va",
+            "Na žinai",
+            "Nu gerai",
+            "Žiūrėk",
+            "Klausyk",
+            "Supranti",
+            "Matai kaip",
+            "Tai štai",
+            "Įsivaizduok",
+            "Na tipo",
+            "Nu jo",
         ]
-        
+
         # Select random expressions to highlight (3-5 of them)
         highlighted_expressions = random.sample(lt_expressions, random.randint(3, 5))
         expressions_text = ", ".join([f"'{exp}'" for exp in highlighted_expressions])
-        
+
         # Randomly vary emoji usage
         emoji_chance = random.choice([True, True, False])  # 2/3 chance of using emojis
-        
+
         # Create randomly varied personality with Lithuanian traits
         personality = {
             "tone": random.choice(tones),
@@ -1210,40 +2060,144 @@ class TelegramBot:
                 "shows genuine care",
                 "uses everyday expressions",
                 "speaks with emotion",
-                "uses contractions and informal language"
+                "uses contractions and informal language",
             ],
             "lithuanian_traits": [
                 "uses Lithuanian colloquialisms and slang",
                 f"uses phrases like {expressions_text}",
                 "occasionally shortens words like Lithuanians do in casual conversation",
-                "uses friendly diminutives in appropriate contexts"
+                "uses friendly diminutives in appropriate contexts",
             ],
             "avoid": [
                 "robotic language",
-                "overly formal tone", 
+                "overly formal tone",
                 "perfect grammar",
                 "lengthy explanations without breaks",
                 "AI-like phrases",
                 "repetitive sentence structures",
                 "overly clinical language",
-                "too formal Lithuanian expressions typical in documentation"
-            ]
+                "too formal Lithuanian expressions typical in documentation",
+            ],
         }
-        
+
         # Randomly decide if the bot should include a small joke (30% chance)
         if random.random() < 0.3:
-            personality["human_qualities"].append("makes a light-hearted comment or gentle joke")
-        
+            personality["human_qualities"].append(
+                "makes a light-hearted comment or gentle joke"
+            )
+
         # Randomly decide if the bot should ask a follow-up question (60% chance)
         if random.random() < 0.6:
-            personality["human_qualities"].append("asks a thoughtful follow-up question")
-            
+            personality["human_qualities"].append(
+                "asks a thoughtful follow-up question"
+            )
+
         return personality
+
+    async def create_scheduled_message(
+        self,
+        chat_id: int,
+        message_content: str,
+        scheduled_time: datetime,
+        patient_id: Optional[str] = None,
+        recurrence_pattern: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        priority: int = 1,
+    ) -> str:
+        """
+        Create a new scheduled message.
+
+        Args:
+            chat_id: The Telegram chat ID to send to
+            message_content: The message text to send
+            scheduled_time: When to send the message
+            patient_id: Optional patient ID
+            recurrence_pattern: Optional recurrence pattern dict
+            metadata: Additional metadata for the message
+            priority: Message priority (1-5, 1 is highest)
+
+        Returns:
+            The ID of the created scheduled message
+        """
+        if metadata is None:
+            metadata = {}
+
+        # Add recurrence pattern to metadata if provided
+        if recurrence_pattern:
+            metadata["recurrence"] = recurrence_pattern
+
+        # Store user_id in metadata for dynamic content generation with [DYNAMIC_GENERATE] tag
+        # For Telegram personal chats, user_id is typically the same as chat_id
+        if "user_id" not in metadata:
+            metadata["user_id"] = chat_id
+
+        logger.info(
+            f"Creating scheduled message for chat_id: {chat_id}, time: {scheduled_time.isoformat()}"
+        )
+
+        try:
+            # Ensure the scheduled_message_service is initialized
+            if not self.scheduled_message_service:
+                logger.error("scheduled_message_service is not initialized")
+                raise ValueError("Scheduled message service not initialized")
+
+            # Create the message
+            message_id = await self.scheduled_message_service.create_scheduled_message(
+                chat_id=chat_id,
+                message_content=message_content,
+                scheduled_time=scheduled_time,
+                platform="telegram",
+                patient_id=patient_id,
+                priority=priority,
+                metadata=metadata,
+            )
+
+            logger.info(f"Successfully created scheduled message with ID: {message_id}")
+            return message_id
+
+        except Exception as e:
+            logger.error(f"Failed to create scheduled message: {e}", exc_info=True)
+            logger.error(
+                f"Parameters: chat_id={chat_id}, time={scheduled_time.isoformat()}, content='{message_content}'"
+            )
+            # Re-raise the exception
+            raise
+
+    async def cancel_scheduled_message(self, message_id: str) -> bool:
+        """
+        Cancel a scheduled message.
+
+        Args:
+            message_id: The ID of the message to cancel
+
+        Returns:
+            True if cancellation was successful
+        """
+        return await self.scheduled_message_service.cancel_message(message_id)
+
+    async def get_scheduled_messages_for_chat(
+        self, chat_id: int, status: Optional[str] = None, limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """
+        Get scheduled messages for a chat.
+
+        Args:
+            chat_id: The Telegram chat ID
+            status: Optional status filter
+            limit: Maximum number of messages
+
+        Returns:
+            List of scheduled message records
+        """
+        return await self.scheduled_message_service.get_messages_by_chat_id(
+            chat_id=chat_id, status=status, limit=limit
+        )
+
 
 async def run_telegram_bot():
     """Run the Telegram bot with proper shutdown handling."""
     bot = TelegramBot()
-    
+
     try:
         await bot.start()
     except KeyboardInterrupt:
@@ -1254,5 +2208,6 @@ async def run_telegram_bot():
     finally:
         bot._running = False
 
+
 if __name__ == "__main__":
-    asyncio.run(run_telegram_bot()) 
+    asyncio.run(run_telegram_bot())

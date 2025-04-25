@@ -7,16 +7,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import httpx
+import asyncio
+import threading
 
 from ai_companion.interfaces.whatsapp.whatsapp_response import whatsapp_router
 from ai_companion.interfaces.monitor.api import monitor_router
 from ai_companion.api.web_handler import router as web_chat_router
+from ai_companion.api.scheduler_api import router as scheduler_router
+from ai_companion.modules.scheduler import get_scheduler_worker
+from ai_companion.settings import settings
+
+# from ai_companion.interfaces.web import router as web_router
+# from ai_companion.middleware import cors_middleware
+from ai_companion.interfaces.telegram.telegram_bot import run_telegram_bot
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True  # Force override any existing logging config
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    force=True,  # Force override any existing logging config
 )
 
 # Disable problematic loggers
@@ -29,7 +38,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="AI Companion",
     description="AI Companion with WhatsApp, Chainlit, and Monitoring interfaces",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Add CORS middleware
@@ -48,6 +57,8 @@ monitor_router.prefix = "/health"  # Change the prefix from /monitor to /health
 app.include_router(monitor_router)
 # Include the web chat router
 app.include_router(web_chat_router)
+# Include the scheduler router
+app.include_router(scheduler_router)
 
 # Chainlit proxy configuration
 CHAINLIT_HOST = "localhost"
@@ -62,10 +73,94 @@ MONITOR_PORT = 8090
 CHAINLIT_ASSETS_PATH = "/app/.venv/lib/python3.12/site-packages/chainlit/frontend/dist"
 if os.path.exists(CHAINLIT_ASSETS_PATH):
     # Mount the assets directory
-    app.mount("/assets", StaticFiles(directory=f"{CHAINLIT_ASSETS_PATH}/assets"), name="assets")
+    app.mount(
+        "/assets",
+        StaticFiles(directory=f"{CHAINLIT_ASSETS_PATH}/assets"),
+        name="assets",
+    )
     logger.info(f"Mounted Chainlit assets from {CHAINLIT_ASSETS_PATH}/assets")
 else:
     logger.warning(f"Chainlit assets directory not found at {CHAINLIT_ASSETS_PATH}")
+
+# Global variable to store the scheduler worker task
+scheduler_task = None
+
+
+# Create a background task to run the Telegram bot
+def start_telegram_bot():
+    if settings.TELEGRAM_BOT_TOKEN:
+        print("Starting Telegram bot in background...")
+        asyncio.run(run_telegram_bot())
+    else:
+        print("TELEGRAM_BOT_TOKEN not set, skipping Telegram bot initialization")
+
+
+# Start the Telegram bot in a separate thread when the app starts
+@app.on_event("startup")
+async def startup_event():
+    """Start the scheduler worker when the application starts."""
+    global scheduler_task
+
+    # Check if scheduler is disabled via environment variable
+    # This allows deployment scripts to control whether the scheduler runs
+    enable_scheduler = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
+
+    if not enable_scheduler:
+        logger.info(
+            "Scheduler worker is disabled via ENABLE_SCHEDULER environment variable"
+        )
+    else:
+        try:
+            # Initialize the scheduler worker
+            scheduler_worker = get_scheduler_worker()
+
+            # Start the scheduler worker
+            await scheduler_worker.start()
+
+            logger.info("Scheduler worker started successfully")
+        except Exception as e:
+            logger.error(f"Error starting scheduler worker: {e}")
+
+    # Check if telegram bot is enabled via environment variable
+    enable_telegram = os.environ.get("ENABLE_TELEGRAM", "true").lower() == "true"
+
+    if not enable_telegram:
+        logger.info("Telegram bot is disabled via ENABLE_TELEGRAM environment variable")
+    elif settings.TELEGRAM_BOT_TOKEN:
+        # Start the Telegram bot in a background thread
+        logger.info("Starting Telegram bot background thread")
+        telegram_thread = threading.Thread(target=start_telegram_bot, daemon=True)
+        telegram_thread.start()
+        logger.info("Telegram bot background thread started")
+    else:
+        logger.warning(
+            "TELEGRAM_BOT_TOKEN not set but ENABLE_TELEGRAM is true, skipping Telegram bot initialization"
+        )
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop the scheduler worker when the application shuts down."""
+    try:
+        # Check if scheduler is disabled via environment variable
+        enable_scheduler = os.environ.get("ENABLE_SCHEDULER", "true").lower() == "true"
+
+        if not enable_scheduler:
+            logger.info(
+                "Scheduler worker was not running (disabled via environment variable)"
+            )
+            return
+
+        # Get the scheduler worker instance
+        scheduler_worker = get_scheduler_worker()
+
+        # Stop the scheduler worker
+        scheduler_worker.stop()
+
+        logger.info("Scheduler worker stopped successfully")
+    except Exception as e:
+        logger.error(f"Error stopping scheduler worker: {e}")
+
 
 # Function to check if a service is running
 async def is_service_running(host: str, port: int, path: str = "/") -> dict:
@@ -75,30 +170,28 @@ async def is_service_running(host: str, port: int, path: str = "/") -> dict:
             response = await client.get(f"http://{host}:{port}{path}", timeout=2.0)
             return {
                 "status": "healthy" if response.status_code < 400 else "unhealthy",
-                "status_code": response.status_code
+                "status_code": response.status_code,
             }
     except Exception as e:
         logger.error(f"Error checking service at {host}:{port}: {e}")
         return {"status": "unavailable", "error": str(e)}
 
+
 @app.get("/chat/status")
 async def chainlit_status():
     """Check the status of the Chainlit service."""
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
-    return {
-        "service": "chainlit",
-        "status": status["status"],
-        "details": status
-    }
+    return {"service": "chainlit", "status": status["status"], "details": status}
+
 
 @app.get("/chat/error", response_class=HTMLResponse)
 async def chainlit_error():
     """Return an error page when Chainlit is not running."""
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
-    
+
     if status["status"] == "healthy":
         return RedirectResponse(url="/chat/")
-    
+
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -179,8 +272,9 @@ async def chainlit_error():
     </body>
     </html>
     """
-    
+
     return HTMLResponse(content=html_content, status_code=503)
+
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_redirect():
@@ -189,34 +283,38 @@ async def chat_redirect():
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
     if status["status"] != "healthy":
         return RedirectResponse(url="/chat/error")
-    
+
     # Redirect to root instead of /chat/
     return RedirectResponse(url="/")
 
-@app.api_route("/chat/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+
+@app.api_route(
+    "/chat/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"],
+)
 async def proxy_chainlit(request: Request, path: str):
     """Proxy requests to Chainlit running on port 8080"""
     # Check if Chainlit is running first
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
     if status["status"] != "healthy":
         return RedirectResponse(url="/chat/error")
-    
+
     client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
-    
+
     # Construct the target URL - handle empty path case
     url = "/" if path == "" else f"/{path}"
-    
+
     # Get headers from the incoming request
     headers = dict(request.headers)
     headers.pop("host", None)  # Remove the host header
-    
+
     # Get the request body if it exists
     body = await request.body()
-    
+
     try:
         # Log the proxy attempt
         logger.info(f"Proxying request to Chainlit: {request.method} {url}")
-        
+
         # Forward the request to Chainlit
         response = await client.request(
             method=request.method,
@@ -225,12 +323,12 @@ async def proxy_chainlit(request: Request, path: str):
             content=body,
             params=request.query_params,
             follow_redirects=True,
-            timeout=10.0  # Add a timeout to prevent hanging requests
+            timeout=10.0,  # Add a timeout to prevent hanging requests
         )
-        
+
         # Log the response status
         logger.info(f"Chainlit response: {response.status_code}")
-        
+
         # Return the response from Chainlit
         return Response(
             content=response.content,
@@ -249,8 +347,12 @@ async def proxy_chainlit(request: Request, path: str):
     finally:
         await client.aclose()
 
+
 # Add routes for additional Chainlit API endpoints
-@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+@app.api_route(
+    "/auth/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"],
+)
 async def proxy_chainlit_auth(request: Request, path: str):
     """Handle auth-related requests from Chainlit frontend (authentication is disabled)"""
     # For /auth/config, always return a response indicating auth is disabled
@@ -260,35 +362,39 @@ async def proxy_chainlit_auth(request: Request, path: str):
         return Response(
             content='{"auth_type":null,"providers":[],"session_duration_seconds":3600}',
             status_code=200,
-            media_type="application/json"
+            media_type="application/json",
         )
-    
+
     # For all other auth endpoints, return empty JSON
     logger.info(f"Returning empty response for unused auth endpoint: {path}")
     return Response(content="{}", status_code=200, media_type="application/json")
 
-@app.api_route("/project/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+
+@app.api_route(
+    "/project/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"],
+)
 async def proxy_chainlit_project(request: Request, path: str):
     """Handle project-related requests from Chainlit frontend"""
     # Check if Chainlit is running first
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
-    
+
     # If Chainlit is healthy, proxy the request
     if status["status"] == "healthy":
         client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
         url = f"/project/{path}"
-        
+
         # Get headers from the incoming request
         headers = dict(request.headers)
         headers.pop("host", None)  # Remove the host header
-        
+
         # Get the request body if it exists
         body = await request.body()
-        
+
         try:
             # Log the proxy attempt
             logger.info(f"Proxying project request to Chainlit: {request.method} {url}")
-            
+
             # Forward the request to Chainlit
             response = await client.request(
                 method=request.method,
@@ -297,12 +403,12 @@ async def proxy_chainlit_project(request: Request, path: str):
                 content=body,
                 params=request.query_params,
                 follow_redirects=True,
-                timeout=5.0
+                timeout=5.0,
             )
-            
+
             # Log the response status
             logger.info(f"Chainlit project response: {response.status_code}")
-            
+
             # Return the response from Chainlit
             return Response(
                 content=response.content,
@@ -314,7 +420,7 @@ async def proxy_chainlit_project(request: Request, path: str):
             # Fall through to default responses below
         finally:
             await client.aclose()
-    
+
     # If Chainlit is not healthy or there was an error, return default responses
     # These are required by the Chainlit frontend to function properly
     if path.startswith("translations"):
@@ -322,29 +428,33 @@ async def proxy_chainlit_project(request: Request, path: str):
         return Response(
             content='{"translations":{}}',
             status_code=200,
-            media_type="application/json"
+            media_type="application/json",
         )
-    
+
     # For all other project endpoints, return empty JSON
     logger.info(f"Returning empty response for project endpoint: {path}")
     return Response(content="{}", status_code=200, media_type="application/json")
 
+
 # Add WebSocket proxy route for Chainlit
-@app.api_route("/ws/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+@app.api_route(
+    "/ws/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"],
+)
 async def proxy_chainlit_ws(request: Request, path: str):
     """Proxy WebSocket requests to Chainlit"""
     # Check if Chainlit is running first
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
     if status["status"] != "healthy":
         return Response(content="{}", status_code=404, media_type="application/json")
-    
+
     client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
     url = f"/ws/{path}"
-    
+
     # Get headers from the incoming request
     headers = dict(request.headers)
     headers.pop("host", None)  # Remove the host header
-    
+
     # Get the request body if it exists
     body = await request.body()
 
@@ -360,7 +470,7 @@ async def proxy_chainlit_ws(request: Request, path: str):
             content=body,
             params=request.query_params,
             follow_redirects=True,
-            timeout=60.0  # Increase timeout for WebSocket connections
+            timeout=60.0,  # Increase timeout for WebSocket connections
         )
 
         # Log the response status
@@ -372,13 +482,13 @@ async def proxy_chainlit_ws(request: Request, path: str):
         else:
             # Default to application/json for socket.io polling
             content_type = "application/json"
-        
+
         # Return the response from Chainlit with explicit content type
         return Response(
             content=response.content,
             status_code=response.status_code,
             headers=dict(response.headers),
-            media_type=content_type
+            media_type=content_type,
         )
     except Exception as e:
         logger.error(f"Error proxying WebSocket to Chainlit: {e}")
@@ -387,22 +497,26 @@ async def proxy_chainlit_ws(request: Request, path: str):
     finally:
         await client.aclose()
 
+
 # Add WebSocket support for the root path to handle Socket.IO at the root URL
-@app.api_route("/socket.io/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+@app.api_route(
+    "/socket.io/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"],
+)
 async def proxy_chainlit_socketio_root(request: Request, path: str):
     """Proxy Socket.IO requests to Chainlit for the root URL"""
     # Check if Chainlit is running first
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
     if status["status"] != "healthy":
         return Response(content="{}", status_code=404, media_type="application/json")
-    
+
     client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
     url = f"/socket.io/{path}"
-    
+
     # Get headers from the incoming request
     headers = dict(request.headers)
     headers.pop("host", None)  # Remove the host header
-    
+
     # Get the request body if it exists
     body = await request.body()
 
@@ -418,7 +532,7 @@ async def proxy_chainlit_socketio_root(request: Request, path: str):
             content=body,
             params=request.query_params,
             follow_redirects=True,
-            timeout=60.0  # Increase timeout for Socket.IO connections
+            timeout=60.0,  # Increase timeout for Socket.IO connections
         )
 
         # Log the response status
@@ -430,13 +544,13 @@ async def proxy_chainlit_socketio_root(request: Request, path: str):
         else:
             # Default to application/json for socket.io polling
             content_type = "application/json"
-        
+
         # Return the response from Chainlit with explicit content type
         return Response(
             content=response.content,
             status_code=response.status_code,
             headers=dict(response.headers),
-            media_type=content_type
+            media_type=content_type,
         )
     except Exception as e:
         logger.error(f"Error proxying Socket.IO to Chainlit: {e}")
@@ -444,21 +558,28 @@ async def proxy_chainlit_socketio_root(request: Request, path: str):
     finally:
         await client.aclose()
 
+
 @app.get("/health")
 async def health_check():
     """Root health check endpoint."""
     # Check the monitoring service health
     try:
         async with httpx.AsyncClient() as client:
-            monitor_health = await client.get(f"http://{MONITOR_HOST}:{MONITOR_PORT}/health")
-            monitor_status = monitor_health.json() if monitor_health.status_code == 200 else {"status": "unavailable"}
+            monitor_health = await client.get(
+                f"http://{MONITOR_HOST}:{MONITOR_PORT}/health"
+            )
+            monitor_status = (
+                monitor_health.json()
+                if monitor_health.status_code == 200
+                else {"status": "unavailable"}
+            )
     except Exception as e:
         logger.error(f"Error checking monitoring health: {e}")
         monitor_status = {"status": "unavailable", "error": str(e)}
-    
+
     # Check the Chainlit service health
     chainlit_status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
-    
+
     return {
         "status": "healthy",
         "service": "ai-companion",
@@ -467,21 +588,24 @@ async def health_check():
         "interfaces": {
             "whatsapp": "/whatsapp/health",
             "monitor": "/health",
-            "chainlit": "/chat/"
+            "chainlit": "/chat/",
         },
         "monitoring_endpoints": {
             "metrics": "/health/metrics",
             "report": "/health/report",
-            "reset": "/health/reset"
-        }
+            "reset": "/health/reset",
+        },
     }
+
 
 @app.get("/health/metrics")
 async def monitor_metrics():
     """Proxy to the monitoring service metrics endpoint."""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"http://{MONITOR_HOST}:{MONITOR_PORT}/monitor/metrics")
+            response = await client.get(
+                f"http://{MONITOR_HOST}:{MONITOR_PORT}/monitor/metrics"
+            )
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -489,14 +613,20 @@ async def monitor_metrics():
             )
     except Exception as e:
         logger.error(f"Error proxying to monitoring metrics: {e}")
-        return {"status": "error", "message": f"Failed to connect to monitoring service: {str(e)}"}
+        return {
+            "status": "error",
+            "message": f"Failed to connect to monitoring service: {str(e)}",
+        }
+
 
 @app.get("/health/report")
 async def monitor_report():
     """Proxy to the monitoring service report endpoint."""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"http://{MONITOR_HOST}:{MONITOR_PORT}/monitor/report")
+            response = await client.get(
+                f"http://{MONITOR_HOST}:{MONITOR_PORT}/monitor/report"
+            )
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -504,14 +634,20 @@ async def monitor_report():
             )
     except Exception as e:
         logger.error(f"Error proxying to monitoring report: {e}")
-        return {"status": "error", "message": f"Failed to connect to monitoring service: {str(e)}"}
+        return {
+            "status": "error",
+            "message": f"Failed to connect to monitoring service: {str(e)}",
+        }
+
 
 @app.post("/health/reset")
 async def monitor_reset():
     """Proxy to the monitoring service reset endpoint."""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(f"http://{MONITOR_HOST}:{MONITOR_PORT}/monitor/reset")
+            response = await client.post(
+                f"http://{MONITOR_HOST}:{MONITOR_PORT}/monitor/reset"
+            )
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -519,7 +655,11 @@ async def monitor_reset():
             )
     except Exception as e:
         logger.error(f"Error proxying to monitoring reset: {e}")
-        return {"status": "error", "message": f"Failed to connect to monitoring service: {str(e)}"}
+        return {
+            "status": "error",
+            "message": f"Failed to connect to monitoring service: {str(e)}",
+        }
+
 
 @app.get("/")
 async def root():
@@ -531,16 +671,12 @@ async def root():
         client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
         try:
             # Forward the request to Chainlit
-            logger.info(f"Proxying root request to Chainlit")
-            response = await client.get(
-                "/",
-                follow_redirects=True,
-                timeout=10.0
-            )
-            
+            logger.info("Proxying root request to Chainlit")
+            response = await client.get("/", follow_redirects=True, timeout=10.0)
+
             # Log the response status
             logger.info(f"Chainlit root response: {response.status_code}")
-            
+
             # Return the response from Chainlit
             return Response(
                 content=response.content,
@@ -552,7 +688,7 @@ async def root():
             return RedirectResponse(url="/chat/error")
         finally:
             await client.aclose()
-    
+
     # Otherwise show the API information
     return {
         "message": "AI Companion API",
@@ -561,44 +697,50 @@ async def root():
         "monitoring": {
             "metrics": "/health/metrics",
             "report": "/health/report",
-            "reset": "/health/reset"
+            "reset": "/health/reset",
         },
-        "chainlit_url": "/chat/"
+        "chainlit_url": "/chat/",
     }
 
+
 # Add direct access to Chainlit at the root level
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
+@app.api_route(
+    "/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"],
+)
 async def proxy_chainlit_root(request: Request, path: str):
     """Proxy requests to Chainlit running on port 8080 for paths not handled by other routes"""
     # This route has the lowest priority and will only be used if no other route matches
-    
+
     # Skip paths that should be handled by other routes
-    if path.startswith(("docs", "openapi.json", "whatsapp", "health", "auth", "project", "chat", "ws")):
+    if path.startswith(
+        ("docs", "openapi.json", "whatsapp", "health", "auth", "project", "chat", "ws")
+    ):
         # Let other routes handle these paths
         raise HTTPException(status_code=404, detail="Not found")
-    
+
     # Check if Chainlit is running first
     status = await is_service_running(CHAINLIT_HOST, CHAINLIT_PORT)
     if status["status"] != "healthy":
         # If Chainlit is not running, show an error
         return RedirectResponse(url="/chat/error")
-    
+
     client = httpx.AsyncClient(base_url=f"http://{CHAINLIT_HOST}:{CHAINLIT_PORT}")
-    
+
     # Construct the target URL
     url = f"/{path}"
-    
+
     # Get headers from the incoming request
     headers = dict(request.headers)
     headers.pop("host", None)  # Remove the host header
-    
+
     # Get the request body if it exists
     body = await request.body()
-    
+
     try:
         # Log the proxy attempt
         logger.info(f"Proxying request to Chainlit root: {request.method} {url}")
-        
+
         # Forward the request to Chainlit
         response = await client.request(
             method=request.method,
@@ -607,12 +749,12 @@ async def proxy_chainlit_root(request: Request, path: str):
             content=body,
             params=request.query_params,
             follow_redirects=True,
-            timeout=10.0
+            timeout=10.0,
         )
-        
+
         # Log the response status
         logger.info(f"Chainlit root response: {response.status_code}")
-        
+
         # Return the response from Chainlit
         return Response(
             content=response.content,
@@ -625,7 +767,9 @@ async def proxy_chainlit_root(request: Request, path: str):
     finally:
         await client.aclose()
 
+
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port) 
+    uvicorn.run(app, host="0.0.0.0", port=port)

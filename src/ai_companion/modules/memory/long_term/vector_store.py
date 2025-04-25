@@ -33,7 +33,13 @@ class Memory:
 class VectorStore:
     """A class to handle vector storage operations using Qdrant."""
 
-    REQUIRED_ENV_VARS = ["QDRANT_URL", "QDRANT_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_EMBEDDING_DEPLOYMENT"]
+    REQUIRED_ENV_VARS = [
+        "QDRANT_URL",
+        "QDRANT_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_EMBEDDING_DEPLOYMENT",
+    ]
     EMBEDDING_MODEL = "text-embedding-3-small"
     COLLECTION_NAME = "long_term_memory"
     SIMILARITY_THRESHOLD = 0.9
@@ -55,7 +61,7 @@ class VectorStore:
             self.azure_client = AzureOpenAI(
                 api_key=os.getenv("AZURE_OPENAI_API_KEY"),
                 api_version="2024-02-15-preview",
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
             )
             self.logger = logging.getLogger(__name__)
             self._initialized = True
@@ -87,8 +93,7 @@ class VectorStore:
     def _get_embedding(self, text: str) -> List[float]:
         """Get embedding using Azure OpenAI."""
         response = self.azure_client.embeddings.create(
-            model=os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
-            input=text
+            model=os.getenv("AZURE_EMBEDDING_DEPLOYMENT"), input=text
         )
         return response.data[0].embedding
 
@@ -138,18 +143,18 @@ class VectorStore:
                 points=[point],
             )
             self.logger.info(f"Successfully stored memory with ID: {point.id}")
-            
+
         except Exception as e:
             self.logger.error(f"Error storing memory: {e}", exc_info=True)
             raise
 
     def search_memories(self, query: str, k: int = 3) -> List[Memory]:
         """Search for relevant memories using the vector store.
-        
+
         Args:
             query: The search query
             k: Number of results to return
-            
+
         Returns:
             List of Memory objects
         """
@@ -160,37 +165,37 @@ class VectorStore:
 
             # Get embedding for the query
             query_embedding = self._get_embedding(query)
-            
+
             # Search using Qdrant client
-            search_results = self.client.search(
+
+            search_results = self.client.query_points(
                 collection_name=self.COLLECTION_NAME,
                 query_vector=query_embedding,
-                limit=k
+                limit=k,
             )
-            
+
             # Convert to Memory objects
             memories = []
             for result in search_results:
                 memory = Memory(
                     text=result.payload.get("text", ""),
-                    metadata={
-                        k: v for k, v in result.payload.items() 
-                        if k != "text"
-                    },
-                    score=result.score
+                    metadata={k: v for k, v in result.payload.items() if k != "text"},
+                    score=result.score,
                 )
                 memories.append(memory)
-            
+
             # Log found memories
             if memories:
                 self.logger.debug(f"Found {len(memories)} relevant memories")
                 for memory in memories:
-                    self.logger.debug(f"Memory score: {memory.score:.3f}, text: {memory.text[:100]}...")
+                    self.logger.debug(
+                        f"Memory score: {memory.score:.3f}, text: {memory.text[:100]}..."
+                    )
             else:
                 self.logger.debug("No relevant memories found")
-            
+
             return memories
-            
+
         except Exception as e:
             self.logger.error(f"Error searching memories: {e}", exc_info=True)
             return []
