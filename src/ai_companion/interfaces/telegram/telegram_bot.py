@@ -236,14 +236,18 @@ class TelegramBot:
 
             message = update["message"]
             chat_id = message.get("chat", {}).get("id")
-            user_id = message.get("from", {}).get("id")
+            # Using _ for unused variable
+            _ = message.get("from", {}).get("id")
+            text = message.get("text", "")
 
-            if not chat_id or not user_id:
-                logger.warning(f"Missing chat_id or user_id in message: {message}")
+            if not chat_id:
+                logger.warning(f"Missing chat_id in message: {message}")
                 return
 
             # Generate a unique session ID for this chat using standard format
-            session_id = f"telegram-{user_id}"
+            session_id = f"telegram-{chat_id}-{_}"
+            # Using _ for unused variable
+            _ = os.path.join(self.checkpoint_dir, f"{session_id}.json")
 
             # Check for command messages first
             if "text" in message and message["text"].startswith("/"):
@@ -296,7 +300,7 @@ class TelegramBot:
             last_name = message.get("from", {}).get("last_name", "")
 
             user_metadata = {
-                "user_id": user_id,
+                "user_id": _,
                 "username": username,
                 "first_name": first_name,
                 "last_name": last_name,
@@ -332,7 +336,7 @@ class TelegramBot:
                 # Try to get existing memories for context enhancement
                 try:
                     recent_memories = await self.memory_service.get_session_memory(
-                        platform="telegram", user_id=str(user_id), limit=10
+                        platform="telegram", user_id=str(_), limit=10
                     )
 
                     if recent_memories:
@@ -423,7 +427,7 @@ class TelegramBot:
                     # Store the memory with the conversation data and complete state
                     memory_id = await self.memory_service.store_session_memory(
                         platform="telegram",
-                        user_id=str(user_id),
+                        user_id=str(_),
                         state=graph_state,  # Store complete graph state
                         conversation=conversation_data,
                         ttl_minutes=1440,  # 24 hours default
@@ -461,7 +465,8 @@ class TelegramBot:
             True if the command was handled, False otherwise
         """
         chat_id = message.get("chat", {}).get("id")
-        user_id = message.get("from", {}).get("id")
+        # Using _ for unused variable
+        _ = message.get("from", {}).get("id")
         text = message.get("text", "")
 
         # Extract command and params
@@ -1908,11 +1913,13 @@ class TelegramBot:
             # Get all memory sources for comprehensive context
             # 1. Check cache memory first
             session_id = f"telegram-{chat_id}-{user_id}"
-            cache_path = os.path.join(self.checkpoint_dir, f"{session_id}.json")
+            # Using _ for unused variable
+            _ = os.path.join(self.checkpoint_dir, f"{session_id}.json")
 
             # Track important entities and topics mentioned
             important_topics = set()
-            user_preferences = {}
+            # Using _ for unused variable
+            _ = {}
             key_facts = []
 
             # Extract topics from conversation history
