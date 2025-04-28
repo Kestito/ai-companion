@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { FORCE_REAL_DATA } from '@/lib/config';
 
-// Using provided Supabase credentials
-const supabaseUrl = 'https://aubulhjfeszmsheonmpy.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.ovHMLKm5nN4o7_P_Pld1vEzPpL1uKZK1xxtWn3RMMJw';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Get Supabase credentials from environment variables
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aubulhjfeszmsheonmpy.supabase.co';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.ovHMLKm5nN4o7_P_Pld1vEzPpL1uKZK1xxtWn3RMMJw';
 
 /**
  * GET handler for retrieving scheduled messages
@@ -15,6 +15,25 @@ export async function GET(request: NextRequest) {
   const patientId = searchParams.get('patientId');
   
   try {
+    // Create Supabase client
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // Verify database connection when forcing real data
+    if (FORCE_REAL_DATA) {
+      try {
+        const { error: healthError } = await supabase.from('health_check').select('count', { count: 'exact', head: true });
+        if (healthError) {
+          console.error('Database connection check failed:', healthError);
+          return NextResponse.json({
+            messages: [],
+            error: 'Database connection error. Check configuration.'
+          }, { status: 503 });
+        }
+      } catch (healthErr) {
+        console.error('Health check error:', healthErr);
+      }
+    }
+    
     // Query scheduled_messages table
     console.log('Querying scheduled_messages table...');
     let query = supabase
@@ -32,6 +51,7 @@ export async function GET(request: NextRequest) {
     
     if (error) {
       console.error('Error querying scheduled_messages table:', error);
+      
       return NextResponse.json({ 
         messages: [],
         error: 'Failed to query scheduled_messages table: ' + error.message

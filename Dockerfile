@@ -20,12 +20,12 @@ RUN apt-get update && apt-get install -y \
 # Copy the dependency management files and README first
 COPY uv.lock pyproject.toml README.md /app/
 
-# Install the application dependencies - this can be cached if uv.lock doesn't change
-RUN uv sync --frozen --no-cache
-
-# Copy your application code into the container
-# (This is done after installing dependencies to leverage Docker layer caching)
+# Copy your application code into the container BEFORE installing dependencies
+# This fixes the "src does not exist" error
 COPY src/ /app/src/
+
+# Now install the application dependencies
+RUN uv sync --frozen --no-cache
 
 # Set the virtual environment environment variables
 ENV VIRTUAL_ENV=/app/.venv \

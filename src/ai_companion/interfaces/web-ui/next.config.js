@@ -3,6 +3,11 @@ const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
   swcMinify: true,
+  // Add the environment variables here for build time
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: 'https://aubulhjfeszmsheonmpy.supabase.co',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc'
+  },
   images: {
     remotePatterns: [
       {

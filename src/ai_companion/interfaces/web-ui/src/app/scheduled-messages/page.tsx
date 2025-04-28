@@ -25,6 +25,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import CodeIcon from '@mui/icons-material/Code';
 import HomeIcon from '@mui/icons-material/Home';
 import SendIcon from '@mui/icons-material/Send';
+import { FORCE_REAL_DATA } from '@/lib/config';
 
 interface ScheduledMessage {
   id: string;
@@ -51,6 +52,7 @@ export default function ScheduledMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const fetchScheduledMessages = async () => {
@@ -73,16 +75,31 @@ export default function ScheduledMessagesPage() {
         }
         
         setMessages(data.messages || []);
+        
+        // If we got an empty array in production where we're forcing real data
+        // and this might be an error, show a more specific error message
+        if (FORCE_REAL_DATA && data.messages && data.messages.length === 0) {
+          console.warn('No scheduled messages found but real data is required');
+          // Don't set error to allow the UI to show the empty state
+        }
       } catch (err: any) {
         console.error('Error fetching scheduled messages:', err);
         setError(err.message);
+        
+        // In production with forced real data, don't retry more than 3 times
+        if (FORCE_REAL_DATA && retryCount < 3) {
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchScheduledMessages();
+          }, 3000); // Retry after 3 seconds
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchScheduledMessages();
-  }, []);
+  }, [retryCount]);
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -211,7 +228,14 @@ export default function ScheduledMessagesPage() {
         <Alert severity="error" sx={{ mb: 3 }}>
           <Typography variant="subtitle1" fontWeight="bold">Error loading scheduled messages</Typography>
           <Typography variant="body2">{error}</Typography>
-          <Typography variant="body2" sx={{ mt: 2 }}>Make sure the scheduled_messages table exists in your Supabase database and the API endpoint is working.</Typography>
+          
+          {FORCE_REAL_DATA ? (
+            <Typography variant="body2" sx={{ mt: 2, fontWeight: 'bold' }}>
+              This application is configured to require real data. Mock data is disabled.
+            </Typography>
+          ) : (
+            <Typography variant="body2" sx={{ mt: 2 }}>Make sure the scheduled_messages table exists in your Supabase database and the API endpoint is working.</Typography>
+          )}
           
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2">Troubleshooting steps:</Typography>
@@ -226,6 +250,25 @@ export default function ScheduledMessagesPage() {
               </Box>
             </Box>
           </Box>
+          
+          {retryCount > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2">
+                Retry attempt {retryCount}/3 failed. Please check your database configuration.
+              </Typography>
+            </Box>
+          )}
+          
+          {FORCE_REAL_DATA && retryCount >= 3 && (
+            <Button 
+              variant="outlined" 
+              color="primary"
+              onClick={() => setRetryCount(0)}
+              sx={{ mt: 2 }}
+            >
+              Try Again
+            </Button>
+          )}
         </Alert>
       </Container>
     );

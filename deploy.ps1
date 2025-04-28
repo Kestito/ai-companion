@@ -13,6 +13,9 @@ param (
     [string]$ImageTag = "latest",
 
     [Parameter(Mandatory = $false)]
+    [switch]$ForceUpdate = $false,
+
+    [Parameter(Mandatory = $false)]
     [switch]$SkipLogin = $false,
 
     [Parameter(Mandatory = $false)]
@@ -176,7 +179,10 @@ function Write-ColorOutput {
         [string]$Suffix = "==="
     )
     
-    Write-Host "$Prefix $Message $Suffix" -ForegroundColor $Color
+    # Only show info, warnings, and errors (not success messages)
+    if ($Color -ne "Green" -or $Prefix -eq "ℹ️" -or $Message -like "*Info*" -or $Message -like "*info*") {
+        Write-Host "$Prefix $Message $Suffix" -ForegroundColor $Color
+    }
 }
 
 # Create a function to check if a command succeeded
@@ -187,7 +193,7 @@ function Test-CommandSuccess {
     )
     
     if ($LASTEXITCODE -eq 0) {
-        Write-ColorOutput -Message $SuccessMessage -Color Green -Prefix "✅"
+        # Don't show success messages
         return $true
     } else {
         Write-ColorOutput -Message "$ErrorMessage (Exit code: $LASTEXITCODE)" -Color Red -Prefix "❌"
@@ -242,7 +248,7 @@ function Test-ImageExistsInACR {
     
     $imageExists = az acr repository show --name $ACR_NAME --image "$ImageName`:$Tag" 2>$null
     if ($imageExists) {
-        Write-ColorOutput -Message "Image $ImageName`:$Tag already exists in ACR" -Color Green -Prefix "✅"
+        # Don't show success message
         return $true
     } else {
         Write-ColorOutput -Message "Image $ImageName`:$Tag does not exist in ACR, needs to be built" -Color Yellow -Prefix "→"
@@ -252,7 +258,7 @@ function Test-ImageExistsInACR {
 
 # Create a function to check if Docker is installed and running
 function Test-DockerAvailable {
-    Write-ColorOutput -Message "Checking if Docker is installed and running" -Color Green
+    Write-ColorOutput -Message "Checking if Docker is installed and running" -Color Yellow
     
     # Check if docker command is available
     $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
@@ -274,13 +280,13 @@ function Test-DockerAvailable {
         return $false
     }
     
-    Write-ColorOutput -Message "Docker is installed and running" -Color Green -Prefix "✅"
+    # Don't show success message
     return $true
 }
 
 # Create a function to check if source directories exist
 function Test-SourceDirectoriesExist {
-    Write-ColorOutput -Message "Checking if source directories exist" -Color Green
+    Write-ColorOutput -Message "Checking if source directories exist" -Color Yellow
     
     $allPathsExist = $true
     $backendExists = $true
@@ -291,35 +297,31 @@ function Test-SourceDirectoriesExist {
         Write-ColorOutput -Message "Backend source path not found: $BACKEND_SRC_PATH" -Color Red -Prefix "❌"
         $allPathsExist = $false
         $backendExists = $false
-    } else {
-        Write-ColorOutput -Message "Backend source path exists: $BACKEND_SRC_PATH" -Color Green -Prefix "✅"
-        
-        # Check backend Dockerfile
-        if (-not (Test-Path $BACKEND_DOCKERFILE_PATH)) {
-            Write-ColorOutput -Message "Backend Dockerfile not found at $BACKEND_DOCKERFILE_PATH" -Color Yellow -Prefix "⚠️"
-            # We don't fail the overall check for missing Dockerfile if directory exists
-            # since images might already exist in the registry
-        } else {
-            Write-ColorOutput -Message "Backend Dockerfile exists" -Color Green -Prefix "✅"
-        }
     }
+    # Don't show success message for backend source path
+    
+    # Check backend Dockerfile
+    if (-not (Test-Path $BACKEND_DOCKERFILE_PATH)) {
+        Write-ColorOutput -Message "Backend Dockerfile not found at $BACKEND_DOCKERFILE_PATH" -Color Yellow -Prefix "⚠️"
+        # We don't fail the overall check for missing Dockerfile if directory exists
+        # since images might already exist in the registry
+    }
+    # Don't show success message for backend Dockerfile
     
     # Check frontend source path
     if (-not (Test-Path $FRONTEND_SRC_PATH)) {
         Write-ColorOutput -Message "Frontend source path not found: $FRONTEND_SRC_PATH" -Color Red -Prefix "❌"
         $allPathsExist = $false
         $frontendExists = $false
-    } else {
-        Write-ColorOutput -Message "Frontend source path exists: $FRONTEND_SRC_PATH" -Color Green -Prefix "✅"
-        
-        # Check frontend Dockerfile
-        if (-not (Test-Path $FRONTEND_DOCKERFILE_PATH)) {
-            Write-ColorOutput -Message "Frontend Dockerfile not found at $FRONTEND_DOCKERFILE_PATH" -Color Yellow -Prefix "⚠️"
-            # We don't fail the overall check for missing Dockerfile if directory exists
-        } else {
-            Write-ColorOutput -Message "Frontend Dockerfile exists" -Color Green -Prefix "✅"
-        }
     }
+    # Don't show success message for frontend source path
+    
+    # Check frontend Dockerfile
+    if (-not (Test-Path $FRONTEND_DOCKERFILE_PATH)) {
+        Write-ColorOutput -Message "Frontend Dockerfile not found at $FRONTEND_DOCKERFILE_PATH" -Color Yellow -Prefix "⚠️"
+        # We don't fail the overall check for missing Dockerfile if directory exists
+    }
+    # Don't show success message for frontend Dockerfile
     
     # Summary of findings
     if (-not $backendExists -and -not $frontendExists) {
@@ -330,9 +332,8 @@ function Test-SourceDirectoriesExist {
         Write-ColorOutput -Message "Frontend source path is missing, but backend exists" -Color Yellow -Prefix "⚠️"
     } elseif (-not (Test-Path $BACKEND_DOCKERFILE_PATH) -or -not (Test-Path $FRONTEND_DOCKERFILE_PATH)) {
         Write-ColorOutput -Message "Source paths exist but one or more Dockerfiles are missing" -Color Yellow -Prefix "⚠️"
-    } else {
-        Write-ColorOutput -Message "All source paths and Dockerfiles exist" -Color Green -Prefix "✅"
     }
+    # Don't show success message for all paths existing
     
     return $allPathsExist
 }
@@ -343,7 +344,7 @@ function Get-DirectoryHash {
         [string]$Path
     )
     
-    Write-ColorOutput -Message "Calculating hash for directory: $Path" -Color Green
+    Write-ColorOutput -Message "Calculating hash for directory: $Path" -Color Yellow
     
     # Check if the directory exists
     if (-not (Test-Path $Path)) {
@@ -374,7 +375,7 @@ function Get-DirectoryHash {
         $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($contentHashData))
         $hash = [System.BitConverter]::ToString($hashBytes) -replace '-', ''
         
-        Write-ColorOutput -Message "Hash calculated successfully: $hash" -Color Green -Prefix "✅"
+        # Don't show success message
         return $hash
     }
     catch {
@@ -395,7 +396,7 @@ function Test-DirectoryChanged {
         return $false
     }
     
-    Write-ColorOutput -Message "Checking for changes in directory: $Path" -Color Green
+    Write-ColorOutput -Message "Checking for changes in directory: $Path" -Color Yellow
     
     # Calculate current hash
     $currentHash = Get-DirectoryHash -Path $Path
@@ -423,7 +424,7 @@ function Test-DirectoryChanged {
         return $true
     }
     
-    Write-ColorOutput -Message "No changes detected in directory" -Color Green -Prefix "✅"
+    # Don't show "No changes detected" message
     return $false
 }
 
@@ -808,7 +809,7 @@ except Exception as e:
 Write-ColorOutput -Message "Starting AI Companion Deployment Process" -Color Cyan
 
 # Pre-deployment checks
-Write-ColorOutput -Message "Performing pre-deployment checks" -Color Green -Prefix "🔍"
+Write-ColorOutput -Message "Performing pre-deployment checks" -Color Yellow -Prefix "🔍"
 
 # Check if Docker is available
 if (-not (Test-DockerAvailable)) {
@@ -832,34 +833,34 @@ if (-not $sourcePathsResult) {
 }
 
 # Step 1: Verify Resource Group exists (don't create or delete)
-Write-ColorOutput -Message "Verifying Resource Group: $RESOURCE_GROUP" -Color Green
+Write-ColorOutput -Message "Verifying Resource Group: $RESOURCE_GROUP" -Color Yellow
 $rgExists = az group exists --name $RESOURCE_GROUP
 if ($rgExists -eq "true") {
-    Write-ColorOutput -Message "Resource group exists, proceeding with deployment" -Color Green -Prefix "✅"
+    # Don't show success message
 } else {
     Write-ColorOutput -Message "Resource group $RESOURCE_GROUP does not exist. Please update the script with correct resource group name." -Color Red -Prefix "❌"
     exit 1
 }
 
 # Step 2: Set Azure Subscription
-Write-ColorOutput -Message "Setting Azure subscription context" -Color Green
+Write-ColorOutput -Message "Setting Azure subscription context" -Color Yellow
 az account set --subscription $SUBSCRIPTION_ID
 if (-not (Test-CommandSuccess -SuccessMessage "Subscription set successfully" -ErrorMessage "Failed to set subscription")) {
     exit 1
 }
 
 # Step 3: Verify ACR exists
-Write-ColorOutput -Message "Verifying Azure Container Registry" -Color Green
+Write-ColorOutput -Message "Verifying Azure Container Registry" -Color Yellow
 $acrExists = az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP 2>$null
 if ($acrExists) {
-    Write-ColorOutput -Message "ACR exists, proceeding with deployment" -Color Green -Prefix "✅"
+    # Don't show success message
 } else {
     Write-ColorOutput -Message "ACR $ACR_NAME does not exist. Please update the script with correct ACR name." -Color Red -Prefix "❌"
     exit 1
 }
 
 # Login to ACR
-Write-ColorOutput -Message "Logging in to Azure Container Registry" -Color Green
+Write-ColorOutput -Message "Logging in to Azure Container Registry" -Color Yellow
 az acr login --name $ACR_NAME
 if (-not (Test-CommandSuccess -SuccessMessage "Logged in to ACR successfully" -ErrorMessage "Failed to login to ACR")) {
     exit 1
@@ -873,7 +874,7 @@ $ACR_PASSWORD = $acrCredentials.passwords[0].value
 
 # Step 4: Build and Push Docker Images
 # Build Backend Docker Image
-Write-ColorOutput -Message "Building Backend Docker Image" -Color Green
+Write-ColorOutput -Message "Building Backend Docker Image" -Color Yellow
 
 # Check if image exists in ACR
 $backendImageExists = Test-ImageExistsInACR -ImageName $IMAGE_NAME -Tag $TAG
@@ -881,7 +882,7 @@ $backendImageExists = Test-ImageExistsInACR -ImageName $IMAGE_NAME -Tag $TAG
 # Determine if we need to build backend
 $needToBuildBackend = $FORCE_REBUILD -or (-not $backendImageExists)
 if (-not $needToBuildBackend) {
-    Write-ColorOutput -Message "Skipping backend build as image already exists in ACR" -Color Green -Prefix "✅"
+    Write-ColorOutput -Message "Skipping backend build as image already exists in ACR" -Color Yellow -Prefix "→"
 } else {
     # Check if Dockerfile exists in backend path
     if (Test-Path $BACKEND_DOCKERFILE_PATH) {
@@ -917,7 +918,7 @@ if (-not $needToBuildBackend) {
 }
 
 # Build Frontend Docker Image
-Write-ColorOutput -Message "Building Frontend Docker Image" -Color Green
+Write-ColorOutput -Message "Building Frontend Docker Image" -Color Yellow
 
 # Check if image exists in ACR
 $frontendImageExists = Test-ImageExistsInACR -ImageName $WEB_UI_IMAGE_NAME -Tag $TAG
@@ -933,7 +934,7 @@ if (-not $backendAppUrl) {
 # Determine if we need to build frontend
 $needToBuildFrontend = $FORCE_REBUILD -or (-not $frontendImageExists)
 if (-not $needToBuildFrontend) {
-    Write-ColorOutput -Message "Skipping frontend build as image already exists in ACR" -Color Green -Prefix "✅"
+    Write-ColorOutput -Message "Skipping frontend build as image already exists in ACR" -Color Yellow -Prefix "→"
 } else {
     # Check if Dockerfile exists in frontend path
     if (Test-Path $FRONTEND_DOCKERFILE_PATH) {
@@ -986,7 +987,7 @@ if (-not $needToBuildFrontend) {
 }
 
 # Step 5: Check if Container Apps Environment exists
-Write-ColorOutput -Message "Checking if Container App Environment exists" -Color Green
+Write-ColorOutput -Message "Checking if Container App Environment exists" -Color Yellow
 $envExists = az containerapp env show --name $CONTAINER_ENV_NAME --resource-group $RESOURCE_GROUP 2>$null
 if (-not $envExists) {
     Write-ColorOutput -Message "Container App Environment does not exist. Creating new environment." -Color Yellow -Prefix "→"
@@ -1033,7 +1034,7 @@ if (-not $envExists) {
 }
 
 # Step 6: Check Backend Container App
-Write-ColorOutput -Message "Checking Backend Container App" -Color Green
+Write-ColorOutput -Message "Checking Backend Container App" -Color Yellow
 $backendAppExists = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 $backendAppNeedsUpdate = $false
 $backendAppRunning = $true
@@ -1051,7 +1052,7 @@ if ($backendAppExists) {
         $response = Invoke-WebRequest -Uri "$backendAppUrl/monitor/health" -UseBasicParsing -ErrorAction Stop
         $content = $response.Content | ConvertFrom-Json
         if ($response.StatusCode -eq 200 -and $content.status -eq "healthy") {
-            Write-ColorOutput -Message "Backend Python app is running correctly" -Color Green -Prefix "✅"
+            # Don't show success message
         } else {
             Write-ColorOutput -Message "Backend app returned unexpected status. Container may need to be recreated." -Color Yellow -Prefix "⚠️"
             $backendAppNeedsUpdate = $true
@@ -1066,7 +1067,7 @@ if ($backendAppExists) {
         $response = Invoke-WebRequest -Uri "$backendAppUrl" -UseBasicParsing -ErrorAction Stop
         # Check for Chainlit or Python indicators in the response
         if ($response.Content -match "Chainlit" -or $response.Headers["Server"] -match "Python" -or $response.Content -match "Python") {
-            Write-ColorOutput -Message "Confirmed that backend is a Python application" -Color Green -Prefix "✅"
+            # Don't show success message
         } else {
             Write-ColorOutput -Message "Backend does not appear to be the Python app we expected" -Color Yellow -Prefix "⚠️"
             $backendAppNeedsUpdate = $true
@@ -1082,7 +1083,7 @@ if ($backendAppExists) {
 }
 
 # Step 7: Check Frontend Container App
-Write-ColorOutput -Message "Checking Frontend Container App" -Color Green
+Write-ColorOutput -Message "Checking Frontend Container App" -Color Yellow
 $frontendAppExists = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP 2>$null
 $frontendAppNeedsUpdate = $false
 $frontendAppRunning = $true
@@ -1099,11 +1100,11 @@ if ($frontendAppExists) {
     try {
         $response = Invoke-WebRequest -Uri $frontendAppUrl -UseBasicParsing -ErrorAction Stop
         if ($response.StatusCode -eq 200) {
-            Write-ColorOutput -Message "Frontend app is responding" -Color Green -Prefix "✅"
+            # Don't show success message
             
             # Check if this is a React/Next.js app (look for typical React patterns)
             if ($response.Content -match "react" -or $response.Content -match "next" -or $response.Content -match "_next") {
-                Write-ColorOutput -Message "Confirmed that frontend is a React/Next.js application" -Color Green -Prefix "✅"
+                # Don't show success message
             } else {
                 Write-ColorOutput -Message "Frontend does not appear to be the React/Next.js app we expected" -Color Yellow -Prefix "⚠️"
                 $frontendAppNeedsUpdate = $true
@@ -1155,14 +1156,14 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
             # Get updated URL
             $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
             $backendAppUrl = "https://$backendAppUrl"
-            Write-ColorOutput -Message "Backend App updated to version $TAG" -Color Green -Prefix "✅"
+            Write-ColorOutput -Message "Backend App updated to version $TAG" -Color Yellow -Prefix "→"
             Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
         }
     }
     
     # Only create if app doesn't exist or was deleted
     if (-not $backendAppRunning) {
-        Write-ColorOutput -Message "Deploying Backend Container App" -Color Green
+        Write-ColorOutput -Message "Deploying Backend Container App" -Color Yellow
         az containerapp create `
             --name $BACKEND_APP_NAME `
             --resource-group $RESOURCE_GROUP `
@@ -1198,14 +1199,14 @@ if ($backendAppNeedsUpdate -or $ForceUpdate) {
             Write-ColorOutput -Message "Backend App URL: $backendAppUrl" -Color Cyan -Prefix "🔗"
             
             # Configure other settings
-            Write-ColorOutput -Message "Configuring Backend Ingress" -Color Green
+            Write-ColorOutput -Message "Configuring Backend Ingress" -Color Yellow
             az containerapp ingress update `
                 --name $BACKEND_APP_NAME `
                 --resource-group $RESOURCE_GROUP `
                 --target-port 8000 `
                 --transport auto
                 
-            Write-ColorOutput -Message "Configuring CORS for Backend" -Color Green
+            Write-ColorOutput -Message "Configuring CORS for Backend" -Color Yellow
             az containerapp ingress cors update `
                 --name $BACKEND_APP_NAME `
                 --resource-group $RESOURCE_GROUP `
@@ -1259,14 +1260,14 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
                 # Get updated URL
                 $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
                 $frontendAppUrl = "https://$frontendAppUrl"
-                Write-ColorOutput -Message "Frontend App updated to version $TAG" -Color Green -Prefix "✅"
+                Write-ColorOutput -Message "Frontend App updated to version $TAG" -Color Yellow -Prefix "→"
                 Write-ColorOutput -Message "Frontend App URL: $frontendAppUrl" -Color Cyan -Prefix "🔗"
             }
         }
         
         # Only create if app doesn't exist or was deleted
         if (-not $frontendAppRunning) {
-            Write-ColorOutput -Message "Deploying Frontend Container App" -Color Green
+            Write-ColorOutput -Message "Deploying Frontend Container App" -Color Yellow
             az containerapp create `
                 --name $FRONTEND_APP_NAME `
                 --resource-group $RESOURCE_GROUP `
@@ -1316,7 +1317,7 @@ if ($frontendAppNeedsUpdate -or $ForceUpdate) {
         # Add check to see if versions match and report
         $deployedImageRef = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.template.containers[0].image" -o tsv
         if ($deployedImageRef -like "*:$TAG") {
-            Write-ColorOutput -Message "Frontend is already at version $TAG" -Color Green -Prefix "✅"
+            # Don't show success message for matching versions
         } else {
             Write-ColorOutput -Message "Frontend is at version $($deployedImageRef.Split(':')[1]) but local is $TAG" -Color Yellow -Prefix "⚠️"
             Write-ColorOutput -Message "Use -ForceUpdate to update to latest version" -Color Yellow -Prefix "→"
@@ -1331,12 +1332,12 @@ function Test-AzureEnvironment {
         [string]$ContainerEnvName
     )
     
-    Write-ColorOutput -Message "Diagnosing Azure environment for Container App Job support" -Color Green -Prefix "🔍"
+    Write-ColorOutput -Message "Diagnosing Azure environment for Container App Job support" -Color Yellow -Prefix "🔍"
     
     # Check if logged in to Azure
     try {
         $account = az account show --query "name" -o tsv 2>$null
-        Write-ColorOutput -Message "Azure login verified: $account" -Color Green -Prefix "✅"
+        Write-ColorOutput -Message "Azure login verified: $account" -Color Yellow -Prefix "→"
     } catch {
         Write-ColorOutput -Message "Not logged in to Azure. Please run 'az login' first." -Color Red -Prefix "❌"
         return $false
@@ -1346,7 +1347,7 @@ function Test-AzureEnvironment {
     try {
         $rgExists = az group show --name $ResourceGroup --query "name" -o tsv 2>$null
         if ($rgExists) {
-            Write-ColorOutput -Message "Resource group exists: $ResourceGroup" -Color Green -Prefix "✅"
+            # Don't show success message
         } else {
             Write-ColorOutput -Message "Resource group not found: $ResourceGroup" -Color Red -Prefix "❌"
             return $false
@@ -1360,7 +1361,7 @@ function Test-AzureEnvironment {
     try {
         $envExists = az containerapp env show --name $ContainerEnvName --resource-group $ResourceGroup --query "name" -o tsv 2>$null
         if ($envExists) {
-            Write-ColorOutput -Message "Container App environment exists: $ContainerEnvName" -Color Green -Prefix "✅"
+            # Don't show success message
         } else {
             Write-ColorOutput -Message "Container App environment not found: $ContainerEnvName" -Color Red -Prefix "❌"
             return $false
@@ -1403,7 +1404,7 @@ function Test-AzureEnvironment {
             $global:UseFallbackScheduler = $true
         }
         elseif ($roles -contains "Contributor" -or $roles -contains "Owner") {
-            Write-ColorOutput -Message "User has sufficient permissions (Contributor/Owner)" -Color Green -Prefix "✅"
+            # Don't show success message
         }
         else {
             Write-ColorOutput -Message "User may not have sufficient permissions to create Container App Jobs" -Color Yellow -Prefix "⚠️"
@@ -1430,8 +1431,8 @@ function Test-AzureEnvironment {
         )
         
         if ($supportedRegions -contains $location.ToLower()) {
-            Write-ColorOutput -Message "Region supports Container App Jobs" -Color Green -Prefix "✅"
-    } else {
+            # Don't show success message
+        } else {
             Write-ColorOutput -Message "Region may not support Container App Jobs. Consider using fallback approach." -Color Yellow -Prefix "⚠️"
             $global:UseFallbackScheduler = $true
         }
@@ -1462,7 +1463,7 @@ function Test-AzureEnvironment {
                 try {
                     $jobsList = $jobsListResult | ConvertFrom-Json
                     $jobsCount = $jobsList.Count
-                    Write-ColorOutput -Message "Successfully listed jobs in resource group ($jobsCount jobs found)" -Color Green -Prefix "✅"
+                    # Don't show success message
                 }
                 catch {
                     Write-ColorOutput -Message "Error processing jobs list: $_" -Color Red -Prefix "❌"
@@ -1787,10 +1788,10 @@ if ($frontendExists) {
 }
 
 # Step 14: Deployment Verification Complete
-Write-ColorOutput -Message "Deployment and Version Verification Complete" -Color Green -Prefix "🚀"
+Write-ColorOutput -Message "Deployment and Version Verification Complete" -Color Yellow -Prefix "🔍"
 
 # Step 15: Version Verification
-Write-ColorOutput -Message "Verifying Application Versions" -Color Green -Prefix "🔍"
+Write-ColorOutput -Message "Verifying Application Versions" -Color Yellow -Prefix "🔍"
 
 # Add this utility function to normalize version strings
 function Get-VersionFromImageString {
@@ -1835,7 +1836,7 @@ function Update-ContainerAppVersion {
         $updateResult = az containerapp update --name $AppName --resource-group $ResourceGroup --image "$Repository/$AppName`:$Tag" 2>$null
         
         if ($LASTEXITCODE -eq 0 -and $updateResult) {
-            Write-ColorOutput -Message "$AppName updated to version $Tag successfully" -Color Green -Prefix "✅"
+            # Don't show success message
             return $true
         } else {
             Write-ColorOutput -Message "Failed to update $AppName to version $Tag" -Color Red -Prefix "❌"
@@ -1856,17 +1857,17 @@ if ($backendExists) {
     $backendDeployedVersion = Get-VersionFromImageString -ImageString $backendDeployedImageRef
     
     if ($backendDeployedVersion -eq $TAG) {
-        Write-ColorOutput -Message "Backend version verification: SUCCESS ($backendDeployedVersion)" -Color Green -Prefix "✅"
+        # Don't show success message
     } else {
         Write-ColorOutput -Message "Backend version verification: MISMATCH (Deployed: $backendDeployedVersion, Expected: $TAG)" -Color Red -Prefix "❌"
         
         if ($ForceUpdate) {
             $updateResult = Update-ContainerAppVersion -AppName $BACKEND_APP_NAME -ResourceGroup $RESOURCE_GROUP -Repository "$ACR_NAME.azurecr.io" -Tag $TAG -ForceUpdate $ForceUpdate
             if ($updateResult) {
-                Write-ColorOutput -Message "Backend successfully updated to version $TAG" -Color Green -Prefix "✅"
+                # Don't show success message
             }
         } else {
-        Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+            Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
         }
     }
 }
@@ -1878,17 +1879,17 @@ if ($frontendExists) {
     $frontendDeployedVersion = Get-VersionFromImageString -ImageString $frontendDeployedImageRef
     
     if ($frontendDeployedVersion -eq $TAG) {
-        Write-ColorOutput -Message "Frontend version verification: SUCCESS ($frontendDeployedVersion)" -Color Green -Prefix "✅"
+        # Don't show success message
     } else {
         Write-ColorOutput -Message "Frontend version verification: MISMATCH (Deployed: $frontendDeployedVersion, Expected: $TAG)" -Color Red -Prefix "❌"
         
         if ($ForceUpdate) {
             $updateResult = Update-ContainerAppVersion -AppName $FRONTEND_APP_NAME -ResourceGroup $RESOURCE_GROUP -Repository "$ACR_NAME.azurecr.io" -Tag $TAG -ForceUpdate $ForceUpdate
             if ($updateResult) {
-                Write-ColorOutput -Message "Frontend successfully updated to version $TAG" -Color Green -Prefix "✅"
+                # Don't show success message
             }
         } else {
-        Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
+            Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
         }
     }
 }
@@ -1922,8 +1923,8 @@ if ($telegramJobExists) {
     $telegramJobVersion = Get-VersionFromImageString -ImageString $telegramJobImageRef
     
     if ($telegramJobVersion -eq $TAG) {
-        Write-ColorOutput -Message "Telegram scheduler job version verification: SUCCESS ($telegramJobVersion)" -Color Green -Prefix "✅"
-            } else {
+        # Don't show success message
+    } else {
         Write-ColorOutput -Message "Telegram scheduler job version verification: MISMATCH (Deployed: $telegramJobVersion, Expected: $TAG)" -Color Red -Prefix "❌"
         
         if ($ForceUpdate) {
@@ -1931,7 +1932,7 @@ if ($telegramJobExists) {
             Write-ColorOutput -Message "Updating Telegram scheduler job to version $TAG" -Color Yellow -Prefix "→"
             # The job update logic is handled in the Telegram scheduler deployment section
             Write-ColorOutput -Message "Job will be updated when you run with -ForceUpdate" -Color Yellow -Prefix "→"
-    } else {
+        } else {
             Write-ColorOutput -Message "Use -ForceUpdate flag to update to the latest version" -Color Yellow -Prefix "→"
         }
     }
@@ -2057,7 +2058,7 @@ if ($CheckScheduledMessages -or $FixScheduledMessages -or $FixMissingMetadata -o
                 }
             }
         } else {
-            Write-ColorOutput -Message "No issues found in scheduled messages" -Color Green -Prefix "✅"
+            # Don't show success message
         }
         
         # Clear environment variables
@@ -2069,92 +2070,17 @@ if ($CheckScheduledMessages -or $FixScheduledMessages -or $FixMissingMetadata -o
 # Summarize the deployment
 Write-ColorOutput -Message "Deployment Summary" -Color Cyan
 
-Write-Host "Telegram functionality is integrated in the main backend app" -ForegroundColor Green
-
-Write-Host "Deployment completed successfully!" -ForegroundColor Green
+Write-Host "Telegram functionality is integrated in the main backend app" -ForegroundColor Yellow
 
 # Display deployment summary
-Write-ColorOutput -Message "🎉 Deployment Complete 🎉" -Color Green
+Write-ColorOutput -Message "Deployment Complete" -Color Yellow
 
 # Show summary information about the deployment
-Write-ColorOutput -Message "💻 Environment Details" -Color Cyan -Prefix "📋"
+Write-ColorOutput -Message "Environment Details" -Color Cyan -Prefix "📋"
 Write-Host "Resource Group: $RESOURCE_GROUP"
 Write-Host "Container App Environment: $CONTAINER_ENV_NAME"
 Write-Host "Azure Container Registry: $ACR_NAME"
 Write-Host "Version: $TAG"
-
-# Show backend status and URL
-if ($backendAppExists -or $backendAppCreated) {
-    $backendAppUrl = az containerapp show --name $BACKEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
-    Write-ColorOutput -Message "🌐 Backend App ($BACKEND_APP_NAME)" -Color Cyan -Prefix "📋"
-    Write-Host "URL: https://$backendAppUrl"
-    Write-Host "Health: https://$backendAppUrl/monitor/health"
-}
-
-# Show frontend status and URL
-if ($frontendAppExists -or $frontendAppCreated) {
-    $frontendAppUrl = az containerapp show --name $FRONTEND_APP_NAME --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv
-    Write-ColorOutput -Message "🌐 Frontend App ($FRONTEND_APP_NAME)" -Color Cyan -Prefix "📋"
-    Write-Host "URL: https://$frontendAppUrl"
-}
-
-# Show Telegram functionality status
-Write-ColorOutput -Message "🤖 Telegram Functionality" -Color Cyan -Prefix "📋"
-Write-Host "Telegram bot functionality is integrated directly in the main backend application" -ForegroundColor Green
-Write-Host "The scheduler will process messages every 5 minutes automatically" -ForegroundColor Green
-
-# Check and fix scheduled messages if requested
-if ($CheckScheduledMessages -or $FixScheduledMessages) {
-    Write-ColorOutput -Message "Checking Scheduled Messages" -Color Cyan -Prefix "📋"
-    
-    # Check for issues with scheduled messages
-    $checkResult = Check-ScheduledMessages
-    
-    if ($checkResult -and $checkResult.issues_found) {
-        # Show detailed information about issues found
-        Write-Host "Issues found with scheduled messages:" -ForegroundColor Yellow
-        Write-Host "  - Past due messages: $($checkResult.past_due_messages)" -ForegroundColor Yellow
-        Write-Host "  - Messages with missing metadata: $($checkResult.missing_metadata)" -ForegroundColor Yellow
-        Write-Host "  - Messages stuck in processing: $($checkResult.stuck_processing)" -ForegroundColor Yellow
-        Write-Host "  - Failed messages: $($checkResult.failed_messages)" -ForegroundColor Yellow
-        
-        # Determine if we should fix these issues
-        $shouldFix = $FixScheduledMessages
-        if (-not $shouldFix) {
-            if (-not $AutoConfirm) {
-                $confirmFix = Read-Host "Would you like to fix these issues? (y/n)"
-                $shouldFix = $confirmFix -eq "y"
-            }
-        }
-        
-        if ($shouldFix) {
-            Write-ColorOutput -Message "Fixing Scheduled Messages" -Color Cyan -Prefix "🔧"
-            
-            # Set up parameters for the Fix-ScheduledMessages function
-            $fixParams = @{
-                IssuesResult = $checkResult
-                AutoConfirm = $AutoConfirm
-                FixPastDueMessages = $true  # Always fix past due messages by default
-                FixMissingMetadata = $FixMissingMetadata
-                FixStuckProcessing = $true  # Always fix stuck processing by default
-                ResetFailedMessages = $ResetFailedMessages
-            }
-            
-            # Run the fix function
-            $fixResult = Fix-ScheduledMessages @fixParams
-            
-            if ($fixResult) {
-                Write-ColorOutput -Message "Scheduled message issues have been fixed" -Color Green -Prefix "✅"
-            } else {
-                Write-ColorOutput -Message "Failed to fix scheduled message issues" -Color Red -Prefix "❌"
-            }
-        } else {
-            Write-ColorOutput -Message "Scheduled message fixes were skipped" -Color Yellow -Prefix "⚠️"
-        }
-    } else {
-        Write-ColorOutput -Message "No issues found with scheduled messages" -Color Green -Prefix "✅"
-    }
-}
 
 # Inform user about Python scripts for managing scheduled messages
 Write-ColorOutput -Message "Managing Scheduled Messages" -Color Cyan -Prefix "📋"
@@ -2175,4 +2101,4 @@ Write-Host "  -AutoConfirm: Automatically confirm fixes without prompting"
 Write-Host ""
 Write-Host "Example: .\deploy.ps1 -CheckScheduledMessages -FixScheduledMessages -AutoConfirm"
 
-Write-ColorOutput -Message "Deployment process completed" -Color Green -Prefix "🏁"
+Write-ColorOutput -Message "Deployment process completed" -Color Yellow -Prefix "🏁"

@@ -15,17 +15,22 @@ import {
   Chip,
   IconButton,
   CircularProgress,
-  Alert
+  Alert,
+  Container,
+  Grid,
+  Link as MuiLink
 } from '@mui/material';
 import { 
   Refresh, 
   Info, 
   Download,
-  Add
+  Add,
+  Home as HomeIcon,
+  Warning
 } from '@mui/icons-material';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import PageHeader from '@/components/common/PageHeader';
 
 // Helper to get color based on risk level
 const getRiskColor = (risk: string) => {
@@ -119,118 +124,207 @@ export default function RiskAssessmentPage() {
   const createAssessment = () => {
     router.push('/risk-assessment/create');
   };
-  
-  return (
-    <Box sx={{ p: 3, maxWidth: '1200px', margin: '0 auto' }}>
-      <PageHeader
-        title="Patient Risk Assessments"
-        subtitle="View and manage patient risk assessments generated from conversations"
-      />
-      
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2, gap: 2 }}>
-        <Button 
-          variant="outlined" 
-          startIcon={<Refresh />}
-          onClick={loadAssessments}
-        >
-          Refresh
-        </Button>
-        <Button 
-          variant="contained" 
-          color="primary" 
-          startIcon={<Add />}
-          onClick={createAssessment}
-        >
-          Create Assessment
-        </Button>
-      </Box>
-      
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
-      
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+
+  if (loading) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Link 
+              href="/"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+            <Typography color="text.primary">Risk Assessment</Typography>
+          </Box>
+          
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
+            Patient Risk Assessments
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
           <CircularProgress />
         </Box>
-      ) : (
-        <TableContainer component={Paper} elevation={2}>
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell><Typography variant="subtitle2">Patient</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Assessment Date</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Risk Level</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Follow-up Date</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Status</Typography></TableCell>
-                <TableCell align="right"><Typography variant="subtitle2">Actions</Typography></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {assessments.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    <Typography variant="body1" sx={{ py: 3 }}>
-                      No risk assessments found. Create your first assessment to get started.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                assessments.map((assessment) => (
-                  <TableRow 
-                    key={assessment.id}
-                    hover
-                    sx={{ '&:hover': { cursor: 'pointer' } }}
-                    onClick={() => viewAssessment(assessment.id)}
-                  >
-                    <TableCell>
-                      {assessment.patients?.first_name} {assessment.patients?.last_name}
-                    </TableCell>
-                    <TableCell>{formatDate(assessment.assessment_date)}</TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={assessment.risk_level.toUpperCase()}
-                        color={getRiskColor(assessment.risk_level)}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>{formatDate(assessment.follow_up_date)}</TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={assessment.status.toUpperCase()}
-                        color={assessment.status === 'active' ? 'primary' : 'default'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          viewAssessment(assessment.id);
-                        }}
-                      >
-                        <Info fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Export/download functionality
-                        }}
-                      >
-                        <Download fontSize="small" />
-                      </IconButton>
-                    </TableCell>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Link 
+              href="/"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+            <Typography color="text.primary">Risk Assessment</Typography>
+          </Box>
+          
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
+            Patient Risk Assessments
+          </Typography>
+        </Box>
+        
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" fontWeight="bold">Error loading risk assessments</Typography>
+          <Typography variant="body2">{error}</Typography>
+        </Alert>
+      </Container>
+    );
+  }
+  
+  return (
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Link 
+            href="/"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              color: 'inherit',
+              textDecoration: 'none',
+              marginRight: '8px'
+            }}
+          >
+            <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+            Home
+          </Link>
+          <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+          <Typography color="text.primary">Risk Assessment</Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
+            Patient Risk Assessments
+          </Typography>
+          
+          <Button 
+            variant="contained" 
+            color="primary" 
+            startIcon={<Add />}
+            onClick={createAssessment}
+          >
+            Create Assessment
+          </Button>
+        </Box>
+        <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 4 }}>
+          View and manage patient risk assessments generated from conversations.
+        </Typography>
+      </Box>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          {assessments.length === 0 ? (
+            <Paper sx={{ textAlign: 'center', py: 5, px: 2 }}>
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                No risk assessments found. Create your first assessment to get started.
+              </Typography>
+              <Button 
+                variant="outlined" 
+                color="primary" 
+                startIcon={<Add />}
+                onClick={createAssessment}
+                sx={{ mt: 2 }}
+              >
+                Create Assessment
+              </Button>
+            </Paper>
+          ) : (
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell><Typography variant="subtitle2">Patient</Typography></TableCell>
+                    <TableCell><Typography variant="subtitle2">Assessment Date</Typography></TableCell>
+                    <TableCell><Typography variant="subtitle2">Risk Level</Typography></TableCell>
+                    <TableCell><Typography variant="subtitle2">Follow-up Date</Typography></TableCell>
+                    <TableCell><Typography variant="subtitle2">Status</Typography></TableCell>
+                    <TableCell align="right"><Typography variant="subtitle2">Actions</Typography></TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-    </Box>
+                </TableHead>
+                <TableBody>
+                  {assessments.map((assessment) => (
+                    <TableRow 
+                      key={assessment.id}
+                      hover
+                      sx={{ '&:hover': { cursor: 'pointer' } }}
+                      onClick={() => viewAssessment(assessment.id)}
+                    >
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Typography variant="body2" fontWeight="medium">
+                            {assessment.patients?.first_name} {assessment.patients?.last_name}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>{formatDate(assessment.assessment_date)}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={assessment.risk_level.toUpperCase()}
+                          color={getRiskColor(assessment.risk_level)}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>{formatDate(assessment.follow_up_date)}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={assessment.status.toUpperCase()}
+                          color={assessment.status === 'active' ? 'primary' : 'default'}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            viewAssessment(assessment.id);
+                          }}
+                          aria-label="View details"
+                        >
+                          <Info fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Export/download functionality
+                          }}
+                          aria-label="Download report"
+                        >
+                          <Download fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Grid>
+      </Grid>
+    </Container>
   );
 } 

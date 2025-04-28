@@ -18,10 +18,10 @@ export const useSupabase = () => {
   // Use the auth-helpers client for better Next.js integration
   const [client] = useState(() => {
     try {
-      // First try to use auth-helpers (preferred method)
+      // First try to use auth-helpers with explicit credentials (preferred method)
       return createClientComponentClient({
-        supabaseUrl,
-        supabaseKey
+        supabaseUrl: supabaseUrl,
+        supabaseKey: supabaseKey
       });
     } catch (error) {
       // Fallback to direct client creation if auth-helpers fail

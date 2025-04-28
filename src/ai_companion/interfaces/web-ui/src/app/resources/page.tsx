@@ -44,6 +44,7 @@ import {
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useLogger } from '@/hooks/useLogger';
+import { getSupabaseCredentials } from '@/lib/supabase/client';
 
 // Define document type
 interface DocumentResource {
@@ -101,7 +102,11 @@ export default function ResourcesPage() {
   
   const documentsPerPage = 9;
   const logger = useLogger({ component: 'ResourcesPage' });
-  const supabase = createClientComponentClient();
+  const { supabaseUrl, supabaseKey } = getSupabaseCredentials();
+  const supabase = createClientComponentClient({
+    supabaseUrl,
+    supabaseKey
+  });
 
   // Fetch documents on initial load and when filters change
   useEffect(() => {

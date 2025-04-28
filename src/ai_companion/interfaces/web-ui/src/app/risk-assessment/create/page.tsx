@@ -34,10 +34,15 @@ import {
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import PageHeader from '@/components/common/PageHeader';
+import { getSupabaseCredentials } from '@/lib/supabase/client';
 
 export default function CreateRiskAssessmentPage() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  const { supabaseUrl, supabaseKey } = getSupabaseCredentials();
+  const supabase = createClientComponentClient({
+    supabaseUrl,
+    supabaseKey
+  });
   
   // State
   const [patients, setPatients] = useState<{

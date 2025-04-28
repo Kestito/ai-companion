@@ -2,7 +2,7 @@
 
 import { Box, Button, Checkbox, Container, FormControlLabel, IconButton, InputAdornment, Link, Stack, TextField, Typography, Alert } from '@mui/material';
 import { Visibility, VisibilityOff, Google, Microsoft, PersonAdd } from '@mui/icons-material';
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -13,6 +13,9 @@ const DEMO_USER = {
   email: 'demo@evelina.ai',
   password: 'demo123'
 };
+
+// Hardcoded version as fallback
+const DEFAULT_VERSION = '1.0.128';
 
 function LoginForm() {
   const router = useRouter();
@@ -299,6 +302,8 @@ function LoginForm() {
           flexDirection: 'column',
           alignItems: 'center',
           gap: 3,
+          position: 'relative',
+          pb: 5 // Add padding at bottom to make room for version
         }}
       >
         <Image
@@ -453,7 +458,44 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const [version, setVersion] = useState(DEFAULT_VERSION);
+  
+  useEffect(() => {
+    // Fetch version on client-side
+    const fetchVersion = async () => {
+      try {
+        const response = await fetch('/api/systeminfo');
+        if (response.ok) {
+          const data = await response.json();
+          setVersion(data.version || DEFAULT_VERSION);
+        }
+      } catch (err) {
+        console.error('Failed to fetch version:', err);
+        // Keep default version
+      }
+    };
+    
+    fetchVersion();
+  }, []);
+  
   return (
-    <LoginForm />
+    <>
+      <LoginForm />
+      <Box 
+        sx={{ 
+          position: 'fixed', 
+          bottom: 12, 
+          right: 12, 
+          zIndex: 1000,
+          backgroundColor: 'rgba(255,255,255,0.7)',
+          padding: '2px 8px',
+          borderRadius: 8
+        }}
+      >
+        <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.7rem' }}>
+          v{version}
+        </Typography>
+      </Box>
+    </>
   );
 } 

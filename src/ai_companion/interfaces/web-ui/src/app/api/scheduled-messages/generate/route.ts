@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Define message goal type
+type MessageGoal = 'proactive-monitoring' | 'risky-patient' | 'medication-reminder' | 'appointment-reminder';
+
 // Example templates for different message goals
-const messageTemplates = {
+const messageTemplates: Record<MessageGoal, string[]> = {
   'proactive-monitoring': [
     "How are you feeling today? Don't forget to log your symptoms in the app.",
     "Hope you're doing well! Quick reminder to take your medication and update your status.",
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Select a template based on message goal
-    const templates = messageTemplates[messageGoal] || messageTemplates['proactive-monitoring'];
+    const templates = messageTemplates[messageGoal as MessageGoal] || messageTemplates['proactive-monitoring'];
     
     // Randomly select a template
     const randomIndex = Math.floor(Math.random() * templates.length);
