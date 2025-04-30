@@ -61,7 +61,6 @@ Optimization results:
 |-------|---------------------|-------------------|-----------|
 | Backend | ~1.2GB | ~400MB | 67% |
 | Web UI | ~800MB | ~250MB | 69% |
-| Scheduler | ~500MB | ~180MB | 64% |
 
 ## Monitoring and Maintenance
 
