@@ -1,5 +1,5 @@
 import os
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List
 from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime
@@ -58,17 +58,17 @@ class VectorStore:
         try:
             self._validate_env_vars()
             self.qdrant_client = QdrantClient(
-                url=settings.QDRANT_URL, 
+                url=settings.QDRANT_URL,
                 api_key=settings.QDRANT_API_KEY,
-                timeout=30  # Increased timeout for more reliability
+                timeout=30,  # Increased timeout for more reliability
             )
-            
+
             self.azure_client = AzureOpenAI(
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_OPENAI_API_VERSION,
                 azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             )
-            
+
             self._initialized = True
             self.logger = logging.getLogger(__name__)
             self.logger.info("VectorStore initialized successfully")
@@ -96,12 +96,14 @@ class VectorStore:
             if not self._initialized or not self.qdrant_client:
                 self.logger.error("VectorStore not properly initialized")
                 return False
-                
+
             if not self._collection_exists(collection_name):
                 return self._create_collection(collection_name)
             return True
         except Exception as e:
-            self.logger.error(f"Error ensuring collection {collection_name}: {e}", exc_info=True)
+            self.logger.error(
+                f"Error ensuring collection {collection_name}: {e}", exc_info=True
+            )
             return False
 
     def _collection_exists(self, collection_name: str) -> bool:
@@ -110,13 +112,18 @@ class VectorStore:
         """
         try:
             if not self._initialized or not self.qdrant_client:
-                self.logger.error("Cannot check if collection exists - client not initialized")
+                self.logger.error(
+                    "Cannot check if collection exists - client not initialized"
+                )
                 return False
-                
+
             collections = self.qdrant_client.get_collections().collections
             return any(collection.name == collection_name for collection in collections)
         except Exception as e:
-            self.logger.error(f"Error checking if collection {collection_name} exists: {e}", exc_info=True)
+            self.logger.error(
+                f"Error checking if collection {collection_name} exists: {e}",
+                exc_info=True,
+            )
             return False
 
     def _create_collection(self, collection_name: str) -> bool:
@@ -128,18 +135,20 @@ class VectorStore:
             if not self._initialized or not self.qdrant_client:
                 self.logger.error("Cannot create collection - client not initialized")
                 return False
-                
+
             self.qdrant_client.create_collection(
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(
                     size=1536,  # OpenAI embedding size
-                    distance=models.Distance.COSINE
-                )
+                    distance=models.Distance.COSINE,
+                ),
             )
             self.logger.info(f"Created collection: {collection_name}")
             return True
         except Exception as e:
-            self.logger.error(f"Error creating collection {collection_name}: {e}", exc_info=True)
+            self.logger.error(
+                f"Error creating collection {collection_name}: {e}", exc_info=True
+            )
             return False
 
     def _get_embedding(self, text: str) -> Optional[List[float]]:
@@ -151,10 +160,9 @@ class VectorStore:
             if not self._initialized or not self.azure_client:
                 self.logger.error("Cannot generate embedding - client not initialized")
                 return None
-                
+
             response = self.azure_client.embeddings.create(
-                input=text,
-                model=settings.AZURE_EMBEDDING_DEPLOYMENT
+                input=text, model=settings.AZURE_EMBEDDING_DEPLOYMENT
             )
             return response.data[0].embedding
         except Exception as e:
@@ -184,7 +192,7 @@ class VectorStore:
         Args:
             text: The text content of the memory
             metadata: Additional information about the memory (must include patient_id)
-            
+
         Returns:
             bool: True if memory was stored successfully, False otherwise
         """
@@ -192,7 +200,7 @@ class VectorStore:
             if not self._initialized:
                 self.logger.error("VectorStore not properly initialized")
                 return False
-                
+
             # Validate required metadata
             if "patient_id" not in metadata:
                 self.logger.error("Missing required patient_id in memory metadata")
@@ -238,7 +246,9 @@ class VectorStore:
             return True
 
         except UnexpectedResponse as e:
-            self.logger.error(f"Qdrant returned unexpected response while storing memory: {e}")
+            self.logger.error(
+                f"Qdrant returned unexpected response while storing memory: {e}"
+            )
             return False
         except Exception as e:
             self.logger.error(f"Error storing memory: {e}", exc_info=True)
@@ -259,9 +269,11 @@ class VectorStore:
         """
         try:
             if not self._initialized or not self.qdrant_client:
-                self.logger.error("Cannot search memories - VectorStore not properly initialized")
+                self.logger.error(
+                    "Cannot search memories - VectorStore not properly initialized"
+                )
                 return []
-                
+
             if not query or not query.strip():
                 self.logger.warning("Empty query provided for memory search")
                 return []
@@ -269,13 +281,17 @@ class VectorStore:
             # Ensure collection exists
             collection_exists = self.ensure_collection(self.COLLECTION_NAME)
             if not collection_exists:
-                self.logger.error("Failed to ensure memory collection exists for search")
+                self.logger.error(
+                    "Failed to ensure memory collection exists for search"
+                )
                 return []
 
             # Get embedding for query
             embedding = self._get_embedding(query)
             if not embedding:
-                self.logger.warning("Failed to generate embedding for memory search query")
+                self.logger.warning(
+                    "Failed to generate embedding for memory search query"
+                )
                 return []
 
             # Prepare search filter if provided
@@ -295,7 +311,7 @@ class VectorStore:
             max_retries = 2
             retry_count = 0
             last_error = None
-            
+
             while retry_count <= max_retries:
                 try:
                     search_results = self.qdrant_client.search(
@@ -305,16 +321,18 @@ class VectorStore:
                         query_filter=search_filter,
                         with_payload=True,
                     )
-                    
+
                     memories = []
                     for result in search_results:
                         payload = result.payload
                         text = payload.pop("text", "")
-                        memories.append(Memory(text=text, metadata=payload, score=result.score))
-                    
+                        memories.append(
+                            Memory(text=text, metadata=payload, score=result.score)
+                        )
+
                     self.logger.info(f"Found {len(memories)} memories for query")
                     return memories
-                    
+
                 except UnexpectedResponse as e:
                     last_error = e
                     retry_count += 1
@@ -327,15 +345,17 @@ class VectorStore:
                     # For non-Qdrant specific exceptions, don't retry
                     self.logger.error(f"Error during memory search: {e}", exc_info=True)
                     return []
-            
+
             # If we've exhausted all retries
             if last_error:
                 self.logger.error(f"All retries failed for memory search: {last_error}")
-            
+
             return []
-            
+
         except Exception as e:
-            self.logger.error(f"Unexpected error during memory search: {e}", exc_info=True)
+            self.logger.error(
+                f"Unexpected error during memory search: {e}", exc_info=True
+            )
             return []
 
 
