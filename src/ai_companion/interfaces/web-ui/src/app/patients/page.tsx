@@ -255,9 +255,19 @@ export default function PatientsPage() {
                           : (patient.name || 'N/A')}
                       </TableCell>
                       <TableCell>
-                        {patient.email && typeof patient.email === 'string' && !patient.email.startsWith('\\x') 
-                          ? patient.email 
-                          : '[Encrypted]'}
+                        {patient.platform && 
+                          (patient.platform.includes('"platform":"telegram"') || 
+                           patient.platform.includes('"platform": "telegram"') ||
+                           patient.platform.includes('"platform":"web-ui"') ||
+                           patient.platform.includes('{"platform":"web-ui"')) ? 
+                          <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                            No Email
+                          </Typography> : 
+                          (patient.email && typeof patient.email === 'string' && !patient.email.startsWith('\\x') 
+                            ? patient.email 
+                            : <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                                No Email
+                              </Typography>)}
                       </TableCell>
                       <TableCell>
                         {patient.channel || patient.platform || 'N/A'}

@@ -1,16 +1,18 @@
 # Build stage
-FROM node:18-alpine AS deps
+FROM mcr.microsoft.com/oryx/node:18 AS deps
 
-# Install necessary system dependencies including libc6-compat
+# Install necessary system dependencies
 WORKDIR /app
-RUN apk add --no-cache libc6-compat python3 make g++
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files for dependency installation
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci --only=production
 
 # Builder stage
-FROM node:18-slim AS builder
+FROM mcr.microsoft.com/oryx/node:18 AS builder
 WORKDIR /app
 
 # Copy dependencies from deps stage
@@ -46,33 +48,53 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 # Build the application
 RUN npm run build
 
-# Production stage
-FROM node:18-slim AS runner
+# Production stage - Use Azure specific base image
+FROM mcr.microsoft.com/appsvc/node:18-lts AS runner
 WORKDIR /app
 
 # Set environment variables
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
-# Make sure to set the INTERFACE environment variable to specify this is the web-ui
 ENV INTERFACE web-ui
-
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+ENV PORT 3000
+ENV WEBSITES_PORT 3000
+# Azure environment variables
+ENV WEBSITE_HOSTNAME app.azurewebsites.net
+ENV WEBSITE_INSTANCE_ID web_1
+ENV WEBSITE_SITE_NAME ai-companion-frontend
 
 # Copy only necessary files from builder
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
-# Switch to non-root user
-USER nextjs
+# Add health check endpoint for Azure
+RUN echo 'const http = require("http"); \
+const server = http.createServer((req, res) => { \
+  if (req.url === "/health") { \
+    res.writeHead(200, {"Content-Type": "application/json"}); \
+    res.end(JSON.stringify({status: "ok"})); \
+  } else { \
+    res.writeHead(404); \
+    res.end(); \
+  } \
+}); \
+server.listen(4000, () => { \
+  console.log("Health check server running on port 4000"); \
+});' > /app/health.js
 
-# Expose the port
-EXPOSE 3000
+# Add startup script for Azure
+RUN echo '#!/bin/bash\n\
+node health.js &\n\
+exec node server.js\n\
+' > /app/startup.sh && chmod +x /app/startup.sh
 
-# Set the environment variable for the port
-ENV PORT 3000
+# Expose the ports for main app and health check
+EXPOSE 3000 4000
 
-# Start only the Next.js server
-CMD ["node", "server.js"] 
+# Health check for Azure App Service
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:4000/health || exit 1
+
+# Command to run using Azure's PM2 for better process management
+CMD ["/app/startup.sh"] 

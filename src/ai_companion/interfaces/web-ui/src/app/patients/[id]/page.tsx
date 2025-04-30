@@ -50,9 +50,30 @@ import {
   fetchPatientRiskAssessments,
   fetchPatientAppointments,
 } from '@/lib/supabase/patientService';
-import { scheduledChecksService } from '@/lib/api';
+import { scheduledChecksService, scheduleService } from '@/lib/api';
 import ScheduledCheckForm, { ScheduledCheckFormData } from '@/components/patients/scheduledcheckform';
 import { ConversationsTab } from '@/components/patients/conversationstab';
+
+// Define a ScheduledMessage interface matching the backend structure
+interface ScheduledMessage {
+  id: string;
+  patient_id?: string;
+  recipient_id: string;
+  platform: string;
+  message_content: string;
+  scheduled_time: string;
+  template_key?: string;
+  parameters?: any;
+  recurrence_pattern?: any;
+  status: string;
+  error_message?: string;
+  sent_at?: string;
+  failed_at?: string;
+  created_at: string;
+  updated_at?: string;
+  attempts?: number;
+  priority?: number;
+}
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -390,6 +411,196 @@ function ScheduledChecksTab({ patientId }: { patientId: string }) {
   );
 }
 
+/**
+ * Component to display scheduled messages for a patient
+ */
+function ScheduledMessagesTab({ patientId }: { patientId: string }) {
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  const loadScheduledMessages = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+      
+      // Fetch scheduled messages from the API with patientId query parameter
+      const response = await fetch(`/api/scheduled-messages?patientId=${patientId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch scheduled messages: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setScheduledMessages(data.messages || []);
+    } catch (err) {
+      console.error('Error loading scheduled messages:', err);
+      setErrorMessage('Unable to load scheduled messages. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    loadScheduledMessages();
+  }, [patientId]);
+  
+  const getPlatformIcon = (platform: string) => {
+    switch (platform?.toLowerCase()) {
+      case 'whatsapp':
+        return <Icon className="fa-brands fa-whatsapp" sx={{ color: '#25D366' }} />;
+      case 'telegram':
+        return <Icon className="fa-brands fa-telegram" sx={{ color: '#0088cc' }} />;
+      case 'sms':
+        return <Icon className="fa-solid fa-sms" sx={{ color: '#5C5C5C' }} />;
+      case 'email':
+        return <Icon className="fa-solid fa-envelope" sx={{ color: '#DB4437' }} />;
+      default:
+        return <Icon className="fa-solid fa-comment" />;
+    }
+  };
+  
+  if (loading) {
+    return (
+      <Box sx={{ pt: 2 }}>
+        <Skeleton variant="rectangular" height={100} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={100} sx={{ mb: 2 }} />
+        <Skeleton variant="rectangular" height={100} />
+      </Box>
+    );
+  }
+  
+  if (scheduledMessages.length === 0) {
+    return (
+      <Box sx={{ pt: 2, textAlign: 'center' }}>
+        {errorMessage && (
+          <Paper 
+            sx={{ 
+              mb: 2, 
+              p: 2, 
+              bgcolor: 'error.light', 
+              color: 'error.contrastText',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between' 
+            }}
+          >
+            {errorMessage}
+            <IconButton 
+              size="small" 
+              color="inherit" 
+              onClick={() => setErrorMessage(null)}
+            >
+              <Icon>close</Icon>
+            </IconButton>
+          </Paper>
+        )}
+        
+        <Typography variant="h6" color="text.secondary">No scheduled messages found</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Schedule messages for this patient from the messages page.
+        </Typography>
+        <Button
+          component={Link}
+          href="/scheduled-messages/create"
+          variant="outlined"
+          sx={{ mt: 2 }}
+          startIcon={<ScheduleIcon />}
+        >
+          Create Message
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      {errorMessage && (
+        <Paper 
+          sx={{ 
+            mb: 2, 
+            p: 2, 
+            bgcolor: 'error.light', 
+            color: 'error.contrastText',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between' 
+          }}
+        >
+          {errorMessage}
+          <IconButton 
+            size="small" 
+            color="inherit" 
+            onClick={() => setErrorMessage(null)}
+          >
+            <Icon>close</Icon>
+          </IconButton>
+        </Paper>
+      )}
+      
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          component={Link}
+          href={`/scheduled-messages/create?patientId=${patientId}`}
+          variant="contained"
+          startIcon={<AddIcon />}
+        >
+          Add Message
+        </Button>
+      </Box>
+      
+      <Box>
+        {scheduledMessages.map((message) => (
+          <Paper 
+            key={message.id}
+            sx={{ 
+              mb: 2, 
+              p: 2, 
+              borderLeft: 3, 
+              borderColor: message.status === 'pending' ? 'warning.main' : 
+                           message.status === 'sent' ? 'success.main' : 
+                           message.status === 'failed' ? 'error.main' : 'grey.400'
+            }}
+          >
+            <Grid container spacing={2}>
+              <Grid item>
+                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                  {getPlatformIcon(message.platform)}
+                </Avatar>
+              </Grid>
+              <Grid item xs>
+                <Typography variant="subtitle1" fontWeight="medium">
+                  {message.message_content?.length > 50 ? message.message_content.substring(0, 50) + '...' : message.message_content}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Scheduled for: {new Date(message.scheduled_time).toLocaleString()}
+                </Typography>
+                {message.recurrence_pattern && (
+                  <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <RepeatIcon fontSize="small" sx={{ mr: 0.5 }} />
+                    Repeats: {message.recurrence_pattern}
+                  </Typography>
+                )}
+              </Grid>
+              <Grid item>
+                <Chip 
+                  label={message.status}
+                  color={
+                    message.status === 'pending' ? 'warning' : 
+                    message.status === 'sent' ? 'success' : 
+                    message.status === 'failed' ? 'error' : 'default'
+                  }
+                  size="small"
+                />
+              </Grid>
+            </Grid>
+          </Paper>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 export default function PatientDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -398,7 +609,7 @@ export default function PatientDetailPage() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState(0);
+  const [tabValue, setTabValue] = useState(0);
 
   useEffect(() => {
     async function loadPatient() {
@@ -428,7 +639,7 @@ export default function PatientDetailPage() {
   }, [patientId]);
 
   const handleChangeTab = (event: React.SyntheticEvent, newValue: number) => {
-    setActiveTab(newValue);
+    setTabValue(newValue);
   };
 
   const handleBack = () => {
@@ -605,7 +816,12 @@ export default function PatientDetailPage() {
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <EmailIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary' }} />
                     <Typography variant="body2" color="text.secondary">
-                      {patient?.email || 'No email available'}
+                      {patient?.platform && 
+                        (patient.platform.includes('"platform":"telegram"') || 
+                         patient.platform.includes('"platform": "telegram"') ||
+                         patient.platform.includes('"platform":"web-ui"') ||
+                         patient.platform.includes('{"platform":"web-ui"')) ? 
+                        'No Email' : (patient?.email || 'No Email')}
                     </Typography>
                     {patient?.phone && (
                       <>
@@ -649,23 +865,22 @@ export default function PatientDetailPage() {
           
           {/* Patient Information Tabs */}
           <Box sx={{ width: '100%' }}>
-            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-              <Tabs 
-                value={activeTab} 
-                onChange={handleChangeTab} 
-                aria-label="patient tabs"
-                variant="scrollable"
-                scrollButtons="auto"
-              >
-                <Tab label="Overview" {...a11yProps(0)} />
-                <Tab label="Medical Records" {...a11yProps(1)} />
-                <Tab label="Conversations" {...a11yProps(2)} />
-                <Tab label="Scheduled Checks" {...a11yProps(3)} />
-              </Tabs>
-            </Box>
+            <Tabs 
+              value={tabValue} 
+              onChange={handleChangeTab}
+              sx={{ 
+                mb: 2,
+                borderBottom: 1,
+                borderColor: 'divider'
+              }}
+            >
+              <Tab label="Overview" {...a11yProps(0)} />
+              <Tab label="Medical Records" {...a11yProps(1)} />
+              <Tab label="Conversations" {...a11yProps(2)} />
+              <Tab label="Scheduled Messages" {...a11yProps(3)} />
+            </Tabs>
             
-            {/* Overview Tab */}
-            <TabPanel value={activeTab} index={0}>
+            <TabPanel value={tabValue} index={0}>
               <Grid container spacing={3}>
                 {/* Patient details card */}
                 <Grid item xs={12} md={6}>
@@ -694,24 +909,8 @@ export default function PatientDetailPage() {
                       </ListItem>
                       <ListItem disablePadding sx={{ pb: 1 }}>
                         <ListItemText 
-                          primary="Age & Gender" 
-                          secondary={`${patient.age} years, ${patient.gender ? (patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)) : 'Not specified'}`} 
-                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
-                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
-                        />
-                      </ListItem>
-                      <ListItem disablePadding sx={{ pb: 1 }}>
-                        <ListItemText 
                           primary="Admission Date" 
                           secondary={new Date(patient.admissionDate).toLocaleDateString()} 
-                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
-                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
-                        />
-                      </ListItem>
-                      <ListItem disablePadding sx={{ pb: 1 }}>
-                        <ListItemText 
-                          primary="Room Number" 
-                          secondary={patient.roomNumber || 'Not assigned'} 
                           primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
                           secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
                         />
@@ -728,15 +927,22 @@ export default function PatientDetailPage() {
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                         <EmailIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
                         <Typography variant="body2">
-                          {patient.email}
+                          {patient.platform && 
+                            (patient.platform.includes('"platform":"telegram"') || 
+                             patient.platform.includes('"platform": "telegram"') ||
+                             patient.platform.includes('"platform":"web-ui"') ||
+                             patient.platform.includes('{"platform":"web-ui"')) ? 
+                            'No Email' : (patient.email || 'No Email')}
                         </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <PhoneIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                        <Typography variant="body2">
-                          {patient.contactNumber}
-                        </Typography>
-                      </Box>
+                      {patient.contactNumber && (
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <PhoneIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                          <Typography variant="body2">
+                            {patient.contactNumber}
+                          </Typography>
+                        </Box>
+                      )}
                     </Box>
                   </Paper>
                 </Grid>
@@ -761,14 +967,6 @@ export default function PatientDetailPage() {
                         <ListItemText 
                           primary="Diagnosis" 
                           secondary={patient.diagnosis} 
-                          primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
-                          secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
-                        />
-                      </ListItem>
-                      <ListItem disablePadding sx={{ pb: 1 }}>
-                        <ListItemText 
-                          primary="Doctor" 
-                          secondary={patient.doctor} 
                           primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
                           secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
                         />
@@ -828,8 +1026,7 @@ export default function PatientDetailPage() {
               </Grid>
             </TabPanel>
             
-            {/* Other tabs would be implemented similarly */}
-            <TabPanel value={activeTab} index={1}>
+            <TabPanel value={tabValue} index={1}>
               <Paper sx={{ p: 3, textAlign: 'center' }}>
                 <LocalHospitalIcon sx={{ fontSize: 60, color: 'primary.light', mb: 2 }} />
                 <Typography variant="h6" gutterBottom>
@@ -841,12 +1038,12 @@ export default function PatientDetailPage() {
               </Paper>
             </TabPanel>
             
-            <TabPanel value={activeTab} index={2}>
+            <TabPanel value={tabValue} index={2}>
               <ConversationsTab patientId={patientId} />
             </TabPanel>
             
-            <TabPanel value={activeTab} index={3}>
-              <ScheduledChecksTab patientId={patientId} />
+            <TabPanel value={tabValue} index={3}>
+              <ScheduledMessagesTab patientId={patientId} />
             </TabPanel>
           </Box>
         </Box>
@@ -936,23 +1133,22 @@ export default function PatientDetailPage() {
         
         {/* Patient Information Tabs */}
         <Box sx={{ width: '100%' }}>
-          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs 
-              value={activeTab} 
-              onChange={handleChangeTab} 
-              aria-label="patient tabs"
-              variant="scrollable"
-              scrollButtons="auto"
-            >
-              <Tab label="Overview" {...a11yProps(0)} />
-              <Tab label="Medical Records" {...a11yProps(1)} />
-              <Tab label="Conversations" {...a11yProps(2)} />
-              <Tab label="Scheduled Checks" {...a11yProps(3)} />
-            </Tabs>
-          </Box>
+          <Tabs 
+            value={tabValue} 
+            onChange={handleChangeTab}
+            sx={{ 
+              mb: 2,
+              borderBottom: 1,
+              borderColor: 'divider'
+            }}
+          >
+            <Tab label="Overview" {...a11yProps(0)} />
+            <Tab label="Medical Records" {...a11yProps(1)} />
+            <Tab label="Conversations" {...a11yProps(2)} />
+            <Tab label="Scheduled Messages" {...a11yProps(3)} />
+          </Tabs>
           
-          {/* Overview Tab */}
-          <TabPanel value={activeTab} index={0}>
+          <TabPanel value={tabValue} index={0}>
             <Grid container spacing={3}>
               {/* Patient details card */}
               <Grid item xs={12} md={6}>
@@ -981,24 +1177,8 @@ export default function PatientDetailPage() {
                     </ListItem>
                     <ListItem disablePadding sx={{ pb: 1 }}>
                       <ListItemText 
-                        primary="Age & Gender" 
-                        secondary={`${patient.age} years, ${patient.gender ? (patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)) : 'Not specified'}`} 
-                        primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
-                        secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
-                      />
-                    </ListItem>
-                    <ListItem disablePadding sx={{ pb: 1 }}>
-                      <ListItemText 
                         primary="Admission Date" 
                         secondary={new Date(patient.admissionDate).toLocaleDateString()} 
-                        primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
-                        secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
-                      />
-                    </ListItem>
-                    <ListItem disablePadding sx={{ pb: 1 }}>
-                      <ListItemText 
-                        primary="Room Number" 
-                        secondary={patient.roomNumber || 'Not assigned'} 
                         primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
                         secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
                       />
@@ -1015,15 +1195,22 @@ export default function PatientDetailPage() {
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                       <EmailIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
                       <Typography variant="body2">
-                        {patient.email}
+                        {patient.platform && 
+                          (patient.platform.includes('"platform":"telegram"') || 
+                           patient.platform.includes('"platform": "telegram"') ||
+                           patient.platform.includes('"platform":"web-ui"') ||
+                           patient.platform.includes('{"platform":"web-ui"')) ? 
+                          'No Email' : (patient.email || 'No Email')}
                       </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <PhoneIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                      <Typography variant="body2">
-                        {patient.contactNumber}
-                      </Typography>
-                    </Box>
+                    {patient.contactNumber && (
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <PhoneIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                        <Typography variant="body2">
+                          {patient.contactNumber}
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 </Paper>
               </Grid>
@@ -1048,14 +1235,6 @@ export default function PatientDetailPage() {
                       <ListItemText 
                         primary="Diagnosis" 
                         secondary={patient.diagnosis} 
-                        primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
-                        secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
-                      />
-                    </ListItem>
-                    <ListItem disablePadding sx={{ pb: 1 }}>
-                      <ListItemText 
-                        primary="Doctor" 
-                        secondary={patient.doctor} 
                         primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
                         secondaryTypographyProps={{ color: 'text.primary', variant: 'body1' }}
                       />
@@ -1115,8 +1294,7 @@ export default function PatientDetailPage() {
             </Grid>
           </TabPanel>
           
-          {/* Other tabs would be implemented similarly */}
-          <TabPanel value={activeTab} index={1}>
+          <TabPanel value={tabValue} index={1}>
             <Paper sx={{ p: 3, textAlign: 'center' }}>
               <LocalHospitalIcon sx={{ fontSize: 60, color: 'primary.light', mb: 2 }} />
               <Typography variant="h6" gutterBottom>
@@ -1128,12 +1306,12 @@ export default function PatientDetailPage() {
             </Paper>
           </TabPanel>
           
-          <TabPanel value={activeTab} index={2}>
+          <TabPanel value={tabValue} index={2}>
             <ConversationsTab patientId={patientId} />
           </TabPanel>
           
-          <TabPanel value={activeTab} index={3}>
-            <ScheduledChecksTab patientId={patientId} />
+          <TabPanel value={tabValue} index={3}>
+            <ScheduledMessagesTab patientId={patientId} />
           </TabPanel>
         </Box>
       </Box>

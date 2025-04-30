@@ -1,12 +1,47 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useLogger } from '@/hooks/useLogger';
 import { getSupabaseCredentials } from '@/lib/supabase/client';
-import { cn } from '@/utils/cn';
 import { FORCE_REAL_DATA, USE_MOCK_DATA } from '@/lib/config';
+import { 
+  Box, 
+  Typography, 
+  Paper, 
+  Button, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
+  TableRow,
+  Chip,
+  IconButton,
+  CircularProgress,
+  Alert,
+  Container,
+  Grid,
+  Tabs,
+  Tab,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Link as MuiLink,
+  Stack
+} from '@mui/material';
+import {
+  Refresh,
+  Download,
+  Add,
+  Home as HomeIcon,
+  TableChart,
+  PieChart,
+  Assessment,
+  MoreVert
+} from '@mui/icons-material';
+import Link from 'next/link';
 
 // Types
 interface ReportType {
@@ -24,11 +59,88 @@ interface ReportFilter {
   status: string;
 }
 
+interface ActivityItem {
+  id: string;
+  time: string;
+  user: string;
+  action: string;
+  severity: 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success';
+}
+
+// Activity Card Component
+const ActivityCard = ({ title, items }: { title: string; items: ActivityItem[] }) => (
+  <Paper
+    sx={{
+      p: 3,
+      height: '100%',
+      bgcolor: 'background.paper',
+      borderRadius: 1,
+      mb: 3
+    }}
+  >
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+      <Typography variant="h6">{title}</Typography>
+      <IconButton size="small">
+        <MoreVert />
+      </IconButton>
+    </Box>
+    <Stack spacing={2}>
+      {items.length > 0 ? (
+        items.map((item) => (
+          <Box 
+            key={item.id} 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'flex-start', 
+              gap: 2,
+              p: 1.5,
+              borderRadius: 1,
+              bgcolor: 'background.default',
+              '&:hover': {
+                bgcolor: 'action.hover',
+              },
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              '&:last-child': {
+                borderBottom: 'none'
+              }
+            }}
+          >
+            <Box 
+              sx={{ 
+                width: 8, 
+                height: 8, 
+                borderRadius: '50%', 
+                bgcolor: `${item.severity}.main`,
+                flexShrink: 0,
+                mt: 1
+              }} 
+            />
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                {item.time}
+              </Typography>
+              <Typography variant="body1">
+                <Box component="span" fontWeight="fontWeightMedium">{item.user}</Box> • {item.action}
+              </Typography>
+            </Box>
+          </Box>
+        ))
+      ) : (
+        <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
+          <Typography variant="body2">No recent activity found</Typography>
+        </Box>
+      )}
+    </Stack>
+  </Paper>
+);
+
 export default function ReportsPage() {
   const [reports, setReports] = useState<ReportType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
   const [filters, setFilters] = useState<ReportFilter>({
     dateRange: 'week',
     type: 'all',
@@ -90,9 +202,51 @@ export default function ReportsPage() {
     ];
   }
 
+  // Generate sample activity data
+  function generateSampleActivity(): ActivityItem[] {
+    return [
+      {
+        id: 'act-001',
+        time: formatDate(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()) + ' ' + new Date(Date.now() - 2 * 60 * 60 * 1000).toLocaleTimeString(),
+        user: 'System',
+        action: 'Generated Patient Activity Report',
+        severity: 'success'
+      },
+      {
+        id: 'act-002',
+        time: formatDate(new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()) + ' ' + new Date(Date.now() - 5 * 60 * 60 * 1000).toLocaleTimeString(),
+        user: 'Admin',
+        action: 'Approved Monthly Executive Summary',
+        severity: 'primary'
+      },
+      {
+        id: 'act-003',
+        time: formatDate(new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()) + ' ' + new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toLocaleTimeString(),
+        user: 'System',
+        action: 'Failed to generate Health Records Summary',
+        severity: 'error'
+      },
+      {
+        id: 'act-004',
+        time: formatDate(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()) + ' ' + new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toLocaleTimeString(),
+        user: 'User',
+        action: 'Scheduled System Usage Analytics report',
+        severity: 'info'
+      },
+      {
+        id: 'act-005',
+        time: formatDate(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()) + ' ' + new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleTimeString(),
+        user: 'Admin',
+        action: 'Updated reporting parameters',
+        severity: 'warning'
+      }
+    ];
+  }
+
   useEffect(() => {
     // Immediately set mock data to prevent UI flashing
     setReports(generateSampleReports());
+    setRecentActivity(generateSampleActivity());
     fetchReports();
   }, [filters]);
 
@@ -174,8 +328,8 @@ export default function ReportsPage() {
     }
   }
 
-  const handleTabChange = (index: number) => {
-    setActiveTab(index);
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
   };
 
   const handleRefresh = () => {
@@ -192,309 +346,360 @@ export default function ReportsPage() {
   const getReportStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return 'bg-green-100 text-green-800 border-green-200';
+        return 'success';
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'warning';
       case 'failed':
-        return 'bg-red-100 text-red-800 border-red-200';
+        return 'error';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'default';
     }
   };
 
   const getReportTypeColor = (type: string) => {
     switch (type) {
       case 'analytics':
-        return 'bg-blue-50 text-blue-700';
+        return 'primary';
       case 'engagement':
-        return 'bg-purple-50 text-purple-700';
+        return 'secondary';
       case 'records':
-        return 'bg-teal-50 text-teal-700';
+        return 'info';
       case 'summary':
-        return 'bg-indigo-50 text-indigo-700';
+        return 'success';
       default:
-        return 'bg-gray-50 text-gray-700';
+        return 'default';
     }
   };
 
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  if (loading) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Link 
+              href="/"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+            <Typography color="text.primary">Reports</Typography>
+          </Box>
+          
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
+            Reports
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress />
+        </Box>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Link 
+              href="/"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
+              Home
+            </Link>
+            <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+            <Typography color="text.primary">Reports</Typography>
+          </Box>
+          
+          <Typography variant="h4" component="h1" sx={{ mt: 3, mb: 2 }}>
+            Reports
+          </Typography>
+        </Box>
+        
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" fontWeight="bold">Error loading reports</Typography>
+          <Typography variant="body2">{error}</Typography>
+        </Alert>
+      </Container>
+    );
+  }
+
+  // Filter reports based on selected filters
+  const filteredReports = reports.filter(report => {
+    // Apply filters
+    if (filters.type !== 'all' && report.type !== filters.type) {
+      return false;
+    }
+    if (filters.status !== 'all' && report.status !== filters.status) {
+      return false;
+    }
+    return true;
+  });
+
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      <div className="mb-10">
-        <div className="flex items-center mb-2">
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Box sx={{ mb: 5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Link 
             href="/"
-            className="flex items-center text-gray-600 hover:text-gray-900 mr-2"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              color: 'inherit',
+              textDecoration: 'none',
+              marginRight: '8px'
+            }}
           >
-            <svg className="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
+            <HomeIcon sx={{ fontSize: 18, mr: 0.5 }} />
             Home
           </Link>
-          <span className="mx-1 text-gray-400">/</span>
-          <span className="text-gray-800">Reports</span>
-        </div>
+          <Box sx={{ mx: 1, color: 'text.secondary' }}>/</Box>
+          <Typography color="text.primary">Reports</Typography>
+        </Box>
         
-        <div className="flex justify-between items-center mt-6">
-          <h1 className="text-2xl font-bold text-gray-900">
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
             Reports
-          </h1>
-
-          <button 
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-main hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-light"
+          </Typography>
+          
+          <Button 
+            variant="contained" 
+            color="primary" 
+            startIcon={<Add />}
             onClick={() => alert('Generate new report functionality would go here')}
-            aria-label="Generate report"
           >
-            <svg className="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
             Generate Report
-          </button>
-        </div>
-        <p className="text-gray-500 mt-2">
+          </Button>
+        </Box>
+        <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 4 }}>
           View and manage system reports and analytics.
-        </p>
-      </div>
+        </Typography>
+      </Box>
 
-      <div className="bg-white rounded-lg shadow mb-6 p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Report Filters</h2>
-          <button 
-            onClick={handleRefresh} 
-            className="p-2 text-primary-main hover:text-primary-dark rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-light"
-            aria-label="Refresh reports"
-          >
-            <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="relative">
-            <label htmlFor="dateRange" className="block text-sm font-medium text-gray-700 mb-1">
-              Date Range
-            </label>
-            <select
-              id="dateRange"
-              value={filters.dateRange}
-              onChange={(e) => handleFilterChange('dateRange', e.target.value)}
-              className="block w-full bg-white border border-gray-300 rounded-md py-2 px-3 shadow-sm focus:outline-none focus:ring-primary-light focus:border-primary-light text-sm"
-            >
-              <option value="week">Last 7 Days</option>
-              <option value="month">Last 30 Days</option>
-              <option value="quarter">Last 90 Days</option>
-              <option value="year">Last 12 Months</option>
-              <option value="all">All Time</option>
-            </select>
-          </div>
-          <div className="relative">
-            <label htmlFor="reportType" className="block text-sm font-medium text-gray-700 mb-1">
-              Report Type
-            </label>
-            <select
-              id="reportType"
-              value={filters.type}
-              onChange={(e) => handleFilterChange('type', e.target.value)}
-              className="block w-full bg-white border border-gray-300 rounded-md py-2 px-3 shadow-sm focus:outline-none focus:ring-primary-light focus:border-primary-light text-sm"
-            >
-              <option value="all">All Types</option>
-              <option value="analytics">Analytics</option>
-              <option value="engagement">Engagement</option>
-              <option value="records">Records</option>
-              <option value="summary">Summary</option>
-            </select>
-          </div>
-          <div className="relative">
-            <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              id="status"
-              value={filters.status}
-              onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="block w-full bg-white border border-gray-300 rounded-md py-2 px-3 shadow-sm focus:outline-none focus:ring-primary-light focus:border-primary-light text-sm"
-            >
-              <option value="all">All Statuses</option>
-              <option value="completed">Completed</option>
-              <option value="pending">Pending</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-        </div>
-      </div>
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h6">Report Filters</Typography>
+              <IconButton
+                onClick={handleRefresh}
+                size="small"
+                aria-label="Refresh reports"
+              >
+                <Refresh />
+              </IconButton>
+            </Box>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth variant="outlined" size="small">
+                  <InputLabel id="date-range-label">Date Range</InputLabel>
+                  <Select
+                    labelId="date-range-label"
+                    id="date-range"
+                    value={filters.dateRange}
+                    onChange={(e) => handleFilterChange('dateRange', e.target.value as string)}
+                    label="Date Range"
+                  >
+                    <MenuItem value="week">Last 7 Days</MenuItem>
+                    <MenuItem value="month">Last 30 Days</MenuItem>
+                    <MenuItem value="quarter">Last 90 Days</MenuItem>
+                    <MenuItem value="year">Last 12 Months</MenuItem>
+                    <MenuItem value="all">All Time</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth variant="outlined" size="small">
+                  <InputLabel id="report-type-label">Report Type</InputLabel>
+                  <Select
+                    labelId="report-type-label"
+                    id="report-type"
+                    value={filters.type}
+                    onChange={(e) => handleFilterChange('type', e.target.value as string)}
+                    label="Report Type"
+                  >
+                    <MenuItem value="all">All Types</MenuItem>
+                    <MenuItem value="analytics">Analytics</MenuItem>
+                    <MenuItem value="engagement">Engagement</MenuItem>
+                    <MenuItem value="records">Records</MenuItem>
+                    <MenuItem value="summary">Summary</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth variant="outlined" size="small">
+                  <InputLabel id="status-label">Status</InputLabel>
+                  <Select
+                    labelId="status-label"
+                    id="status"
+                    value={filters.status}
+                    onChange={(e) => handleFilterChange('status', e.target.value as string)}
+                    label="Status"
+                  >
+                    <MenuItem value="all">All Statuses</MenuItem>
+                    <MenuItem value="completed">Completed</MenuItem>
+                    <MenuItem value="pending">Pending</MenuItem>
+                    <MenuItem value="failed">Failed</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
+        
+        <Grid item xs={12}>
+          <ActivityCard title="Recent System Activity" items={recentActivity} />
+        </Grid>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="border-b border-gray-200">
-          <nav className="flex -mb-px">
-            <button
-              onClick={() => handleTabChange(0)}
-              className={cn(
-                "py-4 px-6 text-sm font-medium flex items-center border-b-2",
-                activeTab === 0
-                  ? "border-primary-main text-primary-main"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              )}
-              aria-current={activeTab === 0 ? "page" : undefined}
-            >
-              <svg className="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              Reports List
-            </button>
-            <button
-              onClick={() => handleTabChange(1)}
-              className={cn(
-                "py-4 px-6 text-sm font-medium flex items-center border-b-2",
-                activeTab === 1
-                  ? "border-primary-main text-primary-main"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              )}
-              aria-current={activeTab === 1 ? "page" : undefined}
-            >
-              <svg className="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              Charts
-            </button>
-            <button
-              onClick={() => handleTabChange(2)}
-              className={cn(
-                "py-4 px-6 text-sm font-medium flex items-center border-b-2",
-                activeTab === 2
-                  ? "border-primary-main text-primary-main"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              )}
-              aria-current={activeTab === 2 ? "page" : undefined}
-            >
-              <svg className="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-              </svg>
-              Summary
-            </button>
-          </nav>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center p-8">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary-main"></div>
-          </div>
-        ) : (
-          <>
-            {error && (
-              <div className="p-4 m-4 bg-red-50 border border-red-200 rounded-md text-red-800">
-                {error}
-              </div>
-            )}
+        <Grid item xs={12}>
+          <Paper sx={{ overflow: 'hidden' }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+              <Tabs 
+                value={activeTab} 
+                onChange={handleTabChange}
+                aria-label="report view tabs"
+              >
+                <Tab 
+                  label="Reports List" 
+                  icon={<TableChart />} 
+                  iconPosition="start" 
+                />
+                <Tab 
+                  label="Charts" 
+                  icon={<PieChart />} 
+                  iconPosition="start" 
+                />
+                <Tab 
+                  label="Summary" 
+                  icon={<Assessment />} 
+                  iconPosition="start" 
+                />
+              </Tabs>
+            </Box>
 
             {activeTab === 0 && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Title
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {reports.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
-                          No reports found matching your filters
-                        </td>
-                      </tr>
+              <TableContainer>
+                <Table sx={{ minWidth: 650 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><Typography variant="subtitle2">Title</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2">Description</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2">Type</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2">Created</Typography></TableCell>
+                      <TableCell><Typography variant="subtitle2">Status</Typography></TableCell>
+                      <TableCell align="right"><Typography variant="subtitle2">Actions</Typography></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filteredReports.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center">
+                          <Typography variant="body1" sx={{ py: 3 }}>
+                            No reports found matching your filters
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
                     ) : (
-                      reports
-                        .filter(report => {
-                          // Apply filters
-                          if (filters.type !== 'all' && report.type !== filters.type) {
-                            return false;
-                          }
-                          if (filters.status !== 'all' && report.status !== filters.status) {
-                            return false;
-                          }
-                          return true;
-                        })
-                        .map((report) => (
-                          <tr key={report.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">{report.title}</div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="text-sm text-gray-500">{report.description}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={cn("px-2 py-1 text-xs font-medium rounded-full capitalize", getReportTypeColor(report.type))}>
-                                {report.type}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-500">{new Date(report.created_at).toLocaleDateString()}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span 
-                                className={cn(
-                                  "px-2 py-1 text-xs font-medium rounded-full uppercase", 
-                                  getReportStatusColor(report.status)
-                                )}
-                              >
-                                {report.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <button
-                                className="text-primary-main hover:text-primary-dark"
-                                onClick={() => alert(`Download ${report.title}`)}
-                                aria-label={`Download ${report.title}`}
-                              >
-                                <svg className="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                              </button>
-                            </td>
-                          </tr>
+                      filteredReports.map((report) => (
+                        <TableRow 
+                          key={report.id}
+                          hover
+                          sx={{ '&:hover': { cursor: 'pointer' } }}
+                        >
+                          <TableCell>
+                            <Typography variant="body2" fontWeight="medium">
+                              {report.title}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {report.description}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={report.type}
+                              color={getReportTypeColor(report.type) as any}
+                              size="small"
+                              sx={{ textTransform: 'capitalize' }}
+                            />
+                          </TableCell>
+                          <TableCell>{formatDate(report.created_at)}</TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={report.status}
+                              color={getReportStatusColor(report.status) as any}
+                              size="small"
+                              sx={{ textTransform: 'uppercase' }}
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            <IconButton
+                              size="small"
+                              onClick={() => alert(`Download ${report.title}`)}
+                              aria-label={`Download ${report.title}`}
+                            >
+                              <Download fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
                       ))
                     )}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
+              </TableContainer>
             )}
 
             {activeTab === 1 && (
-              <div className="p-8 text-center">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Charts View</h2>
-                <p className="text-gray-500">
+              <Box sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="h6" gutterBottom>
+                  Charts View
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
                   Report visualization charts would be displayed here.
-                </p>
-              </div>
+                </Typography>
+              </Box>
             )}
 
             {activeTab === 2 && (
-              <div className="p-8 text-center">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Summary View</h2>
-                <p className="text-gray-500">
+              <Box sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="h6" gutterBottom>
+                  Summary View
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
                   Executive summary and key metrics would be displayed here.
-                </p>
-              </div>
+                </Typography>
+              </Box>
             )}
-          </>
-        )}
-      </div>
-    </div>
+          </Paper>
+        </Grid>
+      </Grid>
+    </Container>
   );
 } 

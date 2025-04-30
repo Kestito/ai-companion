@@ -136,10 +136,51 @@ class SchedulerWorker:
 
                 logger.info(f"Processing scheduled message: {message_id}")
 
-                # Get chat_id from metadata
-                metadata = message.get("metadata", {})
+                # Get chat_id from metadata - Add extra null check
+                metadata = message.get("metadata")
+                if metadata is None:
+                    logger.error(f"Message {message_id} has no metadata, marking as failed")
+                    self.scheduled_message_service.update_message_status(
+                        message_id=message_id,
+                        status="failed",
+                        error_message="Missing metadata",
+                    )
+                    continue
+                    
                 platform_data = metadata.get("platform_data", {})
+                if platform_data is None:
+                    logger.error(f"Message {message_id} has no platform_data, marking as failed")
+                    self.scheduled_message_service.update_message_status(
+                        message_id=message_id,
+                        status="failed",
+                        error_message="Missing platform_data in metadata",
+                    )
+                    continue
+                    
                 chat_id = platform_data.get("chat_id")
+
+                # Validate chat_id format - Telegram chat IDs should be integers or @username
+                try:
+                    # Try converting to integer if it's numeric
+                    if isinstance(chat_id, str) and chat_id.isdigit():
+                        chat_id = int(chat_id)
+                    # If it's a UUID or other invalid format, log an error
+                    elif isinstance(chat_id, str) and not chat_id.startswith('@') and '-' in chat_id:
+                        logger.error(f"Message {message_id} has invalid chat_id format: {chat_id}")
+                        self.scheduled_message_service.update_message_status(
+                            message_id=message_id,
+                            status="failed",
+                            error_message=f"Invalid chat_id format: {chat_id}. Must be numeric or @username.",
+                        )
+                        continue
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error validating chat_id for message {message_id}: {e}")
+                    self.scheduled_message_service.update_message_status(
+                        message_id=message_id,
+                        status="failed",
+                        error_message=f"Invalid chat_id: {str(e)}",
+                    )
+                    continue
 
                 if not chat_id:
                     logger.error(

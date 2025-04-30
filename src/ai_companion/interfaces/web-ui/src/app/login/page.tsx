@@ -1,11 +1,11 @@
 'use client';
 
-import { Box, Button, Checkbox, Container, FormControlLabel, IconButton, InputAdornment, Link, Stack, TextField, Typography, Alert } from '@mui/material';
+import { Box, Button, Checkbox, Container, FormControlLabel, IconButton, InputAdornment, Link, Stack, TextField, Typography, Alert, CircularProgress } from '@mui/material';
 import { Visibility, VisibilityOff, Google, Microsoft, PersonAdd } from '@mui/icons-material';
 import { useState, FormEvent, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Cookies from 'js-cookie';
 
 // Demo user credentials
@@ -21,12 +21,15 @@ function LoginForm() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     rememberMe: false
   });
+
+  // Create Supabase client
+  const supabase = createClientComponentClient();
 
   const handleTogglePassword = () => setShowPassword(!showPassword);
 
@@ -43,7 +46,6 @@ function LoginForm() {
     setLoading(true);
     
     try {
-      const supabase = getSupabaseClient();
       const { error } = await supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password,
@@ -90,7 +92,6 @@ function LoginForm() {
 
   const handleGoogleLogin = async () => {
     try {
-      const supabase = getSupabaseClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -108,7 +109,6 @@ function LoginForm() {
 
   const handleMicrosoftLogin = async () => {
     try {
-      const supabase = getSupabaseClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
@@ -125,86 +125,113 @@ function LoginForm() {
   };
 
   const handleTryAsPatient = async () => {
-    console.log('==================== PATIENT CREATION JOURNEY ====================');
-    console.log('[1] Starting patient creation process');
+    setError(null);
     setLoading(true);
-    setError('');
+    console.log('==================== START PATIENT CREATION JOURNEY ====================');
     
     try {
-      // Generate a unique ID for this patient session
-      const patientId = `patient-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-      console.log(`[2] Generated patient ID: ${patientId}`);
-      
-      // Get the Supabase client
-      console.log('[3] Getting Supabase client');
-      const supabase = getSupabaseClient();
-      
-      // Generate random name for testing
-      const firstNames = ['Test', 'Demo', 'Sample', 'Trial'];
-      const lastNames = ['Patient', 'User', 'Visitor', 'Tester'];
-      const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-      const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-      const fullName = `${firstName} ${lastName}`;
-      console.log(`[4] Generated random name: ${fullName}`);
-      
-      // Create timestamp for registration
+      // Generate random data for the test patient
+      const patientId = `test-${Date.now()}`;
       const now = new Date().toISOString();
-      console.log(`[5] Timestamp for registration: ${now}`);
       
-      // Check if patients table is valid by trying to query the schema
-      console.log('[6] Checking if patients table is valid...');
-      let patientsTableValid = true;
+      // Random name generation for test patient
+      const getRandomName = () => {
+        const firstNames = ['John', 'Jane', 'Emma', 'David', 'Sarah', 'Michael', 'Lisa', 'James'];
+        const lastNames = ['Smith', 'Johnson', 'Brown', 'Wilson', 'Taylor', 'Lee', 'Wright', 'Davis'];
+        return {
+          first: firstNames[Math.floor(Math.random() * firstNames.length)],
+          last: lastNames[Math.floor(Math.random() * lastNames.length)]
+        };
+      };
       
+      const name = getRandomName();
+      const firstName = name.first;
+      const lastName = name.last;
+      const fullName = `${firstName} ${lastName}`;
+      
+      console.log(`[1] Generated random name: ${fullName}`);
+      console.log(`[2] Generated random patient ID: ${patientId}`);
+      
+      // Check database connection before attempting to create patient
+      let isDbConnected = false;
+      let dbConnectionError = null;
+      
+      console.log('[3] Checking database connection...');
       try {
-        // Try to get a sample row to determine schema
-        console.log('[7] Querying patients table to verify schema');
-        const { data, error } = await supabase
-          .from('patients')
-          .select('id, first_name, last_name, email, phone')
-          .limit(1);
+        const { data: healthCheck, error: healthError } = await supabase.from('patients').select('count(*)', { count: 'exact', head: true });
         
-        if (error) {
-          console.warn('[8] Patients table validation ERROR:', error);
-          patientsTableValid = false;
+        if (healthError) {
+          console.error('[4] Database connection check failed:', healthError);
+          dbConnectionError = healthError;
+          isDbConnected = false;
         } else {
-          console.log('[8] Patients table validated successfully');
-          if (data && data.length > 0) {
-            console.log('[9] Sample patient data:', JSON.stringify(data[0], null, 2).substring(0, 100) + '...');
-          } else {
-            console.log('[9] No patient records found, but table exists');
-          }
+          console.log('[4] Database connection successful!');
+          isDbConnected = true;
         }
-      } catch (e) {
-        console.warn('[8] Error checking patients table:', e);
-        patientsTableValid = false;
+      } catch (dbCheckError) {
+        console.error('[4] Error checking database connection:', dbCheckError);
+        dbConnectionError = dbCheckError;
+        isDbConnected = false;
       }
       
-      // If table isn't valid, store patient info only locally
-      if (!patientsTableValid) {
-        console.log('[10] Patients table is NOT valid. Using local storage ONLY');
+      // If database is not connected, use a fallback approach
+      if (!isDbConnected) {
+        console.warn('[5] Unable to connect to database, using local storage only mode');
         
-        localStorage.setItem('test_patient', JSON.stringify({
+        // Store the patient info directly in localStorage without attempting DB operations
+        const localStorageData = {
           id: patientId,
           patientId: patientId,
+          first_name: firstName,
+          last_name: lastName,
           name: fullName,
           role: 'patient',
           isTestMode: true,
-          createdAt: now
-        }));
-        console.log('[11] Patient data saved to localStorage');
+          createdAt: now,
+          dbError: dbConnectionError ? String(dbConnectionError) : 'Unknown database error'
+        };
         
-        // Set cookies to identify this as a patient test session
+        localStorage.setItem('test_patient', JSON.stringify(localStorageData));
+        console.log('[6] Patient data saved to localStorage (fallback mode):', JSON.stringify(localStorageData, null, 2));
+        
+        // Set cookie for patient test session
         Cookies.set('patient_test_mode', 'true', { expires: 1 });
-        console.log('[12] Set patient_test_mode cookie');
+        console.log('[7] Set patient_test_mode cookie');
         
         // Redirect to patient chat interface after a brief delay
-        console.log('[13] Preparing to redirect to patient chat...');
+        console.log('[8] Preparing to redirect to patient chat...');
         setTimeout(() => {
-          console.log('[14] Redirecting to patient chat interface');
+          console.log('[9] Redirecting to patient chat interface (fallback mode)');
           router.push('/patient-chat');
         }, 800);
         
         return;
+      }
+      
+      // If database is connected, attempt to create the patient record
+      console.log('[5] Checking if patients table exists and is valid...');
+      
+      try {
+        const { data: tableData, error: tableError } = await supabase
+          .from('patients')
+          .select('id')
+          .limit(1);
+        
+        if (tableError) {
+          console.error('[6] Error checking patients table:', tableError);
+          throw tableError;
+        }
+        
+        if (tableData === null) {
+          console.error('[7] Patients table returned null data');
+          throw new Error('Patients table returned null data');
+        }
+        
+        // Continue with existing creation logic for the patient record if table is valid
+        console.log('[9] Patients table is valid');
+      } catch (tableCheckError) {
+        console.error('[8] Error checking patients table:', tableCheckError);
+        throw tableCheckError;
       }
       
       // Create metadata for the patient
@@ -227,7 +254,7 @@ function LoginForm() {
         last_active: now,
         preferred_language: "en",
         support_status: "active",
-        subility_eligible: true,
+        subsidy_eligible: true,
         legal_consents: JSON.stringify({
           privacy_policy: true,
           terms_of_service: true,

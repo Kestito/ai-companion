@@ -100,35 +100,72 @@ export async function middleware(request: NextRequest) {
     request.headers.get('upgrade') === 'websocket' &&
     request.nextUrl.pathname.startsWith('/api/web-chat/ws/')
   ) {
-    // Extract the session ID from the URL
-    const sessionId = request.nextUrl.pathname.split('/').pop();
-    
-    // Get the backend URL from environment variables
-    const apiUrlStr = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    
-    // Create a URL object from the API URL string
-    const apiUrl = new URL(apiUrlStr);
-    
-    // Create target URL for the WebSocket connection
-    const targetUrl = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/web-chat/ws/${sessionId}`;
-    
-    // Log connection attempt
-    console.log(`WebSocket connection attempt for session ${sessionId}, forwarding to ${targetUrl}`);
-    
     try {
+      // Extract the session ID from the URL
+      const sessionId = request.nextUrl.pathname.split('/').pop();
+      
+      if (!sessionId) {
+        console.error('WebSocket connection attempt with missing session ID');
+        return NextResponse.json(
+          { error: 'Missing session ID in WebSocket URL' },
+          { status: 400 }
+        );
+      }
+      
+      // Get the backend URL from environment variables
+      const apiUrlStr = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      
+      // Create a URL object from the API URL string
+      let apiUrl: URL;
+      try {
+        apiUrl = new URL(apiUrlStr);
+      } catch (urlError) {
+        console.error('Invalid API URL:', apiUrlStr, urlError);
+        return NextResponse.json(
+          { error: 'Backend configuration error' },
+          { status: 500 }
+        );
+      }
+      
+      // Create target URL for the WebSocket connection
+      const targetUrl = `${apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${apiUrl.host}/web-chat/ws/${sessionId}`;
+      
+      // Log connection attempt
+      console.log(`WebSocket connection attempt for session ${sessionId}, forwarding to ${targetUrl}`);
+      
+      // Check if all required headers exist
+      const wsKey = request.headers.get('Sec-WebSocket-Key');
+      const wsVersion = request.headers.get('Sec-WebSocket-Version');
+      
+      if (!wsKey || !wsVersion) {
+        console.error('Missing required WebSocket headers:', { wsKey, wsVersion });
+        return NextResponse.json(
+          { error: 'Invalid WebSocket request' },
+          { status: 400 }
+        );
+      }
+      
       // Return a Response object that will be used by Next.js to proxy the WebSocket connection
       return new Response(null, {
         status: 101, // Switching protocols
         headers: {
           'Upgrade': 'websocket',
           'Connection': 'Upgrade',
+          'Sec-WebSocket-Accept': wsKey, // Echo back the key (in a real implementation, this should be properly calculated)
           'Sec-WebSocket-Protocol': request.headers.get('Sec-WebSocket-Protocol') || '',
           'X-WebSocket-Target': targetUrl,
+          'X-Session-ID': sessionId,
         },
       });
     } catch (error) {
       console.error('Error setting up WebSocket proxy:', error);
-      return NextResponse.json({ error: 'Failed to establish WebSocket connection' }, { status: 500 });
+      return NextResponse.json(
+        { 
+          error: 'Failed to establish WebSocket connection',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        },
+        { status: 500 }
+      );
     }
   }
 

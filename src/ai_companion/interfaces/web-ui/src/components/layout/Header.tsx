@@ -13,7 +13,6 @@ import {
   Divider,
   ListItemIcon,
   Button,
-  InputBase,
   Tooltip,
   useTheme
 } from '@mui/material';
@@ -22,7 +21,6 @@ import {
   Settings,
   Logout,
   Person,
-  Search,
   Help,
   NightsStay,
   LightMode,
@@ -54,7 +52,6 @@ export default function Header() {
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState<null | HTMLElement>(null);
-  const [searchValue, setSearchValue] = useState('');
   const open = Boolean(anchorEl);
   const notificationsOpen = Boolean(notificationAnchorEl);
 
@@ -77,15 +74,6 @@ export default function Header() {
   const handleLogout = () => {
     // Handle logout logic here
     router.push('/login');
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchValue.trim()) {
-      // Implement search functionality
-      console.log(`Searching for: ${searchValue}`);
-      // router.push(`/search?q=${encodeURIComponent(searchValue)}`);
-    }
   };
 
   return (
@@ -141,47 +129,8 @@ export default function Header() {
           </Box>
         </Box>
 
-        {/* Center section - Search bar */}
-        <Box 
-          component="form" 
-          onSubmit={handleSearch}
-          sx={{
-            display: { xs: 'none', md: 'flex' },
-            flexGrow: 1,
-            mx: 2,
-            position: 'relative',
-            borderRadius: 1,
-            backgroundColor: 'action.hover',
-            maxWidth: '600px',
-          }}
-        >
-          <IconButton type="submit" sx={{ p: '10px' }} aria-label="search">
-            <Search />
-          </IconButton>
-          <InputBase
-            sx={{ ml: 1, flex: 1 }}
-            placeholder="Search patients, appointments, messages..."
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-          />
-        </Box>
-
         {/* Right section - Actions and profile */}
         <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto' }}>
-          {/* Mobile search icon */}
-          <IconButton 
-            sx={{ 
-              display: { xs: 'flex', md: 'none' },
-              mr: 1
-            }}
-            onClick={() => {
-              // Implement mobile search overlay/dialog
-              console.log('Mobile search opened');
-            }}
-          >
-            <Search />
-          </IconButton>
-
           {/* Help button */}
           <Tooltip title="Help">
             <IconButton 
@@ -192,18 +141,6 @@ export default function Header() {
               onClick={() => router.push('/help')}
             >
               <Help />
-            </IconButton>
-          </Tooltip>
-
-          {/* Notifications */}
-          <Tooltip title="Notifications">
-            <IconButton 
-              sx={{ mr: 1 }}
-              onClick={handleNotificationClick}
-            >
-              <Badge badgeContent={4} color="error">
-                <Notifications />
-              </Badge>
             </IconButton>
           </Tooltip>
 
@@ -246,7 +183,7 @@ export default function Header() {
           </MenuItem>
         </Menu>
 
-        {/* Notifications Menu */}
+        {/* Notifications Menu - keeping this for future reference but it won't be accessible */}
         <Menu
           anchorEl={notificationAnchorEl}
           id="notifications-menu"

@@ -173,6 +173,17 @@ export default function PatientChatPage() {
         if (data.error) {
           console.warn('WebSocket error:', data.error);
           setError(data.error);
+          
+          // Add error message to chat
+          const errorMessage: Message = {
+            id: `error-${Date.now()}`,
+            role: 'info',
+            content: `There was an issue processing your message: ${data.error}. Please try again.`,
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, errorMessage]);
+          setIsLoading(false);
           return;
         }
         
@@ -189,6 +200,16 @@ export default function PatientChatPage() {
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
         setError('Failed to process response from healthcare assistant');
+        
+        // Add error message to chat
+        const errorMessage: Message = {
+          id: `parse-error-${Date.now()}`,
+          role: 'info',
+          content: 'I had trouble understanding the response. Please try again or reload the page if the issue persists.',
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, errorMessage]);
         setIsLoading(false);
       }
     };
@@ -197,12 +218,20 @@ export default function PatientChatPage() {
       console.log('WebSocket disconnected');
       setIsWebSocketConnected(false);
       webSocketRef.current = null;
+      
+      // Try to reconnect after a delay if we still want WebSocket connection
+      if (useWebSocket && sessionId) {
+        setTimeout(() => {
+          console.log('Attempting to reconnect WebSocket...');
+          connectWebSocket(sessionId);
+        }, 3000);
+      }
     };
     
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setError('WebSocket connection error');
-      setIsWebSocketConnected(false);
+    ws.onerror = (event) => {
+      console.error('WebSocket error:', event);
+      setError('WebSocket connection error. Trying to reconnect...');
+      ws.close();
     };
   };
 
@@ -238,15 +267,21 @@ export default function PatientChatPage() {
       
       // If WebSocket is connected, send message through it
       if (useWebSocket && isWebSocketConnected && webSocketRef.current) {
-        const message = {
-          message: input,
-          user_id: patientData.id,
-          user_info: patientData
-        };
-        
-        webSocketRef.current.send(JSON.stringify(message));
-        // Note: Don't set isLoading to false here - the WebSocket onmessage handler will do that
-        return;
+        try {
+          const message = {
+            message: input,
+            user_id: patientData.id,
+            user_info: patientData
+          };
+          
+          webSocketRef.current.send(JSON.stringify(message));
+          // Note: Don't set isLoading to false here - the WebSocket onmessage handler will do that
+          return;
+        } catch (wsError) {
+          console.error('WebSocket send error:', wsError);
+          setError('Failed to send message through WebSocket. Falling back to HTTP.');
+          // Fall through to HTTP method
+        }
       }
       
       // Otherwise use HTTP API
@@ -272,31 +307,56 @@ export default function PatientChatPage() {
       
       clearTimeout(timeoutId);
       
-      // Even if we get a non-200 response, try to parse it
-      // Our API is designed to always return a valid response even on errors
-      const data: ChatResponse = await response.json();
-      
-      // Check for error message from API
-      if (data.error) {
-        console.warn('API returned error:', data.error);
-        throw new Error(data.error);
+      if (response.ok) {
+        const data: ChatResponse = await response.json();
+        
+        // Store session ID for future use
+        if (data.session_id && !sessionId) {
+          setSessionId(data.session_id);
+          localStorage.setItem('chat_session_id', data.session_id);
+        }
+        
+        if (data.error) {
+          console.error('Error in chat response:', data.error);
+          setError(data.error);
+          
+          // Display error message in chat
+          const errorMessage: Message = {
+            id: `error-${Date.now()}`,
+            role: 'info',
+            content: `There was a problem: ${data.error}. Let's try again.`,
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, errorMessage]);
+        } else {
+          // Create assistant message
+          const assistantMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: data.response,
+            timestamp: new Date()
+          };
+          
+          // Add the message to chat
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      } else {
+        const errorData = await response.text();
+        const errorMessage = `API error (${response.status}): ${errorData}`;
+        console.error(errorMessage);
+        setError(errorMessage);
+        
+        // Add error message to chat
+        const chatErrorMessage: Message = {
+          id: `api-error-${Date.now()}`,
+          role: 'info',
+          content: 'I encountered a technical issue while processing your message. Please try again later.',
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, chatErrorMessage]);
       }
-      
-      // Save session ID for future messages
-      if (data.session_id && (!sessionId || sessionId !== data.session_id)) {
-        setSessionId(data.session_id);
-        localStorage.setItem('chat_session_id', data.session_id);
-      }
-      
-      // Add assistant message to chat
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, assistantMessage]);
     } catch (err: any) {
       console.error('Error sending message:', err);
       

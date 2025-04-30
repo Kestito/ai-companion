@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     let messages = [];
     
     if (conversationIds && conversationIds.length > 0) {
-      // Get messages from specific conversations
+      // First try to get messages from the messages table
       const { data: conversationMessages, error: messagesError } = await supabase
         .from('messages')
         .select('*')
@@ -65,11 +65,30 @@ export async function POST(request: Request) {
         .in('conversation_id', conversationIds)
         .order('sent_at', { ascending: true });
       
-      if (!messagesError) {
+      if (!messagesError && conversationMessages && conversationMessages.length > 0) {
         messages = conversationMessages;
+      } else {
+        // If no messages found in messages table, try conversation_details
+        const { data: conversationDetails, error: detailsError } = await supabase
+          .from('conversation_details')
+          .select('*, conversations!inner(*)')
+          .in('conversation_id', conversationIds)
+          .order('sent_at', { ascending: true });
+        
+        if (!detailsError && conversationDetails && conversationDetails.length > 0) {
+          // Map conversation_details to message format
+          messages = conversationDetails.map(detail => ({
+            id: detail.id,
+            patient_id: patientId,
+            conversation_id: detail.conversation_id,
+            content: detail.message_content,
+            message_type: detail.sender === 'patient' ? 'incoming' : 'outgoing',
+            sent_at: detail.sent_at
+          }));
+        }
       }
     } else {
-      // Get recent messages if no conversation IDs provided
+      // Try to get recent messages if no conversation IDs provided
       const { data: recentMessages, error: messagesError } = await supabase
         .from('messages')
         .select('*')
@@ -77,8 +96,39 @@ export async function POST(request: Request) {
         .order('sent_at', { ascending: false })
         .limit(100);
       
-      if (!messagesError) {
+      if (!messagesError && recentMessages && recentMessages.length > 0) {
         messages = recentMessages.reverse();
+      } else {
+        // If no messages found in messages table, try to get from conversation_details
+        // First get all conversations for this patient
+        const { data: patientConversations, error: convError } = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('patient_id', patientId)
+          .limit(10);
+        
+        if (!convError && patientConversations && patientConversations.length > 0) {
+          const conversationIds = patientConversations.map(conv => conv.id);
+          
+          const { data: conversationDetails, error: detailsError } = await supabase
+            .from('conversation_details')
+            .select('*')
+            .in('conversation_id', conversationIds)
+            .order('sent_at', { ascending: false })
+            .limit(100);
+          
+          if (!detailsError && conversationDetails && conversationDetails.length > 0) {
+            // Map conversation_details to message format
+            messages = conversationDetails.map(detail => ({
+              id: detail.id,
+              patient_id: patientId,
+              conversation_id: detail.conversation_id,
+              content: detail.message_content,
+              message_type: detail.sender === 'patient' ? 'incoming' : 'outgoing',
+              sent_at: detail.sent_at
+            })).reverse();
+          }
+        }
       }
     }
     

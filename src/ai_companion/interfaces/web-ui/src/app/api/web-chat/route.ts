@@ -18,7 +18,23 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      // Add a longer timeout for the API call
+      signal: AbortSignal.timeout(30000), // 30 second timeout
     });
+    
+    // Check for response status
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Backend API error (${response.status}):`, errorText);
+      return NextResponse.json(
+        {
+          error: `Backend error: ${response.status} ${response.statusText}`,
+          session_id: body.session_id || '',
+          response: "I'm having trouble processing your request. Please try again in a moment.",
+        },
+        { status: response.status }
+      );
+    }
     
     // Get the response from the backend
     const data = await response.json();
@@ -28,12 +44,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in web-chat API route:', error);
     
-    // Return error response
+    // Return error response with more details
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
     return NextResponse.json(
       {
-        error: 'Failed to communicate with the backend',
+        error: `Failed to communicate with the backend: ${errorMessage}`,
         session_id: '',
-        response: 'Sorry, I encountered an error processing your request.',
+        response: 'Sorry, I encountered a technical issue while processing your request. Please try again or contact support if the problem persists.',
       },
       { status: 500 }
     );

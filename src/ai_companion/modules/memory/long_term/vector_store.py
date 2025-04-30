@@ -1,12 +1,14 @@
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Tuple
 from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import time
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.http import models
 from openai import AzureOpenAI
 
 from ai_companion.settings import settings
@@ -53,18 +55,29 @@ class VectorStore:
         return cls._instance
 
     def __init__(self) -> None:
-        if not self._initialized:
+        try:
             self._validate_env_vars()
-            self.client = QdrantClient(
-                url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY
+            self.qdrant_client = QdrantClient(
+                url=settings.QDRANT_URL, 
+                api_key=settings.QDRANT_API_KEY,
+                timeout=30  # Increased timeout for more reliability
             )
+            
             self.azure_client = AzureOpenAI(
-                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-                api_version="2024-02-15-preview",
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             )
-            self.logger = logging.getLogger(__name__)
+            
             self._initialized = True
+            self.logger = logging.getLogger(__name__)
+            self.logger.info("VectorStore initialized successfully")
+        except Exception as e:
+            self._initialized = False
+            self.qdrant_client = None
+            self.azure_client = None
+            self.logger = logging.getLogger(__name__)
+            self.logger.error(f"Failed to initialize VectorStore: {e}", exc_info=True)
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
@@ -74,62 +87,138 @@ class VectorStore:
                 f"Missing required environment variables: {', '.join(missing_vars)}"
             )
 
-    def _collection_exists(self) -> bool:
-        """Check if the memory collection exists."""
-        collections = self.client.get_collections().collections
-        return any(col.name == self.COLLECTION_NAME for col in collections)
+    def ensure_collection(self, collection_name: str) -> bool:
+        """
+        Ensures a collection exists, creates it if it doesn't.
+        Returns True if successful, False otherwise.
+        """
+        try:
+            if not self._initialized or not self.qdrant_client:
+                self.logger.error("VectorStore not properly initialized")
+                return False
+                
+            if not self._collection_exists(collection_name):
+                return self._create_collection(collection_name)
+            return True
+        except Exception as e:
+            self.logger.error(f"Error ensuring collection {collection_name}: {e}", exc_info=True)
+            return False
 
-    def _create_collection(self) -> None:
-        """Create a new collection for storing memories."""
-        sample_embedding = self._get_embedding("sample text")
-        self.client.create_collection(
-            collection_name=self.COLLECTION_NAME,
-            vectors_config=VectorParams(
-                size=len(sample_embedding),
-                distance=Distance.COSINE,
-            ),
-        )
+    def _collection_exists(self, collection_name: str) -> bool:
+        """
+        Check if a collection exists.
+        """
+        try:
+            if not self._initialized or not self.qdrant_client:
+                self.logger.error("Cannot check if collection exists - client not initialized")
+                return False
+                
+            collections = self.qdrant_client.get_collections().collections
+            return any(collection.name == collection_name for collection in collections)
+        except Exception as e:
+            self.logger.error(f"Error checking if collection {collection_name} exists: {e}", exc_info=True)
+            return False
 
-    def _get_embedding(self, text: str) -> List[float]:
-        """Get embedding using Azure OpenAI."""
-        response = self.azure_client.embeddings.create(
-            model=os.getenv("AZURE_EMBEDDING_DEPLOYMENT"), input=text
-        )
-        return response.data[0].embedding
+    def _create_collection(self, collection_name: str) -> bool:
+        """
+        Create a new collection.
+        Returns True if successful, False otherwise.
+        """
+        try:
+            if not self._initialized or not self.qdrant_client:
+                self.logger.error("Cannot create collection - client not initialized")
+                return False
+                
+            self.qdrant_client.create_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(
+                    size=1536,  # OpenAI embedding size
+                    distance=models.Distance.COSINE
+                )
+            )
+            self.logger.info(f"Created collection: {collection_name}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error creating collection {collection_name}: {e}", exc_info=True)
+            return False
 
-    def find_similar_memory(self, text: str) -> Optional[Memory]:
+    def _get_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Get embedding for a text.
+        Returns None if embedding generation fails.
+        """
+        try:
+            if not self._initialized or not self.azure_client:
+                self.logger.error("Cannot generate embedding - client not initialized")
+                return None
+                
+            response = self.azure_client.embeddings.create(
+                input=text,
+                model=settings.AZURE_EMBEDDING_DEPLOYMENT
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            self.logger.error(f"Error generating embedding: {e}", exc_info=True)
+            return None
+
+    def find_similar_memory(
+        self, text: str, filter_conditions: Optional[dict] = None
+    ) -> Optional[Memory]:
         """Find if a similar memory already exists.
 
         Args:
             text: The text to search for
+            filter_conditions: Dictionary of conditions to filter search results (e.g. patient_id)
 
         Returns:
             Optional Memory if a similar one is found
         """
-        results = self.search_memories(text, k=1)
+        results = self.search_memories(text, k=1, filter_conditions=filter_conditions)
         if results and results[0].score >= self.SIMILARITY_THRESHOLD:
             return results[0]
         return None
 
-    def store_memory(self, text: str, metadata: dict) -> None:
+    def store_memory(self, text: str, metadata: dict) -> bool:
         """Store a new memory in the vector store or update if similar exists.
 
         Args:
             text: The text content of the memory
-            metadata: Additional information about the memory (timestamp, type, etc.)
+            metadata: Additional information about the memory (must include patient_id)
+            
+        Returns:
+            bool: True if memory was stored successfully, False otherwise
         """
         try:
-            if not self._collection_exists():
-                self.logger.info("Creating new memory collection")
-                self._create_collection()
+            if not self._initialized:
+                self.logger.error("VectorStore not properly initialized")
+                return False
+                
+            # Validate required metadata
+            if "patient_id" not in metadata:
+                self.logger.error("Missing required patient_id in memory metadata")
+                return False
 
-            similar_memory = self.find_similar_memory(text)
+            # Check if collection exists, create if needed
+            collection_exists = self.ensure_collection(self.COLLECTION_NAME)
+            if not collection_exists:
+                self.logger.error("Failed to ensure memory collection exists")
+                return False
+
+            # Only find similar memories for the same patient
+            filter_conditions = {"patient_id": metadata["patient_id"]}
+            similar_memory = self.find_similar_memory(text, filter_conditions)
             if similar_memory and similar_memory.id:
                 self.logger.debug(f"Found similar memory with ID: {similar_memory.id}")
                 metadata["id"] = similar_memory.id
 
+            # Get embedding for text
             embedding = self._get_embedding(text)
-            point = PointStruct(
+            if not embedding:
+                self.logger.error("Failed to generate embedding for memory")
+                return False
+
+            # Create point for Qdrant
+            point = models.PointStruct(
                 id=metadata.get("id", hash(text)),
                 vector=embedding,
                 payload={
@@ -138,70 +227,123 @@ class VectorStore:
                 },
             )
 
-            self.client.upsert(
+            # Store in Qdrant
+            self.qdrant_client.upsert(
                 collection_name=self.COLLECTION_NAME,
                 points=[point],
             )
-            self.logger.info(f"Successfully stored memory with ID: {point.id}")
+            self.logger.info(
+                f"Successfully stored memory with ID: {point.id} for patient {metadata['patient_id']}"
+            )
+            return True
 
+        except UnexpectedResponse as e:
+            self.logger.error(f"Qdrant returned unexpected response while storing memory: {e}")
+            return False
         except Exception as e:
             self.logger.error(f"Error storing memory: {e}", exc_info=True)
-            raise
+            return False
 
-    def search_memories(self, query: str, k: int = 3) -> List[Memory]:
+    def search_memories(
+        self, query: str, k: int = 3, filter_conditions: Optional[dict] = None
+    ) -> List[Memory]:
         """Search for relevant memories using the vector store.
 
         Args:
-            query: The search query
-            k: Number of results to return
+            query: The text to search for similar memories
+            k: The number of results to return
+            filter_conditions: Dictionary of conditions to filter search results
 
         Returns:
-            List of Memory objects
+            List of Memory objects with similarity scores
         """
         try:
-            if not self._collection_exists():
-                self.logger.debug("No collection exists yet")
+            if not self._initialized or not self.qdrant_client:
+                self.logger.error("Cannot search memories - VectorStore not properly initialized")
+                return []
+                
+            if not query or not query.strip():
+                self.logger.warning("Empty query provided for memory search")
                 return []
 
-            # Get embedding for the query
-            query_embedding = self._get_embedding(query)
+            # Ensure collection exists
+            collection_exists = self.ensure_collection(self.COLLECTION_NAME)
+            if not collection_exists:
+                self.logger.error("Failed to ensure memory collection exists for search")
+                return []
 
-            # Search using Qdrant client
+            # Get embedding for query
+            embedding = self._get_embedding(query)
+            if not embedding:
+                self.logger.warning("Failed to generate embedding for memory search query")
+                return []
 
-            search_results = self.client.query_points(
-                collection_name=self.COLLECTION_NAME,
-                query_vector=query_embedding,
-                limit=k,
-            )
-
-            # Convert to Memory objects
-            memories = []
-            for result in search_results:
-                memory = Memory(
-                    text=result.payload.get("text", ""),
-                    metadata={k: v for k, v in result.payload.items() if k != "text"},
-                    score=result.score,
+            # Prepare search filter if provided
+            search_filter = None
+            if filter_conditions:
+                search_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value),
+                        )
+                        for key, value in filter_conditions.items()
+                    ]
                 )
-                memories.append(memory)
 
-            # Log found memories
-            if memories:
-                self.logger.debug(f"Found {len(memories)} relevant memories")
-                for memory in memories:
-                    self.logger.debug(
-                        f"Memory score: {memory.score:.3f}, text: {memory.text[:100]}..."
+            # Execute search with retry logic
+            max_retries = 2
+            retry_count = 0
+            last_error = None
+            
+            while retry_count <= max_retries:
+                try:
+                    search_results = self.qdrant_client.search(
+                        collection_name=self.COLLECTION_NAME,
+                        query_vector=embedding,
+                        limit=k,
+                        query_filter=search_filter,
+                        with_payload=True,
                     )
-            else:
-                self.logger.debug("No relevant memories found")
-
-            return memories
-
+                    
+                    memories = []
+                    for result in search_results:
+                        payload = result.payload
+                        text = payload.pop("text", "")
+                        memories.append(Memory(text=text, metadata=payload, score=result.score))
+                    
+                    self.logger.info(f"Found {len(memories)} memories for query")
+                    return memories
+                    
+                except UnexpectedResponse as e:
+                    last_error = e
+                    retry_count += 1
+                    self.logger.warning(
+                        f"Qdrant search attempt {retry_count}/{max_retries} failed: {e}. Retrying..."
+                    )
+                    # Add a short delay before retrying to allow potential transient issues to resolve
+                    time.sleep(1.0)
+                except Exception as e:
+                    # For non-Qdrant specific exceptions, don't retry
+                    self.logger.error(f"Error during memory search: {e}", exc_info=True)
+                    return []
+            
+            # If we've exhausted all retries
+            if last_error:
+                self.logger.error(f"All retries failed for memory search: {last_error}")
+            
+            return []
+            
         except Exception as e:
-            self.logger.error(f"Error searching memories: {e}", exc_info=True)
+            self.logger.error(f"Unexpected error during memory search: {e}", exc_info=True)
             return []
 
 
 @lru_cache
 def get_vector_store() -> VectorStore:
-    """Get or create the VectorStore singleton instance."""
+    """Get a singleton instance of the VectorStore.
+
+    Returns:
+        VectorStore instance
+    """
     return VectorStore()

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import os
 import random
 import aiohttp
+import json
 
 import httpx
 
@@ -46,10 +47,21 @@ class TelegramBot:
     def __init__(self):
         self.token = settings.TELEGRAM_BOT_TOKEN
         self.api_base = settings.TELEGRAM_API_BASE
+        
+        # Ensure api_base doesn't end with slash
+        if self.api_base.endswith('/'):
+            self.api_base = self.api_base[:-1]
+            
         self.base_url = f"{self.api_base}/bot{self.token}"
         self.offset = 0
         self.client = httpx.AsyncClient(timeout=60.0)
+        self.session = self.client  # Add session alias for compatibility
         self._running = True
+        self.checkpoint_dir = os.path.join(os.path.dirname(__file__), "checkpoints")
+        
+        # Create checkpoint directory if it doesn't exist
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
         self._setup_signal_handlers()
 
         # Use standard memory service exclusively for all operations
@@ -246,8 +258,9 @@ class TelegramBot:
 
             # Generate a unique session ID for this chat using standard format
             session_id = f"telegram-{chat_id}-{_}"
-            # Using _ for unused variable
-            _ = os.path.join(self.checkpoint_dir, f"{session_id}.json")
+            
+            # Only use checkpoint_dir if needed for file operations
+            checkpoint_path = os.path.join(self.checkpoint_dir, f"{session_id}.json")
 
             # Check for command messages first
             if "text" in message and message["text"].startswith("/"):
@@ -367,12 +380,20 @@ class TelegramBot:
                         )
                 except Exception as e:
                     logger.warning(f"Error retrieving previous conversation turns: {e}")
+                    # Continue without history - don't fail the entire process
 
                 # Create a new graph instance with the standardized config
-                graph = graph_builder.with_config(config)
-
-                # Invoke the graph with the human message
-                result = await graph.ainvoke({"messages": [human_message]})
+                try:
+                    graph = graph_builder.with_config(config)
+                    
+                    # Invoke the graph with the human message
+                    result = await graph.ainvoke({"messages": [human_message]})
+                except Exception as e:
+                    logger.error(f"Error creating or invoking graph: {e}", exc_info=True)
+                    await self._send_message(
+                        chat_id, "I'm sorry, but I encountered a processing error. Please try again later."
+                    )
+                    return
 
                 # Get the response from the result
                 response_message = None
@@ -412,6 +433,10 @@ class TelegramBot:
                     logger.warning(f"Unrecognized result format: {type(result)}")
                     response_message = "I processed your message but couldn't formulate a proper response."
 
+                # Verify we have a valid response
+                if not response_message:
+                    response_message = "I'm sorry, but I wasn't able to generate a response. Please try again."
+
                 # Extract the complete graph state using aget_state
                 try:
                     # Get the graph state using LangGraph's aget_state method
@@ -435,12 +460,24 @@ class TelegramBot:
 
                     logger.info(f"Stored complete memory state with ID: {memory_id}")
                 except Exception as e:
+                    # Log error but don't fail the response - memory storage is non-critical
                     logger.error(f"Error extracting or storing graph state: {e}")
+                    # Continue with sending the response even if memory storage failed
 
                 # Send the response directly from the node-based workflow
-                await self._send_direct_response(
-                    chat_id, response_message, workflow, result, message_type
-                )
+                try:
+                    await self._send_direct_response(
+                        chat_id, response_message, workflow, result, message_type
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending direct response: {e}", exc_info=True)
+                    # Fallback to simple message if direct response fails
+                    try:
+                        await self._send_message(
+                            chat_id, "Sorry, I had trouble formulating my response. Please try again."
+                        )
+                    except Exception as e2:
+                        logger.error(f"Failed to send fallback error message: {e2}")
 
             except Exception as e:
                 logger.error(f"Error in graph processing: {e}", exc_info=True)
@@ -450,9 +487,12 @@ class TelegramBot:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
-            await self._send_message(
-                chat_id, "Sorry, I encountered an error processing your message."
-            )
+            try:
+                await self._send_message(
+                    chat_id, "Sorry, I encountered an error processing your message."
+                )
+            except Exception as e2:
+                logger.error(f"Failed to send error message: {e2}")
 
     async def _handle_command(self, message: Dict) -> bool:
         """
@@ -1452,6 +1492,11 @@ class TelegramBot:
         # Telegram has a 4096 character limit per message
         MAX_MESSAGE_LENGTH = 4000  # Using 4000 to be safe
 
+        # Validate chat_id
+        if not chat_id:
+            logger.error("Attempted to send message with invalid chat_id")
+            return {"ok": False, "description": "Invalid chat_id"}
+
         if not text:
             logger.warning("Attempted to send empty message")
             return {"ok": False, "description": "Empty message"}
@@ -1487,9 +1532,25 @@ class TelegramBot:
 
     async def _send_single_message(self, chat_id: int, text: str) -> Dict:
         """Send a single text message with improved error handling."""
-        return await self._make_request(
-            "sendMessage", params={"chat_id": chat_id, "text": text}
-        )
+        try:
+            # Validate chat_id format for Telegram (must be numeric or @username)
+            if isinstance(chat_id, str):
+                if chat_id.isdigit():
+                    chat_id = int(chat_id)
+                elif not chat_id.startswith('@'):
+                    logger.error(f"Invalid chat_id format: {chat_id}")
+                    return {"ok": False, "description": "Invalid chat_id format"}
+                
+            # Ensure text is not None
+            if text is None:
+                text = "No message content"
+                
+            return await self._make_request(
+                "sendMessage", params={"chat_id": chat_id, "text": text}
+            )
+        except Exception as e:
+            logger.error(f"Error in _send_single_message: {e}", exc_info=True)
+            return {"ok": False, "description": str(e)}
 
     async def _make_request(
         self,
@@ -1515,9 +1576,23 @@ class TelegramBot:
         if params is None:
             params = {}
 
-        url = f"{self.api_url}{method}"
+        # Ensure there's no double slash in the URL
+        if method.startswith('/'):
+            method = method[1:]
+        url = f"{self.base_url}/{method}"
         attempt = 0
         last_exception = None
+
+        # Log detailed request information at debug level
+        try:
+            request_info = {}
+            if method == "sendMessage":
+                chat_id = params.get("chat_id", "unknown")
+                text_preview = (params.get("text", "")[:30] + "...") if params.get("text", "") else "empty"
+                request_info = {"chat_id": chat_id, "text_preview": text_preview}
+            logger.debug(f"Making request to {method} with params: {request_info}")
+        except:
+            pass
 
         while attempt < retries:
             try:
@@ -1526,21 +1601,34 @@ class TelegramBot:
 
                 if files:
                     # Multipart form request (file upload)
-                    response = await self.session.post(
+                    response = await self.client.post(
                         url, params=params, data=data, files=files
                     )
                 else:
                     # Regular JSON request
                     headers["Content-Type"] = "application/json"
-                    response = await self.session.post(
+                    response = await self.client.post(
                         url, headers=headers, json=params
                     )
 
-                result = await response.json()
+                # Make sure response is successful
+                response.raise_for_status()
+                
+                # Use the built-in json method in httpx (which is not awaitable)
+                result = response.json()
 
                 if not result.get("ok", False):
                     error_msg = result.get("description", "Unknown error")
                     logger.error(f"Telegram API error in {method}: {error_msg}")
+
+                    # Handle specific Telegram API errors
+                    if "chat not found" in error_msg.lower():
+                        logger.error(f"Chat ID not found: {params.get('chat_id')}")
+                        return {"ok": False, "error_code": 400, "description": f"Chat not found: {params.get('chat_id')}"}
+                    
+                    if "blocked by user" in error_msg.lower():
+                        logger.error(f"Bot was blocked by user: {params.get('chat_id')}")
+                        return {"ok": False, "error_code": 403, "description": f"Bot was blocked by user: {params.get('chat_id')}"}
 
                     if "retry_after" in result:
                         retry_after = result["retry_after"]
@@ -1550,11 +1638,40 @@ class TelegramBot:
                         await asyncio.sleep(retry_after)
                         continue
 
-                    raise Exception(f"Telegram API error: {error_msg}")
+                    # Just return the error result, let the caller decide how to handle it
+                    return result
 
                 return result
 
-            except aiohttp.ClientError as e:
+            except httpx.HTTPStatusError as e:
+                last_exception = e
+                status_code = e.response.status_code
+                
+                if status_code == 429:  # Too Many Requests
+                    try:
+                        response_json = e.response.json()
+                        retry_after = response_json.get("parameters", {}).get("retry_after", 5)
+                    except:
+                        retry_after = 5  # Default retry time if we couldn't parse the response
+                    
+                    logger.warning(f"Rate limited (429), retrying after {retry_after} seconds")
+                    await asyncio.sleep(retry_after)
+                    continue
+                elif status_code >= 500:
+                    # Server error, retry with backoff
+                    wait_time = min(2**attempt, 30)
+                    logger.error(f"Telegram server error ({status_code}), retrying in {wait_time}s")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    # Client error that's not rate limiting
+                    logger.error(f"HTTP error in Telegram API request: {e}")
+                    if attempt < retries:
+                        wait_time = min(2**attempt, 30)
+                        await asyncio.sleep(wait_time)
+                    else:
+                        break
+            except (httpx.NetworkError, httpx.TimeoutException) as e:
                 last_exception = e
                 logger.error(f"Network error in Telegram API request to {method}: {e}")
                 wait_time = min(2**attempt, 30)  # Exponential backoff, max 30 seconds
@@ -1582,21 +1699,11 @@ class TelegramBot:
             f"Telegram API connection failed after {retries} attempts: {error_message}"
         )
 
-        # Provide more specific error message
-        if isinstance(last_exception, aiohttp.ClientConnectorError):
-            raise Exception(
-                f"Telegram API connection failed - Network connectivity issue: {error_message}"
-            )
-        elif isinstance(last_exception, aiohttp.ServerTimeoutError):
-            raise Exception(
-                f"Telegram API connection failed - Server timeout: {error_message}"
-            )
-        elif isinstance(last_exception, aiohttp.ClientResponseError):
-            raise Exception(
-                f"Telegram API connection failed - HTTP error: {error_message}"
-            )
-        else:
-            raise Exception(f"Telegram API connection failed: {error_message}")
+        # Return a formatted error response rather than raising an exception
+        return {
+            "ok": False,
+            "description": f"Request failed after {retries} attempts: {error_message}",
+        }
 
     async def _download_file(self, file_id: str) -> bytes:
         """Download file from Telegram servers."""
@@ -2114,13 +2221,46 @@ class TelegramBot:
             patient_id: Optional patient ID
             recurrence_pattern: Optional recurrence pattern dict
             metadata: Additional metadata for the message
-            priority: Message priority (1-5, 1 is highest)
+            priority: Message priority (1=highest)
 
         Returns:
-            The ID of the created scheduled message
+            The created message ID
         """
+        # Validate chat_id format for Telegram
+        if isinstance(chat_id, str):
+            if chat_id.isdigit():
+                chat_id = int(chat_id)
+            elif not chat_id.startswith('@'):
+                logger.warning(f"Invalid chat_id format: {chat_id}. Must be numeric or @username.")
+                raise ValueError(f"Invalid chat_id format. Must be numeric or @username.")
+        
+        # Ensure we have valid message content
+        if not message_content or not isinstance(message_content, str):
+            raise ValueError("Message content cannot be empty")
+        
+        # Ensure scheduled_time is in the future
+        now = datetime.utcnow()
+        if scheduled_time < now:
+            logger.warning(f"Scheduled time {scheduled_time} is in the past")
+            raise ValueError("Scheduled time must be in the future")
+
+        # Prepare metadata with required platform data
         if metadata is None:
             metadata = {}
+            
+        # Ensure metadata is a dictionary
+        if not isinstance(metadata, dict):
+            metadata = {}
+            
+        # Add platform_data for Telegram integration
+        metadata["platform_data"] = {
+            "chat_id": chat_id,
+            "platform": "telegram",
+        }
+
+        # Add patient_id to metadata if provided
+        if patient_id:
+            metadata["patient_id"] = patient_id
 
         # Add recurrence pattern to metadata if provided
         if recurrence_pattern:

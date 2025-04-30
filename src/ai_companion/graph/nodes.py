@@ -2,7 +2,7 @@ import os
 from uuid import uuid4
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import random
 import asyncio
@@ -28,6 +28,7 @@ from ai_companion.modules.memory.long_term.memory_manager import get_memory_mana
 from ai_companion.modules.rag.core.vector_store import get_vector_store_instance
 from ai_companion.modules.memory.conversation.conversation_memory import ConversationMemory
 from ai_companion.utils.supabase import get_supabase_client
+from ai_companion.modules.rag.core.rag_chain import get_rag_chain
 
 logger = logging.getLogger(__name__)
 
@@ -688,7 +689,20 @@ def memory_injection_node(state: AICompanionState) -> Dict[str, str]:
     try:
         memory_manager = get_memory_manager()
         last_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
-        memory_context = memory_manager.get_relevant_memories(last_message)
+        
+        # Get user metadata and extract patient_id
+        user_metadata = state.get("configurable", {}).get("user_metadata", {})
+        platform = user_metadata.get("platform", "")
+        platform_id = user_metadata.get("user_id", "")
+        
+        # Get patient_id from platform_id
+        patient_id = get_patient_id_from_platform_id(platform, platform_id)
+        
+        if not patient_id:
+            logger.warning(f"No patient_id found for {platform}:{platform_id}, memory injection skipped")
+            return {"memory_context": ""}
+            
+        memory_context = memory_manager.get_relevant_memories(last_message, patient_id)
         return {"memory_context": memory_manager.format_memories_for_prompt(memory_context)}
     except Exception as e:
         logger.error(f"Error in memory injection: {e}", exc_info=True)
@@ -704,8 +718,20 @@ async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
         # Get the current message
         current_message = get_message_content(state["messages"][-1]) if state["messages"] else ""
         
+        # Get user metadata and extract patient_id
+        user_metadata = state.get("configurable", {}).get("user_metadata", {})
+        platform = user_metadata.get("platform", "")
+        platform_id = user_metadata.get("user_id", "")
+        
+        # Get patient_id from platform_id
+        patient_id = get_patient_id_from_platform_id(platform, platform_id)
+        
+        if not patient_id:
+            logger.warning(f"No patient_id found for {platform}:{platform_id}, memory extraction skipped")
+            return {"memory_context": ""}
+        
         # Get relevant memories
-        relevant_memories = memory_manager.get_relevant_memories(current_message)
+        relevant_memories = memory_manager.get_relevant_memories(current_message, patient_id)
         
         # Format memories for context
         formatted_memories = memory_manager.format_memories_for_prompt(relevant_memories)
@@ -718,9 +744,19 @@ async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
         # Store the current message as a potential memory
         message_obj = state["messages"][-1]
         message_content = get_message_content(message_obj)
+        
+        # Add patient_id to metadata
+        if isinstance(message_obj, dict) and "metadata" in message_obj:
+            message_obj["metadata"]["patient_id"] = patient_id
+        elif hasattr(message_obj, "metadata"):
+            if message_obj.metadata is None:
+                message_obj.metadata = {}
+            message_obj.metadata["patient_id"] = patient_id
+            
         # Create a proper message object if we got a dict
         if isinstance(message_obj, dict):
-            message_obj = HumanMessage(content=message_content)
+            message_obj = HumanMessage(content=message_content, metadata={"patient_id": patient_id})
+            
         await memory_manager.extract_and_store_memories(message_obj)
         
         return {"memory_context": formatted_memories}
@@ -1240,3 +1276,78 @@ async def schedule_message_node(state: AICompanionState, config: RunnableConfig)
             "error": str(e),
             "response": "I encountered an error while trying to schedule your message. Please try again later."
         }
+
+
+def get_patient_id_from_platform_id(platform: str, platform_id: str) -> Optional[str]:
+    """
+    Get patient_id from platform and platform_id by querying the patients table.
+    
+    Args:
+        platform: The platform name (telegram, whatsapp, web)
+        platform_id: The user/chat ID from the platform
+        
+    Returns:
+        Patient ID if found, None otherwise
+    """
+    if not platform or not platform_id:
+        logger.warning("Missing platform or platform_id")
+        return None
+        
+    try:
+        # Get Supabase client
+        supabase = get_supabase_client()
+        
+        # Query patients table to find a matching platform ID
+        platform_field = f"{platform}_id"
+        result = supabase.table("patients").select("patient_id").eq(platform_field, platform_id).execute()
+        
+        # Check if we found a match
+        if result.data and len(result.data) > 0:
+            patient_id = result.data[0].get("patient_id")
+            logger.info(f"Found patient_id {patient_id} for {platform}:{platform_id}")
+            return patient_id
+            
+        # If no match, try with platform_data field which might contain the ID in JSON
+        logger.debug(f"No exact match for {platform}:{platform_id}, checking platform_data field")
+        platform_data_query = supabase.table("patients").select("patient_id, platform_data").execute()
+        
+        # Iterate through results to find matching platform ID in platform_data
+        for row in platform_data_query.data:
+            platform_data = row.get("platform_data", {})
+            if isinstance(platform_data, str):
+                try:
+                    platform_data = json.loads(platform_data)
+                except:
+                    continue
+                    
+            if platform_data.get(platform) == platform_id or platform_data.get(f"{platform}_id") == platform_id:
+                patient_id = row.get("patient_id")
+                logger.info(f"Found patient_id {patient_id} in platform_data for {platform}:{platform_id}")
+                return patient_id
+                
+        # No match found, create a new patient record
+        logger.info(f"No patient found for {platform}:{platform_id}, creating new patient")
+        
+        # Prepare platform data for upsert
+        platform_data = {f"{platform}_id": platform_id}
+        patient_data = {
+            "platform_data": platform_data,
+        }
+        
+        # Add specific platform ID field if it's one of our known platforms
+        if platform in ["telegram", "whatsapp", "web"]:
+            patient_data[f"{platform}_id"] = platform_id
+            
+        # Insert new patient
+        result = supabase.table("patients").insert(patient_data).execute()
+        
+        if result.data and len(result.data) > 0:
+            new_patient_id = result.data[0].get("patient_id")
+            logger.info(f"Created new patient with ID {new_patient_id} for {platform}:{platform_id}")
+            return new_patient_id
+            
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting patient_id from platform_id: {e}", exc_info=True)
+        return None

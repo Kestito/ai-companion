@@ -1,14 +1,18 @@
 # Version control
-.git/
+.git
+.github
 .gitignore
-.github/
+.gitattributes
 
-# Virtual environments
+# Development environments
+.vscode
+.idea
+.venv
+.env
+.env.*
 venv/
 env/
 ENV/
-.env/
-.venv/
 
 # Python cache files
 __pycache__/
@@ -16,94 +20,68 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Node modules and Next.js files
-node_modules/
-.next/
-.nuxt/
-dist/
-out/
-
-# Docker
-.docker/
-Dockerfile*
-!scheduler-container.Dockerfile
-
-# Logs and databases
-*.log
-*.sqlite
-*.db
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDE files
-.idea/
-.vscode/
-*.swp
-*.swo
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
-*.sublime-project
-
-# Test coverage
+.pytest_cache/
 .coverage
 htmlcov/
-.coverage.*
-.cache/
-nosetests.xml
-coverage.xml
-*.cover
+.tox/
+
+# Node/JavaScript
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.pnpm-debug.log
+.npm
+.eslintcache
+.node_repl_history
+.yarn-integrity
+/build
+/dist
+
+# Project specific
+logs/
+*.log
+temp/
+tmp/
+cache/
+.chainlit/cache
+.chainlit/chat_files
+.chainlit/.langchain.db
 
 # Documentation
+README.md
+CHANGELOG.md
 docs/
-site/
-*.md
-!README.md
+examples/
+*.example
 
-# Large data directories
-data/
-images/
-metrics/
-logs/
-generated_images/
-notebooks/
-tests/
-.pytest_cache/
-.chainlit/
-.cursor/
-
-# Azure specific
+# Azure specific ignores
 .azure/
-.files/
-.langgraph_api/
-docker/
-docker-combined/
-ai-companion/
-supabase/
-public/ 
+*.deployment
+deploy.sh
+deployment.yaml
+/bin
+/obj
+
+# Docker specific
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Debug files
+*.swp
+*.swo
+*.swn
+*.bak
+*.tmp
+*.pid
+
+# Test files
+tests/
+test/
+**/tests/
+**/test/
+
+# OS specific
+.DS_Store
+Thumbs.db 

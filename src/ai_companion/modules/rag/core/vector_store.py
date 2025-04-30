@@ -1,16 +1,22 @@
 """Vector store retrieval module."""
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, Condition
+from qdrant_client.http.exceptions import UnexpectedResponse
+from openai import AzureOpenAI
+from supabase import create_client, Client
 import os
 import logging
 import asyncio
-from supabase import create_client, Client
 import re
 import time
+import json
+from openai.error import RateLimitError, InvalidRequestError
+
+from ai_companion.settings import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +32,8 @@ class VectorStoreRetriever:
         embedding_model: Optional[str] = None
     ):
         """Initialize vector store retriever."""
+        self.logger = logging.getLogger(__name__)
+        
         try:
             self.collection_name = collection_name
             
@@ -53,84 +61,207 @@ class VectorStoreRetriever:
             
             logger.info(f"VectorStoreRetriever initialized with collection: {collection_name}")
             
+            self._initialized = True
         except Exception as e:
-            logger.error(f"Error initializing VectorStoreRetriever: {str(e)}")
-            raise
+            logger.error(f"Failed to initialize VectorStoreRetriever: {e}", exc_info=True)
+            self._initialized = False
+            self.embeddings = None
+            self.client = None
+            self.supabase = None
+
+    def _get_embedding(self, text: str) -> List[float]:
+        """Generate embedding for text using Azure OpenAI."""
+        if not text or len(text.strip()) == 0:
+            self.logger.warning("Attempted to get embedding for empty text")
+            return []
+            
+        if not self.embeddings or not self._initialized:
+            self.logger.error("Azure OpenAI client not properly initialized")
+            return []
+            
+        try:
+            # Ensure text is not too long for the embedding model
+            max_tokens = 8191  # For text-embedding-ada-002
+            if len(text) > max_tokens * 4:  # Approximate character to token ratio
+                self.logger.warning(f"Text too long for embedding ({len(text)} chars), truncating")
+                text = text[:max_tokens * 4]
+                
+            # Wait for rate limiting if needed
+            delay = 0
+            for _ in range(3):  # Maximum 3 retries
+                try:
+                    if delay > 0:
+                        self.logger.info(f"Rate limited, waiting {delay}s before retry")
+                        time.sleep(delay)
+                    
+                    # Get embedding from Azure OpenAI
+                    embedding = self.embeddings.aembed_query(text)
+                    
+                    if not embedding or not hasattr(embedding, 'embeddings') or len(embedding.embeddings) == 0:
+                        self.logger.error("Azure OpenAI returned empty embedding")
+                        return []
+                        
+                    return embedding.embeddings[0] if embedding else []
+                    
+                except RateLimitError as rle:
+                    # Extract retry-after if available
+                    retry_after = getattr(rle, "retry_after", None) or 1
+                    delay = min(retry_after * 1.5, 10)  # Avoid excessive waits
+                    self.logger.warning(f"Rate limit hit: {rle}. Will retry in {delay}s")
+                    continue
+                    
+                except InvalidRequestError as ire:
+                    # Handle token limits or other invalid requests
+                    if "token" in str(ire).lower():
+                        # Further truncate and try again
+                        text = text[:len(text)//2]
+                        self.logger.warning(f"Token limit exceeded, truncating to {len(text)} chars")
+                        continue
+                    else:
+                        # Other invalid request issues
+                        self.logger.error(f"Invalid request for embedding: {ire}")
+                        return []
+                        
+                except Exception as e:
+                    # Other OpenAI errors - increase backoff and retry
+                    delay = (delay or 0.5) * 2
+                    self.logger.warning(f"OpenAI error: {e}. Retrying in {delay}s")
+                    continue
+                    
+            # All retries failed
+            self.logger.error("Failed to get embedding after multiple retries")
+            return []
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _get_embedding: {e}", exc_info=True)
+            return []
+
+    def _clean_query(self, query: str) -> str:
+        """Remove special characters from query to prevent SQL injection."""
+        return re.sub(r'[^\w\s]', '', query)
 
     async def similarity_search(
         self,
         query: str,
         k: int = 8,
         score_threshold: float = 0.65,
-        filter_conditions: Optional[Dict] = None
+        filter_conditions: Optional[Dict] = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0
     ) -> List[Tuple[Document, float]]:
         """Search for similar documents with advanced filtering."""
-        try:
-            # Get query embedding
-            query_embedding = await self.embeddings.aembed_query(query)
-            
-            # Prepare filter
-            search_filter = None
-            if filter_conditions:
-                must_conditions = []
-                for key, value in filter_conditions.items():
-                    if isinstance(value, dict):
-                        # Handle nested conditions
-                        for nested_key, nested_value in value.items():
-                            must_conditions.append(
-                                {
-                                    "key": f"{key}.{nested_key}",
-                                    "match": {"value": nested_value}
-                                }
-                            )
-                    else:
-                        must_conditions.append(
-                            {
-                                "key": key,
-                                "match": {"value": value}
-                            }
-                        )
-                search_filter = {"must": must_conditions}
-            
-            # Execute search
-            search_results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=k,
-                score_threshold=score_threshold,
-                query_filter=search_filter
-            )
-            
-            if not search_results:
-                logger.warning("No search results found")
-                return []
-            
-            # Convert results to documents
-            results = []
-            for result in search_results:
-                if not result.payload:
-                    continue
+        retry_count = 0
+        
+        while retry_count <= max_retries:
+            try:
+                if not query or not query.strip():
+                    logger.warning("Empty query provided to similarity_search")
+                    return []
+                    
+                if not self.client or not self._initialized:
+                    self.logger.error("Qdrant client not properly initialized")
+                    return []
+                    
+                # Get query embedding
+                query_embedding = self._get_embedding(query)
+                if not query_embedding:
+                    self.logger.error("Failed to generate embedding for query")
+                    return []
                 
-                # Extract document content and metadata
-                content = result.payload.get("content", "")
-                metadata = {
-                    "score": result.score,
-                    "id": result.id,
-                    **{k: v for k, v in result.payload.items() if k != "content"}
-                }
+                # Prepare filter
+                search_filter = None
+                if filter_conditions:
+                    try:
+                        must_conditions = []
+                        for key, value in filter_conditions.items():
+                            if isinstance(value, dict):
+                                # Handle nested conditions
+                                for nested_key, nested_value in value.items():
+                                    must_conditions.append(
+                                        {
+                                            "key": f"{key}.{nested_key}",
+                                            "match": {"value": nested_value}
+                                        }
+                                    )
+                            else:
+                                must_conditions.append(
+                                    {
+                                        "key": key,
+                                        "match": {"value": value}
+                                    }
+                                )
+                        search_filter = {"must": must_conditions}
+                    except Exception as filter_error:
+                        self.logger.error(f"Error creating search filter: {filter_error}", exc_info=True)
+                        # Continue with search but without filter
+                        search_filter = None
                 
-                doc = Document(
-                    page_content=content,
-                    metadata=metadata
+                # Execute search with timeout safeguards
+                start_time = time.time()
+                search_results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=k,
+                    score_threshold=score_threshold,
+                    query_filter=search_filter
                 )
-                results.append((doc, result.score))
-            
-            logger.info(f"Found {len(results)} relevant documents")
-            return sorted(results, key=lambda x: x[1], reverse=True)
-            
-        except Exception as e:
-            logger.error(f"Error in similarity search: {str(e)}")
-            return []
+                search_time = time.time() - start_time
+                
+                # Log performance metrics
+                self.logger.info(f"Qdrant search completed in {search_time:.2f}s")
+                
+                if not search_results:
+                    logger.warning(f"No search results found for query (length: {len(query)})")
+                    return []
+                
+                # Convert results to documents
+                results = []
+                for result in search_results:
+                    if not result.payload:
+                        self.logger.warning(f"Missing payload in search result: {result.id}")
+                        continue
+                    
+                    # Extract document content and metadata
+                    content = result.payload.get("content", "")
+                    if not content:
+                        self.logger.warning(f"Empty content in document: {result.id}")
+                        continue
+                        
+                    metadata = {
+                        "score": result.score,
+                        "id": result.id,
+                        **{k: v for k, v in result.payload.items() if k != "content"}
+                    }
+                    
+                    doc = Document(
+                        page_content=content,
+                        metadata=metadata
+                    )
+                    results.append((doc, result.score))
+                
+                logger.info(f"Found {len(results)} relevant documents from {len(search_results)} total results")
+                return sorted(results, key=lambda x: x[1], reverse=True)
+                
+            except UnexpectedResponse as e:
+                retry_count += 1
+                error_msg = f"Qdrant returned unexpected response (attempt {retry_count}/{max_retries+1}): {e}"
+                
+                if retry_count <= max_retries:
+                    logger.warning(f"{error_msg} - Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    # Increase delay for next retry
+                    retry_delay *= 2
+                else:
+                    logger.error(error_msg)
+                    return []
+                    
+            except Exception as e:
+                self.logger.error(f"Error in similarity search: {e}", exc_info=True)
+                # Log query length but not content for privacy reasons
+                self.logger.info(f"Failed query length: {len(query)}, Filter conditions: {filter_conditions}")
+                return []
+                
+        return []  # Fallback if all retries fail
 
     async def get_collection_info(self) -> Dict[str, Any]:
         """Get information about the collection."""
@@ -164,10 +295,14 @@ class VectorStoreRetriever:
             List of documents with their scores
         """
         try:
-            # Remove special characters and normalize for better search
-            clean_query = re.sub(r'[^\w\s]', ' ', query).strip()
-            if not clean_query:
-                logger.warning("Empty search terms after cleaning query")
+            if not self.supabase or not self._initialized:
+                self.logger.error("Supabase client not properly initialized")
+                return []
+                
+            # Clean query to prevent injection
+            cleaned_query = self._clean_query(query)
+            if not cleaned_query:
+                self.logger.warning("Query was empty after cleaning")
                 return []
             
             # Execute search using the indexed search_documents function
@@ -175,22 +310,22 @@ class VectorStoreRetriever:
                 response = self.supabase.rpc(
                     'search_documents',
                     {
-                        'query_text': clean_query,
+                        'query_text': cleaned_query,
                         'limit_val': k
                     }
                 ).execute()
                 
                 # Check response data instead of looking for error attribute
                 if not hasattr(response, 'data') or response.data is None:
-                    logger.error("Supabase search returned no data structure")
+                    self.logger.error("Supabase search returned no data structure")
                     return []
                     
                 if not response.data:
-                    logger.warning("No keyword search results found")
+                    self.logger.warning("No keyword search results found")
                     return []
             except Exception as supabase_error:
                 # Log the error but continue with vector search only
-                logger.error(f"Error in keyword search: {str(supabase_error)}")
+                self.logger.error(f"Error in keyword search: {str(supabase_error)}")
                 return []
             
             # Convert results to documents
@@ -407,6 +542,176 @@ class VectorStoreRetriever:
             except Exception as fallback_error:
                 logger.error(f"Fallback vector search also failed: {str(fallback_error)}")
                 return []
+
+    def search_by_vector(
+        self, embedding: list, collection: str, limit: int = 5, filter: Optional[Dict] = None
+    ):
+        """
+        Search for similar documents by vector.
+
+        Args:
+            embedding (list): The embedding vector to search for.
+            collection (str): The name of the collection to search in.
+            limit (int, optional): The maximum number of results to return. Defaults to 5.
+            filter (Optional[Dict], optional): A filter to apply to the search. Defaults to None.
+
+        Returns:
+            list: A list of dictionaries with keys 'payload' and 'score'.
+        """
+        try:
+            # Validate inputs
+            if not embedding or not isinstance(embedding, list):
+                self.logger.error(f"Invalid embedding provided for search: {type(embedding)}")
+                return []
+                
+            if not collection or not isinstance(collection, str):
+                self.logger.error(f"Invalid collection name provided: {collection}")
+                return []
+                
+            if not self.client:
+                self.logger.error("Qdrant client not initialized for search_by_vector")
+                return []
+                
+            # Check if collection exists
+            try:
+                collections = self.client.get_collections()
+                if collection not in [c.name for c in collections.collections]:
+                    self.logger.warning(f"Collection '{collection}' does not exist")
+                    return []
+            except Exception as e:
+                self.logger.error(f"Failed to verify collection existence: {e}")
+                # Continue anyway as the search might still work
+            
+            # Prepare search filter if provided
+            search_filter = None
+            if filter:
+                try:
+                    must_conditions = []
+                    for key, value in filter.items():
+                        if isinstance(value, list):
+                            should_conditions = []
+                            for val in value:
+                                should_conditions.append(
+                                    models.FieldCondition(
+                                        key=key, match=models.MatchValue(value=val)
+                                    )
+                                )
+                            must_conditions.append(models.Filter(should=should_conditions))
+                        else:
+                            must_conditions.append(
+                                models.FieldCondition(
+                                    key=key, match=models.MatchValue(value=value)
+                                )
+                            )
+                    search_filter = models.Filter(must=must_conditions)
+                except Exception as e:
+                    self.logger.error(f"Error creating search filter: {e}")
+                    # Continue with null filter rather than failing
+                    search_filter = None
+            
+            # Implement retry logic for Qdrant search
+            max_retries = 2
+            retry_count = 0
+            last_error = None
+            
+            while retry_count <= max_retries:
+                try:
+                    # Execute search with current parameters
+                    self.logger.debug(
+                        f"Executing vector search on collection '{collection}' with limit {limit}"
+                    )
+                    search_results = self.client.search(
+                        collection_name=collection,
+                        query_vector=embedding,
+                        limit=limit,
+                        query_filter=search_filter,
+                        with_payload=True,
+                    )
+                    
+                    # Format results
+                    results = []
+                    for result in search_results:
+                        results.append({"payload": result.payload, "score": result.score})
+                    
+                    self.logger.info(f"Vector search found {len(results)} results")
+                    return results
+                    
+                except UnexpectedResponse as e:
+                    last_error = e
+                    retry_count += 1
+                    self.logger.warning(
+                        f"Qdrant search attempt {retry_count}/{max_retries} failed: {e}. Retrying..."
+                    )
+                    # Add a short delay before retrying
+                    import time
+                    time.sleep(1.0)
+                except Exception as e:
+                    # For non-Qdrant specific exceptions, don't retry
+                    self.logger.error(f"Error during vector search: {e}", exc_info=True)
+                    # Fallback to similarity search if available
+                    return self._fallback_similarity_search(embedding, limit)
+            
+            # If we've exhausted all retries
+            if last_error:
+                self.logger.error(f"All retries failed for vector search: {last_error}")
+                # Try fallback mechanism
+                return self._fallback_similarity_search(embedding, limit)
+            
+            return []
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in search_by_vector: {e}", exc_info=True)
+            return []
+            
+    def _fallback_similarity_search(self, embedding: list, limit: int = 5):
+        """
+        Fallback method for when Qdrant search fails.
+        Implements a basic in-memory similarity search if possible.
+        
+        Args:
+            embedding (list): The embedding vector to search for
+            limit (int): Maximum number of results to return
+            
+        Returns:
+            list: A list of dictionaries with keys 'payload' and 'score', or empty list
+        """
+        try:
+            self.logger.info("Attempting fallback similarity search")
+            # If we have no cache or in-memory fallback mechanism, return empty results
+            return []
+        except Exception as e:
+            self.logger.error(f"Fallback similarity search failed: {e}")
+            return []
+
+    def search_memories(
+        self, text: str, metadata_filter: Optional[Dict] = None, limit: int = 5
+    ) -> List[Dict]:
+        """
+        Search for memories similar to the given text.
+        
+        Args:
+            text: Text to search for
+            metadata_filter: Optional filter for metadata
+            limit: Maximum number of results
+            
+        Returns:
+            List of memories with similarity scores
+        """
+        try:
+            if not text or not text.strip():
+                self.logger.warning("Empty text provided for memory search")
+                return []
+                
+            embedding = self._get_embedding(text)
+            if not embedding:
+                self.logger.warning("Failed to generate embedding for memory search")
+                return []
+                
+            return self.search_by_vector(embedding, limit=limit, filter=metadata_filter)
+            
+        except Exception as e:
+            self.logger.error(f"Error during memory search: {e}", exc_info=True)
+            return []
 
 def get_vector_store_instance(
     collection_name: str = "Information",

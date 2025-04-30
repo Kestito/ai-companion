@@ -6,7 +6,6 @@ from typing import List, Optional
 from langchain_core.messages import BaseMessage
 from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field
-from langchain.schema import Document
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
 from ai_companion.modules.memory.long_term.vector_store import get_vector_store
@@ -42,51 +41,57 @@ class MemoryManager:
         self.recent_memories = []  # Cache for recent memories
         self.memory_cache_size = 20  # Number of recent memories to keep in cache
 
-    async def _analyze_memory(self, message: str) -> MemoryAnalysis:
+    async def _analyze_memory(self, message: str, metadata: dict) -> MemoryAnalysis:
         """Analyze a message to determine importance and format if needed."""
         prompt = MEMORY_ANALYSIS_PROMPT.format(message=message)
         return await self.llm.ainvoke(prompt)
 
-    async def add_memory(self, content: str) -> None:
-        """Add a new memory to the vector store with enhanced caching.
-        
+    async def add_memory(self, content: str, metadata: dict) -> None:
+        """Add a human message to long-term memory.
+
         Args:
-            content: The content to store as a memory
+            content: Text content of the message
+            metadata: Must contain patient_id and other context information
         """
+        # Validate required metadata
+        if not metadata or "patient_id" not in metadata:
+            self.logger.error("Missing required patient_id in memory metadata")
+            raise ValueError("Patient ID is required for memory storage")
+
         try:
-            # Track if this is a greeting
-            if "labas" in content.lower():
-                self.has_greeted = True
-                
-            memory_analysis = await self._analyze_memory(content)
-            if memory_analysis.is_important and memory_analysis.formatted_memory:
-                memory_id = str(uuid.uuid4())
-                metadata = {
-                    "id": memory_id,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "type": "conversation_memory",
-                    "is_greeting": "labas" in content.lower(),
-                    "importance_score": 0.8  # Default importance score
+            # Analyze message for importance
+            analysis = await self._analyze_memory(content, metadata)
+
+            # Only store important memories
+            if analysis.is_important:
+                # Use formatted memory if provided, otherwise use original content
+                memory_content = analysis.formatted_memory or content
+
+                # Add timestamp and updated metadata to ensure traceability
+                memory_metadata = {
+                    "id": str(uuid.uuid4()),
+                    "timestamp": datetime.now().isoformat(),
+                    "type": "human_message",
+                    "is_formatted": analysis.formatted_memory is not None,
+                    **metadata,  # Include all provided metadata, especially patient_id
                 }
-                
+
                 # Store in vector store
-                self.vector_store.store_memory(
-                    text=memory_analysis.formatted_memory,
-                    metadata=metadata
+                self.vector_store.store_memory(memory_content, memory_metadata)
+
+                # Also keep in recent memory cache
+                self.recent_memories.append(
+                    {"content": memory_content, "metadata": memory_metadata}
                 )
-                
-                # Add to recent memories cache
-                self.recent_memories.append({
-                    "id": memory_id,
-                    "content": memory_analysis.formatted_memory,
-                    "timestamp": metadata["timestamp"]
-                })
-                
-                # Maintain cache size
+
+                # Limit recent memories cache size
                 if len(self.recent_memories) > self.memory_cache_size:
-                    self.recent_memories.pop(0)
-                
-                self.logger.info(f"Added new memory: {memory_id}")
+                    self.recent_memories.pop(0)  # Remove oldest memory
+
+                self.logger.info(
+                    f"Stored memory for patient {metadata.get('patient_id')}"
+                )
+
         except Exception as e:
             self.logger.error(f"Error adding memory: {e}", exc_info=True)
 
@@ -99,48 +104,71 @@ class MemoryManager:
         if message.type != "human":
             return
 
+        # Extract metadata from message
+        metadata = getattr(message, "metadata", {}) or {}
+
+        # Validate required metadata
+        if "patient_id" not in metadata:
+            self.logger.error("Missing required patient_id in message metadata")
+            return
+
         try:
-            await self.add_memory(message.content)
+            await self.add_memory(message.content, metadata)
         except Exception as e:
             self.logger.error(f"Error extracting memories: {e}", exc_info=True)
 
-    def get_relevant_memories(self, context: str) -> List[str]:
-        """Retrieve relevant memories with enhanced context handling.
-        
-        This method combines vector search with recent memory cache for better context retention.
+    def get_relevant_memories(self, context: str, patient_id: str) -> List[str]:
+        """Retrieve relevant memories with patient context isolation.
+
+        Args:
+            context: The query or context to find relevant memories for
+            patient_id: The patient ID to filter memories by (REQUIRED)
+
+        Returns:
+            List of relevant memories for this patient only
         """
+        if not patient_id:
+            self.logger.error("Patient ID is required for memory retrieval")
+            return []
+
         memories = []
-        
-        # First, check recent memories cache
+
+        # First, check recent memories cache (filtered by patient_id)
         for memory in reversed(self.recent_memories):  # Most recent first
-            memories.append(memory["content"])
-        
-        # Then get relevant memories from vector store
+            memory_patient_id = memory.get("metadata", {}).get("patient_id")
+            if memory_patient_id == patient_id:
+                memories.append(memory["content"])
+
+        # Then get relevant memories from vector store (with patient filter)
+        filter_conditions = {"patient_id": patient_id}
         vector_memories = self.vector_store.search_memories(
-            context, 
-            k=max(1, settings.MEMORY_TOP_K - len(memories))
+            context,
+            k=max(1, settings.MEMORY_TOP_K - len(memories)),
+            filter_conditions=filter_conditions,
         )
-        
+
         # Combine and deduplicate memories
         seen = set()
         combined_memories = []
-        
+
         for memory in memories + [m.text for m in vector_memories]:
             if memory not in seen:
                 combined_memories.append(memory)
                 seen.add(memory)
-        
+
         if combined_memories:
             for memory in combined_memories:
-                self.logger.debug(f"Retrieved memory: {memory[:100]}...")
-                
-        return combined_memories[:settings.MEMORY_TOP_K]
+                self.logger.debug(
+                    f"Retrieved memory for patient {patient_id}: {memory[:100]}..."
+                )
+
+        return combined_memories[: settings.MEMORY_TOP_K]
 
     def format_memories_for_prompt(self, memories: List[str]) -> str:
         """Format retrieved memories as bullet points with enhanced context."""
         if not memories:
             return ""
-        
+
         formatted_memories = []
         for i, memory in enumerate(memories):
             # Add recency indicator for cached memories
@@ -148,7 +176,7 @@ class MemoryManager:
                 formatted_memories.append(f"[Recent] - {memory}")
             else:
                 formatted_memories.append(f"- {memory}")
-                
+
         return "\n".join(formatted_memories)
 
 

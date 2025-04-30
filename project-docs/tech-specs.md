@@ -23,12 +23,12 @@ The application supports:
 
 ## Technology Stack
 
-- **Backend**: Python with FastAPI
+- **Backend**: Python with asyncio for concurrent operations
 - **Frontend**: Next.js, React, TailwindCSS
-- **Database**: PostgreSQL (via Supabase)
-- **AI/ML**: OpenAI, Azure OpenAI models
-- **Memory**: Supabase for conversation history
-- **Deployment**: Docker containers on Azure Container Apps
+- **Database**: Supabase (PostgreSQL)
+- **APIs**: OpenAI (Azure), Telegram Bot API
+- **Memory Management**: LangChain and Vector Store
+- **Graph Processing**: LangGraph for workflow management
 
 ## Container Design
 
@@ -96,3 +96,53 @@ The application includes a Telegram message scheduling system that allows health
 - **Processor**: 
   - `scheduled_message_processor.py` - Background service that checks for and sends pending messages
   - Runs as a separate Azure Container App 
+
+## Database Structure
+
+### Key Tables
+
+#### Patients Table
+
+- Stores patient information and cross-platform identifiers
+- Key fields:
+  - `id`: Primary key
+  - `telegram_id`: Telegram user ID 
+  - `whatsapp_id`: WhatsApp user ID
+  - `web_id`: Web platform user ID
+  - `platform_data`: JSONB field for additional platform data
+  - Other patient information fields (name, date_of_birth, etc.)
+
+#### Memories Table
+
+- Stores conversation history and important memory points
+- Patient isolation through `patient_id` field for privacy
+- Vector embeddings for semantic search
+
+#### Scheduled Messages Table
+
+- Stores messages to be sent at future times
+- Supports recurrence patterns for repeating messages
+- Links to patients through `patient_id`
+
+## Cross-Platform User Identification
+
+The system uses a unified patient identification approach across platforms:
+
+1. When a user interacts via any platform (Telegram, WhatsApp, Web), their platform-specific ID is stored in the corresponding field in the patients table
+2. The `get_patient_id_from_platform_id` function in `nodes.py` retrieves or creates patient records based on platform identifiers
+3. All memory operations are isolated by patient_id to ensure privacy and data separation
+
+## Memory Management Architecture
+
+Memory operations require a `patient_id` to ensure proper isolation:
+
+1. `memory_injection_node` retrieves relevant memories for the current conversation
+2. `memory_extraction_node` extracts important details from current messages to store
+3. Both use the platform ID to retrieve the appropriate patient ID
+
+## Development Conventions
+
+- Asynchronous code using Python's asyncio
+- Error handling with proper logging
+- Configuration via environment variables
+- Memory isolation by patient ID 

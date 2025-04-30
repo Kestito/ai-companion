@@ -35,22 +35,23 @@ class MemoryService:
         self.supabase = get_supabase_client()
 
     async def get_session_memory(
-        self, platform: str, user_id: str, limit: int = 10
+        self, platform: str, user_id: str, patient_id: str, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve session memory for a specific platform and user.
+        Retrieve session memory for a specific platform, user and patient.
 
         Args:
             platform: The platform identifier (e.g., "telegram", "whatsapp")
             user_id: The user identifier on the platform
+            patient_id: The patient identifier (REQUIRED)
             limit: Maximum number of memories to retrieve
 
         Returns:
             List of memory entries as dictionaries
         """
         try:
-            # Create session ID in the same format used when storing
-            session_id = f"{platform}-{user_id}"
+            # Create session ID with patient context
+            session_id = f"{platform}-{user_id}-patient-{patient_id}"
 
             # Get messages from cache first
             cached_messages = await self.short_term_memory.get_cached_messages(
@@ -137,16 +138,18 @@ class MemoryService:
         self,
         platform: str,
         user_id: str,
+        patient_id: str,  # Now required
         state: Optional[Dict[str, Any]] = None,
         conversation: Optional[Dict[str, str]] = None,
         ttl_minutes: int = 1440,  # Default to 24 hours (1440 minutes)
     ) -> str:
         """
-        Store session memory for a specific platform and user.
+        Store session memory for a specific platform, user and patient.
 
         Args:
             platform: The platform identifier (e.g., "telegram", "whatsapp")
             user_id: The user identifier on the platform
+            patient_id: The patient identifier (REQUIRED)
             state: Optional graph state to store
             conversation: Optional conversation data (user_message and bot_response)
             ttl_minutes: Time-to-live in minutes for the memory (default: 24 hours)
@@ -155,14 +158,15 @@ class MemoryService:
             ID of the stored memory
         """
         try:
-            # Create session ID using consistent format
-            session_id = f"{platform}-{user_id}"
+            # Create session ID using consistent format with patient context
+            session_id = f"{platform}-{user_id}-patient-{patient_id}"
 
             # Create metadata
             metadata = {
                 "session_id": session_id,
                 "user_id": user_id,
                 "platform": platform,
+                "patient_id": patient_id,  # Always include patient_id
             }
 
             # Create context object
@@ -174,11 +178,20 @@ class MemoryService:
                     "user_message": conversation.get("user_message", ""),
                     "bot_response": conversation.get("bot_response", ""),
                     "timestamp": datetime.now().isoformat(),
+                    "patient_id": patient_id,  # Include patient context in conversation
                 }
 
                 # Also analyze for long-term memory if there's a user message
                 if conversation.get("user_message"):
-                    await self.long_term_memory.add_memory(conversation["user_message"])
+                    # Pass patient context to long-term memory
+                    await self.long_term_memory.add_memory(
+                        conversation["user_message"],
+                        {
+                            "patient_id": patient_id,
+                            "user_id": user_id,
+                            "platform": platform,
+                        },
+                    )
 
             # Store in short-term memory
             memory = await self.short_term_memory.store_with_cache(
@@ -342,6 +355,7 @@ class MemoryService:
                 await self.store_session_memory(
                     platform=platform,
                     user_id=user_id,
+                    patient_id=parts[2] if len(parts) > 2 else "unknown",
                     state=graph_state,
                     conversation=conversation,
                     ttl_minutes=1440,  # 24 hours default
