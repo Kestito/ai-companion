@@ -450,6 +450,106 @@ function Test-Admin {
     $currentUser.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
+# Function to build optimized backend Docker image for Azure
+function Build-OptimizedBackendImage {
+    param (
+        [string]$Tag
+    )
+    
+    Write-ColorOutput -Message "Building optimized backend Docker image for Azure deployment" -Color Yellow -Prefix "→"
+    
+    # Set BuildKit environment variable for better builds
+    $env:DOCKER_BUILDKIT = "1"
+    
+    # Build the optimized backend image with cache optimization
+    docker build `
+        --build-arg BUILDKIT_INLINE_CACHE=1 `
+        --cache-from ${ACR_NAME}.azurecr.io/${IMAGE_NAME}:cache `
+        -t "${IMAGE_NAME}:${Tag}" `
+        -f $OPTIMIZED_BACKEND_DOCKERFILE_PATH .
+    
+    if (-not (Test-CommandSuccess -SuccessMessage "Optimized backend Docker image built successfully" -ErrorMessage "Failed to build backend Docker image")) {
+        return $false
+    }
+    
+    # Tag the backend image for ACR
+    docker tag "${IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${Tag}"
+    if (-not (Test-CommandSuccess -SuccessMessage "Backend Docker image tagged successfully" -ErrorMessage "Failed to tag backend Docker image")) {
+        return $false
+    }
+    
+    # Also tag as cache for future builds
+    docker tag "${IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:cache"
+    
+    # Push the backend image to ACR
+    docker push "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${Tag}"
+    docker push "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:cache"
+    
+    if (-not (Test-CommandSuccess -SuccessMessage "Backend Docker image pushed to ACR successfully" -ErrorMessage "Failed to push backend Docker image to ACR")) {
+        return $false
+    }
+    
+    $script:backendImageExists = $true
+    return $true
+}
+
+# Function to build optimized frontend Docker image for Azure
+function Build-OptimizedFrontendImage {
+    param (
+        [string]$Tag,
+        [string]$BackendUrl
+    )
+    
+    Write-ColorOutput -Message "Building optimized frontend Docker image for Azure deployment" -Color Yellow -Prefix "→"
+    
+    # Set BuildKit environment variable for better builds
+    $env:DOCKER_BUILDKIT = "1"
+    
+    # Create a single-line Docker build command that PowerShell can understand
+    $dockerBuildCmd = "docker build " + 
+        "--build-arg BUILDKIT_INLINE_CACHE=1 " +
+        "--cache-from ${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:cache " +
+        "--build-arg NEXT_PUBLIC_SUPABASE_URL=`"https://aubulhjfeszmsheonmpy.supabase.co`" " + 
+        "--build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=`"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q7Q`" " + 
+        "--build-arg NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=`"https://ai-kestutis9429ai265477517797.openai.azure.com`" " + 
+        "--build-arg NEXT_PUBLIC_AZURE_OPENAI_API_KEY=`"Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl`" " + 
+        "--build-arg NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=`"gpt-4o`" " + 
+        "--build-arg NEXT_PUBLIC_EMBEDDING_MODEL=`"text-embedding-3-small`" " + 
+        "--build-arg NEXT_PUBLIC_LLM_MODEL=`"gpt-4o`" " + 
+        "--build-arg NEXT_PUBLIC_COLLECTION_NAME=`"Information`" " + 
+        "--build-arg NEXT_PUBLIC_API_URL=`"$BackendUrl`" " + 
+        "-t `"${WEB_UI_IMAGE_NAME}:${Tag}`" " + 
+        "-f `"$OPTIMIZED_FRONTEND_DOCKERFILE_PATH`" " +
+        "`"$FRONTEND_SRC_PATH`""
+    
+    # Execute the Docker build command
+    Invoke-Expression $dockerBuildCmd
+    
+    if (-not (Test-CommandSuccess -SuccessMessage "Optimized frontend Docker image built successfully" -ErrorMessage "Failed to build frontend Docker image")) {
+        return $false
+    }
+    
+    # Tag the frontend image for ACR
+    docker tag "${WEB_UI_IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${Tag}"
+    if (-not (Test-CommandSuccess -SuccessMessage "Frontend Docker image tagged successfully" -ErrorMessage "Failed to tag frontend Docker image")) {
+        return $false
+    }
+    
+    # Also tag as cache for future builds
+    docker tag "${WEB_UI_IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:cache"
+    
+    # Push the frontend image to ACR
+    docker push "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${Tag}"
+    docker push "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:cache"
+    
+    if (-not (Test-CommandSuccess -SuccessMessage "Frontend Docker image pushed to ACR successfully" -ErrorMessage "Failed to push frontend Docker image to ACR")) {
+        return $false
+    }
+    
+    $script:frontendImageExists = $true
+    return $true
+}
+
 # Function to check scheduled messages
 function Check-ScheduledMessages {
     [CmdletBinding()]
@@ -2134,103 +2234,3 @@ Write-Host ""
 Write-Host "Example: .\deploy.ps1 -CheckScheduledMessages -FixScheduledMessages -AutoConfirm"
 
 Write-ColorOutput -Message "Deployment process completed" -Color Yellow -Prefix "🏁"
-
-# Function to build optimized backend Docker image for Azure
-function Build-OptimizedBackendImage {
-    param (
-        [string]$Tag
-    )
-    
-    Write-ColorOutput -Message "Building optimized backend Docker image for Azure deployment" -Color Yellow -Prefix "→"
-    
-    # Set BuildKit environment variable for better builds
-    $env:DOCKER_BUILDKIT = "1"
-    
-    # Build the optimized backend image with cache optimization
-    docker build `
-        --build-arg BUILDKIT_INLINE_CACHE=1 `
-        --cache-from ${ACR_NAME}.azurecr.io/${IMAGE_NAME}:cache `
-        -t "${IMAGE_NAME}:${Tag}" `
-        -f $OPTIMIZED_BACKEND_DOCKERFILE_PATH .
-    
-    if (-not (Test-CommandSuccess -SuccessMessage "Optimized backend Docker image built successfully" -ErrorMessage "Failed to build backend Docker image")) {
-        return $false
-    }
-    
-    # Tag the backend image for ACR
-    docker tag "${IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${Tag}"
-    if (-not (Test-CommandSuccess -SuccessMessage "Backend Docker image tagged successfully" -ErrorMessage "Failed to tag backend Docker image")) {
-        return $false
-    }
-    
-    # Also tag as cache for future builds
-    docker tag "${IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:cache"
-    
-    # Push the backend image to ACR
-    docker push "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${Tag}"
-    docker push "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:cache"
-    
-    if (-not (Test-CommandSuccess -SuccessMessage "Backend Docker image pushed to ACR successfully" -ErrorMessage "Failed to push backend Docker image to ACR")) {
-        return $false
-    }
-    
-    $script:backendImageExists = $true
-    return $true
-}
-
-# Function to build optimized frontend Docker image for Azure
-function Build-OptimizedFrontendImage {
-    param (
-        [string]$Tag,
-        [string]$BackendUrl
-    )
-    
-    Write-ColorOutput -Message "Building optimized frontend Docker image for Azure deployment" -Color Yellow -Prefix "→"
-    
-    # Set BuildKit environment variable for better builds
-    $env:DOCKER_BUILDKIT = "1"
-    
-    # Create a single-line Docker build command that PowerShell can understand
-    $dockerBuildCmd = "docker build " + 
-        "--build-arg BUILDKIT_INLINE_CACHE=1 " +
-        "--cache-from ${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:cache " +
-        "--build-arg NEXT_PUBLIC_SUPABASE_URL=`"https://aubulhjfeszmsheonmpy.supabase.co`" " + 
-        "--build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=`"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyODc0MTIsImV4cCI6MjA1MDg2MzQxMn0.2u5v5XoHTHr4H0lD3W4qN3n7Z7X9jKj3Y7Q7Q7Q7Q7Q7Q7Q`" " + 
-        "--build-arg NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=`"https://ai-kestutis9429ai265477517797.openai.azure.com`" " + 
-        "--build-arg NEXT_PUBLIC_AZURE_OPENAI_API_KEY=`"Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl`" " + 
-        "--build-arg NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=`"gpt-4o`" " + 
-        "--build-arg NEXT_PUBLIC_EMBEDDING_MODEL=`"text-embedding-3-small`" " + 
-        "--build-arg NEXT_PUBLIC_LLM_MODEL=`"gpt-4o`" " + 
-        "--build-arg NEXT_PUBLIC_COLLECTION_NAME=`"Information`" " + 
-        "--build-arg NEXT_PUBLIC_API_URL=`"$BackendUrl`" " + 
-        "-t `"${WEB_UI_IMAGE_NAME}:${Tag}`" " + 
-        "-f `"$OPTIMIZED_FRONTEND_DOCKERFILE_PATH`" " +
-        "`"$FRONTEND_SRC_PATH`""
-    
-    # Execute the Docker build command
-    Invoke-Expression $dockerBuildCmd
-    
-    if (-not (Test-CommandSuccess -SuccessMessage "Optimized frontend Docker image built successfully" -ErrorMessage "Failed to build frontend Docker image")) {
-        return $false
-    }
-    
-    # Tag the frontend image for ACR
-    docker tag "${WEB_UI_IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${Tag}"
-    if (-not (Test-CommandSuccess -SuccessMessage "Frontend Docker image tagged successfully" -ErrorMessage "Failed to tag frontend Docker image")) {
-        return $false
-    }
-    
-    # Also tag as cache for future builds
-    docker tag "${WEB_UI_IMAGE_NAME}:${Tag}" "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:cache"
-    
-    # Push the frontend image to ACR
-    docker push "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:${Tag}"
-    docker push "${ACR_NAME}.azurecr.io/${WEB_UI_IMAGE_NAME}:cache"
-    
-    if (-not (Test-CommandSuccess -SuccessMessage "Frontend Docker image pushed to ACR successfully" -ErrorMessage "Failed to push frontend Docker image to ACR")) {
-        return $false
-    }
-    
-    $script:frontendImageExists = $true
-    return $true
-}
