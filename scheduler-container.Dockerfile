@@ -1,5 +1,5 @@
 # Build stage
-FROM mcr.microsoft.com/azure-functions/python:3.9-python3.9 AS builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     uvicorn \
     pydantic-settings \
     pydantic \
-    && find /usr/local/lib/python3.9/site-packages -name "__pycache__" -type d -exec rm -rf {} +
+    && find /usr/local/lib/python3.11/site-packages -name "__pycache__" -type d -exec rm -rf {} +
 
 # Create Python package structure
 RUN mkdir -p /app/src
@@ -39,7 +39,7 @@ python -m src.ai_companion.modules.scheduled_messaging.processor\n\
 RUN mkdir -p /app/src/ai_companion/modules/scheduled_messaging/handlers /app/logs
 
 # Runtime stage with minimal dependencies
-FROM mcr.microsoft.com/azure-functions/python:3.9-python3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -51,7 +51,7 @@ ENV PYTHONPATH=/app \
     AZURE_FUNCTIONS_ENVIRONMENT=Production
 
 # Copy only necessary files from builder stage
-COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
 COPY --from=builder /app/logs /app/logs
@@ -68,18 +68,28 @@ def health_check():\n\
 if __name__ == "__main__":\n\
     import uvicorn\n\
     uvicorn.run(app, host="0.0.0.0", port=8080)\n\
-' > /app/src/health/app.py && \
-    echo '#!/bin/bash\n\
+' > /app/src/health/app.py
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
 python -m src.health.app &\n\
 exec /app/entrypoint.sh\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
-# Expose port for health API
+# Copy source code
+COPY src /app/src/
+
+# Set environment variables
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    SCM_DO_BUILD_DURING_DEPLOYMENT=true
+
+# Expose health check port
 EXPOSE 8080
 
-# Health check for Azure App Service
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
-# Use startup script that includes health endpoint
+# Run command
 CMD ["/app/start.sh"] 

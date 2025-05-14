@@ -4,8 +4,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
 from ai_companion.utils.supabase import get_supabase_client
+from ai_companion.settings import settings
 
+# Configure scheduler-specific logger
 logger = logging.getLogger(__name__)
+scheduler_log_level = getattr(logging, settings.SCHEDULER_LOG_LEVEL, logging.ERROR)
+logger.setLevel(scheduler_log_level)
 
 
 class ScheduledMessageService:

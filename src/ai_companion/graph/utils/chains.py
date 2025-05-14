@@ -97,6 +97,13 @@ def get_character_response_chain(summary: str = ""):
     4. Keep responses factual and grounded in the available knowledge
     5. Maintain personality while staying true to the retrieved information
     
+    FORMATTING INSTRUCTIONS:
+    - When using information directly retrieved from documents, start those sentences with [RAG]
+    - When generating your own explanations or transitional text, start those sentences with [AI]
+    - Every sentence or paragraph in your response must start with either [RAG] or [AI]
+    - Preserve any [RAG] or [AI] tags that already exist in the context
+    - The final line of your response MUST end with either [RAG] or [AI] based on the type of information in that line
+    
     Current Activity Context: {current_activity}
     Memory Context: {memory_context}
 
@@ -104,6 +111,8 @@ def get_character_response_chain(summary: str = ""):
     1. Only use information from the RAG system or conversation history
     2. Be transparent about knowledge limitations
     3. Suggest seeking more information when needed
+    4. Always use the [RAG] prefix for retrieved information and [AI] for your own content
+    5. Ensure your response ends with either [RAG] or [AI]
     """
 
     prompt = ChatPromptTemplate.from_messages(

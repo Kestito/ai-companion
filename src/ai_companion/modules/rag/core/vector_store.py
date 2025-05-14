@@ -2,7 +2,7 @@
 
 from typing import List, Optional, Dict, Any, Tuple
 from langchain_openai import AzureOpenAIEmbeddings
-from langchain.schema import Document
+from langchain_core.documents import Document
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from supabase import create_client
@@ -11,7 +11,8 @@ import logging
 import asyncio
 import re
 import time
-from openai.error import RateLimitError, InvalidRequestError
+from openai import RateLimitError, BadRequestError  # Updated import for OpenAI v1.x
+from ai_companion.settings import settings
 
 
 # Configure logging
@@ -37,23 +38,25 @@ class VectorStoreRetriever:
             # Initialize embeddings
             self.embeddings = AzureOpenAIEmbeddings(
                 azure_deployment=embedding_deployment
-                or os.getenv("AZURE_EMBEDDING_DEPLOYMENT"),
-                model=embedding_model or os.getenv("EMBEDDING_MODEL"),
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-                api_version="2023-05-15",
+                or settings.AZURE_EMBEDDING_DEPLOYMENT,
+                model=embedding_model or settings.FALLBACK_EMBEDDING_MODEL,  # Use FALLBACK_EMBEDDING_MODEL from settings
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_EMBEDDING_API_VERSION,  # Use API version from settings
             )
 
             # Initialize Qdrant client
             self.client = QdrantClient(
-                url=os.getenv("QDRANT_URL"),
-                api_key=os.getenv("QDRANT_API_KEY"),
+                url=settings.QDRANT_URL,
+                # Use the new working API key directly for now
+                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.cdTvd4mc74giwx-ypkE8t4muYvpQqLqkc5P6IXuJAOw",
                 timeout=60,
+                check_compatibility=False,
             )
 
             # Initialize Supabase client
             self.supabase = create_client(
-                os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
+                settings.SUPABASE_URL, settings.SUPABASE_KEY
             )
 
             logger.info(
@@ -70,7 +73,7 @@ class VectorStoreRetriever:
             self.client = None
             self.supabase = None
 
-    def _get_embedding(self, text: str) -> List[float]:
+    async def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding for text using Azure OpenAI."""
         if not text or len(text.strip()) == 0:
             self.logger.warning("Attempted to get embedding for empty text")
@@ -78,6 +81,8 @@ class VectorStoreRetriever:
 
         if not self.embeddings or not self._initialized:
             self.logger.error("Azure OpenAI client not properly initialized")
+            self.logger.error(f"Embeddings object: {self.embeddings}")
+            self.logger.error(f"Initialization status: {self._initialized}")
             return []
 
         try:
@@ -97,18 +102,27 @@ class VectorStoreRetriever:
                         self.logger.info(f"Rate limited, waiting {delay}s before retry")
                         time.sleep(delay)
 
-                    # Get embedding from Azure OpenAI
-                    embedding = self.embeddings.aembed_query(text)
+                    # Get embedding from Azure OpenAI - properly await the coroutine
+                    embedding_result = await self.embeddings.aembed_query(text)
 
-                    if (
-                        not embedding
-                        or not hasattr(embedding, "embeddings")
-                        or len(embedding.embeddings) == 0
-                    ):
-                        self.logger.error("Azure OpenAI returned empty embedding")
+                    # Check if embedding_result is already a list (direct embedding vector)
+                    if isinstance(embedding_result, list):
+                        if embedding_result:
+                            self.logger.info(f"Got embedding with {len(embedding_result)} dimensions")
+                            return embedding_result
+                        else:
+                            self.logger.error("Azure OpenAI returned empty embedding list")
+                            return []
+                    
+                    # If not a list, could be older format with embeddings attribute
+                    elif hasattr(embedding_result, "embeddings") and embedding_result.embeddings and len(embedding_result.embeddings) > 0:
+                        self.logger.info(f"Using embeddings attribute with {len(embedding_result.embeddings[0])} dimensions")
+                        return embedding_result.embeddings[0]
+                    
+                    # Unknown format
+                    else:
+                        self.logger.error(f"Unknown embedding result format: {type(embedding_result)}")
                         return []
-
-                    return embedding.embeddings[0] if embedding else []
 
                 except RateLimitError as rle:
                     # Extract retry-after if available
@@ -119,7 +133,7 @@ class VectorStoreRetriever:
                     )
                     continue
 
-                except InvalidRequestError as ire:
+                except BadRequestError as ire:
                     # Handle token limits or other invalid requests
                     if "token" in str(ire).lower():
                         # Further truncate and try again
@@ -174,7 +188,7 @@ class VectorStoreRetriever:
                     return []
 
                 # Get query embedding
-                query_embedding = self._get_embedding(query)
+                query_embedding = await self._get_embedding(query)
                 if not query_embedding:
                     self.logger.error("Failed to generate embedding for query")
                     return []
@@ -581,7 +595,7 @@ class VectorStoreRetriever:
                 )
                 return []
 
-    def search_by_vector(
+    async def search_by_vector(
         self,
         embedding: list,
         collection: str,
@@ -691,9 +705,7 @@ class VectorStoreRetriever:
                         f"Qdrant search attempt {retry_count}/{max_retries} failed: {e}. Retrying..."
                     )
                     # Add a short delay before retrying
-                    import time
-
-                    time.sleep(1.0)
+                    await asyncio.sleep(1.0)
                 except Exception as e:
                     # For non-Qdrant specific exceptions, don't retry
                     self.logger.error(f"Error during vector search: {e}", exc_info=True)
@@ -734,34 +746,37 @@ class VectorStoreRetriever:
             self.logger.error(f"Fallback similarity search failed: {e}")
             return []
 
-    def search_memories(
+    async def search_memories(
         self, text: str, metadata_filter: Optional[Dict] = None, limit: int = 5
     ) -> List[Dict]:
         """
-        Search for memories similar to the given text.
+        Search memory collection for relevant memories.
 
         Args:
-            text: Text to search for
-            metadata_filter: Optional filter for metadata
-            limit: Maximum number of results
+            text: The text to search for
+            metadata_filter: Optional filter to apply to the search
+            limit: Maximum number of results to return
 
         Returns:
-            List of memories with similarity scores
+            A list of memory items
         """
-        try:
-            if not text or not text.strip():
-                self.logger.warning("Empty text provided for memory search")
-                return []
+        if not text or not text.strip():
+            logger.warning("Empty text provided to search_memories")
+            return []
 
-            embedding = self._get_embedding(text)
+        try:
+            # Get the text embedding
+            embedding = await self._get_embedding(text)
             if not embedding:
                 self.logger.warning("Failed to generate embedding for memory search")
                 return []
 
-            return self.search_by_vector(embedding, limit=limit, filter=metadata_filter)
+            # Search the memory collection
+            search_results = self._fallback_similarity_search(embedding, limit)
+            return search_results
 
         except Exception as e:
-            self.logger.error(f"Error during memory search: {e}", exc_info=True)
+            logger.error(f"Error searching memories: {e}", exc_info=True)
             return []
 
 

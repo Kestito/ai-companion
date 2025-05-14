@@ -1,0 +1,23 @@
+{
+  "total_queries": 0,
+  "successful_queries": 0,
+  "failed_queries": 0,
+  "verified_responses": 0,
+  "insufficient_info": 0,
+  "validation_failures": 0,
+  "error_types": {
+    "insufficient_info": 0,
+    "query_processing": 0,
+    "retrieval": 0,
+    "response_generation": 0,
+    "system": 0
+  },
+  "performance": {
+    "avg_query_time": 0.0,
+    "avg_retrieval_time": 0.0,
+    "avg_response_time": 0.0
+  },
+  "hourly_stats": {},
+  "daily_stats": {},
+  "last_updated": "2025-05-12T11:12:43.114413"
+}

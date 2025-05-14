@@ -105,12 +105,14 @@ The application includes a Telegram message scheduling system that allows health
 
 - Stores patient information and cross-platform identifiers
 - Key fields:
-  - `id`: Primary key
-  - `telegram_id`: Telegram user ID 
-  - `whatsapp_id`: WhatsApp user ID
-  - `web_id`: Web platform user ID
-  - `platform_data`: JSONB field for additional platform data
-  - Other patient information fields (name, date_of_birth, etc.)
+  - `id`: Primary key (UUID) used for cross-platform identification  
+  - `system_id`: Standardized identifier in format `platform:platform_id` (e.g., `telegram:12345678`)
+  - `channel`: Platform identifier (telegram, whatsapp, web)
+  - `risk`: Risk assessment level
+  - `email`: JSONB field containing platform-specific data and identifiers
+  - Other patient information fields (first_name, last_name, etc.)
+
+Note: Platform-specific IDs are stored in the `email` field as a JSON object since the dedicated `platform_data` field is not available in the current schema.
 
 #### Memories Table
 
@@ -128,9 +130,12 @@ The application includes a Telegram message scheduling system that allows health
 
 The system uses a unified patient identification approach across platforms:
 
-1. When a user interacts via any platform (Telegram, WhatsApp, Web), their platform-specific ID is stored in the corresponding field in the patients table
-2. The `get_patient_id_from_platform_id` function in `nodes.py` retrieves or creates patient records based on platform identifiers
-3. All memory operations are isolated by patient_id to ensure privacy and data separation
+1. When a user interacts via any platform (Telegram, WhatsApp, Web), a standardized `system_id` is created combining platform name and ID (`platform:platform_id`)
+2. The `get_patient_id_from_platform_id` function first checks for patients by `system_id` for most efficient lookups
+3. If `system_id` is not available (e.g., in older database schemas), the function dynamically adapts and falls back to platform-specific ID fields
+4. Patient records are automatically created with appropriate identifiers when a new user is detected
+5. The system is designed to handle database schema variations and gracefully adapt to missing fields
+6. All memory operations are isolated by patient_id to ensure privacy and data separation
 
 ## Memory Management Architecture
 
@@ -146,3 +151,60 @@ Memory operations require a `patient_id` to ensure proper isolation:
 - Error handling with proper logging
 - Configuration via environment variables
 - Memory isolation by patient ID 
+
+## Memory Management
+
+### Short-Term Memory
+The application now uses Supabase exclusively for short-term memory storage. Previous versions used a combination of in-memory cache and SQLite database, but this has been updated to use only Supabase for better reliability, scalability, and to avoid local file system dependencies.
+
+Key changes:
+- Removed SQLite database file creation from `settings.py`
+- Set `SHORT_TERM_MEMORY_DB_PATH` to ":memory:" by default
+- Updated Telegram bot to remove checkpoint directory functionality
+- Ensured `use_supabase_only: True` flag is set in LangGraph configurations
+
+All memory operations require a `patient_id` parameter to ensure proper context isolation between different patients, even when they interact through the same platform account. The application automatically:
+1. Retrieves the appropriate patient_id from the patients table using the platform ID (telegram_id, whatsapp_id, etc.)
+2. Creates a new patient record if one doesn't exist for the given platform ID
+3. Uses the patient_id to store and retrieve memory entries in a way that maintains separate conversation contexts
+
+This change improves deployment flexibility and removes the dependency on local file system access for memory persistence.
+
+## Logging Configuration
+
+The application uses Python's built-in logging framework with customized configuration for different components:
+
+### Main Application Logging
+- Controlled by `LOGGING_LEVEL` environment variable
+- Default level is INFO for most components
+- Can be set to DEBUG, INFO, WARNING, ERROR, or CRITICAL
+- HTTP client libraries (httpx, urllib3, httpcore) are set to WARNING level to reduce noise
+
+### Scheduler Logging
+- Controlled by `SCHEDULER_LOG_LEVEL` environment variable
+- Default level is ERROR to hide most scheduler-related logs
+- Can be set to DEBUG, INFO, WARNING, ERROR, or CRITICAL
+- Affects scheduler worker and scheduled message service components
+- Set to INFO or DEBUG only when troubleshooting scheduler issues
+
+### Additional Logging Controls
+- `DEBUG` boolean flag for enabling/disabling debug mode
+- `VERBOSE` boolean flag for more verbose output in some components
+
+## Development Methods
+
+- **API-First Design**: APIs are designed before implementation
+- **Modular Architecture**: Components are modular for better maintainability
+- **Test-Driven Development**: Tests are written for critical components
+- **Continuous Integration**: Code is integrated and tested continuously 
+
+## Module Structure
+
+### Graph System Structure
+The graph system follows this module structure:
+- `ai_companion.graph.graph`: Contains the main graph definition and workflow
+- `ai_companion.graph.nodes`: Contains all node implementations including utility functions like get_patient_id_from_platform_id
+- `ai_companion.graph.edges`: Contains edge conditions and transition logic
+- `ai_companion.graph.state`: Defines the state model for the graph
+
+Important note: All node implementations are in the `ai_companion.graph.nodes` module, **not** in a utils subfolder 

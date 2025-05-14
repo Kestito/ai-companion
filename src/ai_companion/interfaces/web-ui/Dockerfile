@@ -48,8 +48,8 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 # Build the application
 RUN npm run build
 
-# Production stage - Use Azure specific base image
-FROM mcr.microsoft.com/appsvc/node:18-lts AS runner
+# Production stage - Use Node.js official image
+FROM node:18-alpine AS runner
 WORKDIR /app
 
 # Set environment variables

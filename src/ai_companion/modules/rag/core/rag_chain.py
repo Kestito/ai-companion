@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple, AsyncIterator, Any
 from langchain_openai import AzureChatOpenAI
-from langchain.schema import Document
-from langchain.prompts import PromptTemplate
+from langchain_core.documents import Document
+from langchain_core.prompts import PromptTemplate
 import os
 import logging
 from datetime import datetime, timedelta
@@ -422,26 +422,31 @@ class LithuanianRAGChain:
         self,
         query: str,
         memory_context: str = "",
-        max_retries: int = 3,
+        max_retries: int = 0,
         min_confidence: float = 0.7,
         detailed: bool = False,
         with_citations: bool = True,
+        platform: str = "",  # Platform parameter
         **kwargs
     ) -> Tuple[str, List[Document]]:
         """Process a query and generate a response with Lithuanian support.
         
         Args:
             query: User query
-            memory_context: Additional context from conversation history and memory
-            max_retries: Maximum number of retry attempts
-            min_confidence: Minimum confidence score for document relevance
+            memory_context: Combined conversation history and memory context
+            max_retries: Maximum number of retries for failed retrievals
+            min_confidence: Minimum confidence threshold for document relevance
             detailed: Whether to generate a detailed response
             with_citations: Whether to include citations in the response
+            platform: The platform where the query is coming from (e.g., "telegram")
             **kwargs: Additional parameters
             
         Returns:
-            Tuple of (response text, list of relevant documents)
+            Tuple of (response_text, retrieved_documents)
         """
+        self.query_count += 1
+        start_time = datetime.now()
+        
         try:
             # Process query with context
             query_result = await self.query_processor.process_query(
@@ -451,33 +456,55 @@ class LithuanianRAGChain:
             
             if not query_result['success']:
                 self.logger.error(f"Query processing failed: {query_result.get('error', 'Unknown error')}")
-                return "I apologize, but I encountered an error processing your query. Could you please rephrase or try again?", []
+                error_response = "[AI] I apologize, but I encountered an error processing your query. Could you please rephrase or try again? [AI]"
+                
+                # Remove tags for Telegram
+                if platform.lower() == 'telegram':
+                    import re
+                    error_response = re.sub(r'\[RAG\]\s*', '', error_response)
+                    error_response = re.sub(r'\[AI\]\s*', '', error_response)
+                    error_response = re.sub(r'\s*\[RAG\]', '', error_response)
+                    error_response = re.sub(r'\s*\[AI\]', '', error_response)
+                    error_response = error_response.replace('[RAG]', '')
+                    error_response = error_response.replace('[AI]', '')
+                
+                return error_response, []
             
-            # Get relevant documents using hybrid search
-            search_results = await self.retriever.hybrid_search(
+            # Set platform attribute on response generator for proper tag handling
+            self.response_generator.platform = platform
+            
+            # Get response from pre-processed documents
+            response_text = await self.response_generator.generate_response(
                 query=query_result['enhanced_query'],
-                docs=await self._retrieve_documents(query_result['variations'], min_confidence=min_confidence),
-                min_score=min_confidence,
-                **kwargs
-            )
-            
-            relevant_docs = [doc for doc, _ in search_results]
-            
-            # Generate response considering full context
-            response = await self.response_generator.generate_response(
-                query=query,
-                documents=relevant_docs,
-                context=memory_context,  # Pass full context for response generation
+                documents=await self._retrieve_documents(query_result['variations'], min_confidence=min_confidence),
+                context=memory_context,
+                organized_docs=None,
+                citations=None,
                 detailed=detailed,
-                with_citations=with_citations,
+                platform=platform,  # Pass platform to response generator
                 **kwargs
             )
             
-            return response, relevant_docs
+            # Update metrics
+            end_time = datetime.now()
+            self._update_metrics(start_time, end_time, query=query, success=True)
             
+            return response_text, []
         except Exception as e:
             self.logger.error(f"Error in RAG query: {e}", exc_info=True)
-            return "I apologize, but I encountered an error processing your query. Could you please rephrase or try again?", []
+            error_response = "[AI] I apologize, but I encountered an error processing your query. Could you please rephrase or try again? [AI]"
+            
+            # Remove tags for Telegram
+            if platform.lower() == 'telegram':
+                import re
+                error_response = re.sub(r'\[RAG\]\s*', '', error_response)
+                error_response = re.sub(r'\[AI\]\s*', '', error_response)
+                error_response = re.sub(r'\s*\[RAG\]', '', error_response)
+                error_response = re.sub(r'\s*\[AI\]', '', error_response)
+                error_response = error_response.replace('[RAG]', '')
+                error_response = error_response.replace('[AI]', '')
+            
+            return error_response, []
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics."""
@@ -492,9 +519,10 @@ class LithuanianRAGChain:
     
     def _update_metrics(
         self,
-        success: bool,
-        confidence: float,
-        response_time: float
+        start_time: datetime,
+        end_time: datetime,
+        query: str,
+        success: bool
     ) -> None:
         """Update metrics with new query information."""
         self.metrics['total_queries'] += 1
@@ -503,11 +531,24 @@ class LithuanianRAGChain:
         else:
             self.metrics['failed_queries'] += 1
             
-        # Update average confidence
-        total_queries = self.metrics['total_queries']
-        current_avg = self.metrics['average_confidence']
-        self.metrics['average_confidence'] = (
-            (current_avg * (total_queries - 1) + confidence) / total_queries
+        # Update query processing time
+        self.metrics['query_processing_time'] = (
+            self.metrics['query_processing_time'] * 0.9 + (end_time - start_time).total_seconds() * 0.1
+        )
+        
+        # Update retrieval time
+        self.metrics['retrieval_time'] = (
+            self.metrics['retrieval_time'] * 0.9 + (end_time - start_time).total_seconds() * 0.1
+        )
+        
+        # Update response generation time
+        self.metrics['response_generation_time'] = (
+            self.metrics['response_generation_time'] * 0.9 + (end_time - start_time).total_seconds() * 0.1
+        )
+        
+        # Update total processing time
+        self.metrics['total_processing_time'] = (
+            self.metrics['total_processing_time'] * 0.9 + (end_time - start_time).total_seconds() * 0.1
         )
         
         # Update timestamp
@@ -523,23 +564,23 @@ class LithuanianRAGChain:
     
     def _create_no_docs_response(self, query_info: Dict[str, Any]) -> Tuple[str, List[Document]]:
         """Create Lithuanian response for no documents case."""
-        response_text = f"Atsiprašau, bet nepavyko rasti jokių dokumentų, susijusių su jūsų klausimu. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})"
+        response_text = f"[AI] Atsiprašau, bet nepavyko rasti jokių dokumentų, susijusių su jūsų klausimu. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name}) [AI]"
         return (response_text, [])
     
     def _create_no_results_response(self, query_info: Dict[str, Any]) -> Tuple[str, List[Document]]:
         """Create Lithuanian response for no search results case."""
-        response_text = f"Atsiprašau, bet nepavyko rasti pakankamai aktualios informacijos tiksliai atsakyti į jūsų klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})"
+        response_text = f"[AI] Atsiprašau, bet nepavyko rasti pakankamai aktualios informacijos tiksliai atsakyti į jūsų klausimą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name}) [AI]"
         return (response_text, [])
     
     def _create_no_relevant_docs_response(self, query_info: Dict[str, Any]) -> Tuple[str, List[Document]]:
         """Create Lithuanian response for no relevant documents case."""
-        response_text = f"Atsiprašau, bet turima informacija nėra pakankamai aktuali pateikti tikslų atsakymą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})"
+        response_text = f"[AI] Atsiprašau, bet turima informacija nėra pakankamai aktuali pateikti tikslų atsakymą. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name}) [AI]"
         return (response_text, [])
     
     def _create_error_response(self, error_msg: str) -> Tuple[str, List[Document]]:
         """Create error response."""
         return (
-            f"Atsiprašau, įvyko klaida: {error_msg}. Prašome bandyti vėliau. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name})",
+            f"[AI] Atsiprašau, įvyko klaida: {error_msg}. Prašome bandyti vėliau. (Bandyta ieškoti Qdrant duomenų bazėje, kolekcija: {self.collection_name}) [AI]",
             []
         )
 

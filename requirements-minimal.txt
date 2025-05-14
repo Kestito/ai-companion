@@ -1,0 +1,28 @@
+# Core minimal requirements
+fastapi>=0.100.0
+uvicorn>=0.15.0
+pydantic>=2.0.0
+python-dotenv>=0.17.0
+httpx>=0.24.0
+
+# Database
+supabase>=1.0.0
+qdrant-client>=1.0.0
+
+# Basic utilities
+python-multipart>=0.0.5
+aiofiles>=0.7.0
+
+# Telegram support
+python-telegram-bot>=20.0
+
+# Minimal AI packages
+openai>=1.0.0
+langchain>=0.0.300
+langchain-openai>=0.0.2
+langchain-community>=0.0.2
+langchain-groq>=0.0.2
+langgraph>=0.0.20
+tiktoken>=0.5.0
+sentence-transformers>=0.0.3
+groq>=0.1.0 

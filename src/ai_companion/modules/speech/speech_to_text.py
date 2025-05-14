@@ -1,5 +1,7 @@
 import os
 import tempfile
+import asyncio
+import aiofiles
 from typing import Optional
 
 from openai import AzureOpenAI
@@ -61,15 +63,17 @@ class SpeechToText:
                 temp_file_path = temp_file.name
 
             try:
-                # Open the temporary file for the API request
-                with open(temp_file_path, "rb") as audio_file:
-                    # Use the STT model name from settings
-                    transcription = self.client.audio.transcriptions.create(
-                        file=audio_file,
-                        model=settings.STT_MODEL_NAME,
-                        language="en",
-                        response_format="text",
-                    )
+                # Use aiofiles to read the file asynchronously
+                async with aiofiles.open(temp_file_path, "rb") as audio_file:
+                    file_content = await audio_file.read()
+                
+                # Use the STT model name from settings
+                transcription = self.client.audio.transcriptions.create(
+                    file=file_content,
+                    model=settings.STT_MODEL_NAME,
+                    language="en",
+                    response_format="text",
+                )
 
                 if not transcription:
                     raise SpeechToTextError("Transcription result is empty")
@@ -77,8 +81,8 @@ class SpeechToText:
                 return transcription
 
             finally:
-                # Clean up the temporary file
-                os.unlink(temp_file_path)
+                # Clean up the temporary file using asyncio.to_thread
+                await asyncio.to_thread(os.unlink, temp_file_path)
 
         except Exception as e:
             raise SpeechToTextError(

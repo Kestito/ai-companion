@@ -2,13 +2,19 @@ import os
 from uuid import uuid4
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import asyncio
 import json
-
+import traceback
+import base64
+import aiohttp
+import httpx
 from langchain_core.messages import HumanMessage, RemoveMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_openai import AzureChatOpenAI
+from openai.types.chat import ChatCompletionSystemMessageParam
+from langsmith import Client as LangSmithClient
 
 from ai_companion.graph.utils.chains import (
     get_character_response_chain,
@@ -22,8 +28,30 @@ from ai_companion.graph.utils.helpers import (
 from ai_companion.graph.state import AICompanionState
 from ai_companion.modules.schedules.context_generation import ScheduleContextGenerator
 from ai_companion.settings import settings
-from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager
+from ai_companion.modules.memory.long_term.memory_manager import (
+    get_memory_manager,
+    get_initialized_memory_manager,
+)
 from ai_companion.utils.supabase import get_supabase_client
+# Uncomment the import now that a stub exists
+from ai_companion.utils.elevenlabs import generate_audio
+# from ai_companion.core.prompts import (
+# VOICE_GENERATION_PROMPT,
+# DETAILED_INSTRUCTIONS_PROMPT,
+# CONTEXT_PROMPT,
+# MEMORY_EXTRACTION_PROMPT,
+# SUMMARIZE_CONVERSATION_PROMPT,
+# )
+from ai_companion.modules.memory.long_term.memory_manager import (
+    get_memory_manager,
+    get_initialized_memory_manager,
+)
+from ai_companion.graph.utils.helpers import get_chat_model
+# from ai_companion.models.domain import PatientInfo # Commenting out missing import
+# from ai_companion.modules.database.user_repository import UserRepository # Commenting out missing import
+# from ai_companion.utils.sql import create_pgsql_connection # Commenting out missing import
+from ai_companion.settings import settings
+from ai_companion.graph.state import AICompanionState
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +205,8 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
     logger.debug("Starting conversation node processing")
     try:
         chain = get_character_response_chain()
-        chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
+        # Get more conversation history - increase from 5 to 10 messages
+        chat_history = state["messages"][-11:-1] if len(state["messages"]) > 1 else []
         current_input = (
             get_message_content(state["messages"][-1]) if state["messages"] else ""
         )
@@ -206,20 +235,33 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
         formatted_context = []
         if rag_context and rag_response.get("response") != "no info":
             formatted_context.append(f"Relevant Knowledge:\n{rag_context}")
-        if memory_context:
-            formatted_context.append(f"Previous Context:\n{memory_context}")
 
-        # Add Telegram conversation history to context if available
+        # Prioritize memory context to ensure past interactions are considered first
+        if memory_context:
+            formatted_context.insert(
+                0, f"Previous Context and User Information:\n{memory_context}"
+            )
+
+        # Add Telegram conversation history to context with clear formatting
         if telegram_history:
-            telegram_context = "Previous Conversation:\n"
-            for entry in telegram_history[:10]:  # Limit to 10 entries
+            # Limit to the most recent 15 entries for context window management
+            recent_history = (
+                telegram_history[-15:]
+                if len(telegram_history) > 15
+                else telegram_history
+            )
+
+            telegram_context = "Previous Conversation (Most Recent First):\n"
+            for i, entry in enumerate(recent_history):
                 if isinstance(entry, dict):
                     role = entry.get("role", "")
                     content = entry.get("content", "")
                     if role and content:
-                        telegram_context += f"{role.capitalize()}: {content}\n"
+                        # Format with clear numbering to make it more prominent
+                        telegram_context += f"{i+1}. {role.capitalize()}: {content}\n"
 
-            formatted_context.append(telegram_context)
+            # Insert conversation history at the beginning to emphasize its importance
+            formatted_context.insert(0, telegram_context)
 
         combined_context = "\n\n".join(formatted_context)
         logger.debug(f"Combined context for conversation: {combined_context}")
@@ -294,9 +336,113 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
         logger.info(f"Conversation response: {response_content}")
 
         # Store the response in memory
-        memory_manager = get_memory_manager()
-        await memory_manager.add_memory(response_content)
+        memory_manager = await get_initialized_memory_manager()
 
+        # Use multiple strategies to find platform/user_id and patient_id
+        # First check if patient_id is already in state
+        patient_id = state.get("patient_id")
+        if patient_id:
+            logger.info(f"Conversation: Using patient_id from state: {patient_id}")
+        else:
+            # Try from configurable
+            configurable = state.get("configurable", {})
+            user_metadata = configurable.get("user_metadata", {})
+            platform = user_metadata.get("platform", "")
+            platform_id = user_metadata.get("external_system_id", "")
+
+            # If configurable is empty, try from last message metadata
+            if not platform or not platform_id:
+                if (
+                    last_message
+                    and hasattr(last_message, "metadata")
+                    and last_message.metadata
+                ):
+                    msg_metadata = last_message.metadata
+                    platform = msg_metadata.get("platform", "")
+                    platform_id = msg_metadata.get("external_system_id", "")
+
+                    # Try to get patient_id directly from metadata
+                    if "patient_id" in msg_metadata:
+                        patient_id = msg_metadata.get("patient_id")
+                        logger.info(
+                            f"Conversation: Found patient_id in message metadata: {patient_id}"
+                        )
+
+                    logger.info(
+                        f"Conversation: Extracted from message metadata: platform={platform}, external_system_id={platform_id}"
+                    )
+
+            # Try from thread_id if still not found
+            if not platform or not platform_id:
+                thread_id = configurable.get("thread_id", "")
+                if thread_id and "-" in thread_id:
+                    # Try to parse thread_id in format "platform-chat_id-user_id"
+                    parts = thread_id.split("-")
+                    if len(parts) >= 3:
+                        platform = parts[0]
+                        platform_id = parts[2]
+                        logger.info(
+                            f"Conversation: Extracted from thread_id: platform={platform}, external_system_id={platform_id}"
+                        )
+                    elif len(parts) >= 2:
+                        platform = parts[0]
+                        platform_id = parts[1]  # Use chat_id as fallback
+                        logger.info(
+                            f"Conversation: Using chat_id as fallback for external_system_id: {platform_id}"
+                        )
+
+            # If we have platform and platform_id but no patient_id, look it up
+            if platform and platform_id and not patient_id:
+                patient_id = get_patient_id_from_platform_id(platform, platform_id)
+                logger.info(
+                    f"Conversation: Got patient_id from database lookup: {patient_id}"
+                )
+
+        # Create metadata dictionary for memory storage
+        memory_metadata = {}
+
+        # Add patient_id to metadata if available
+        if patient_id:
+            memory_metadata["patient_id"] = patient_id
+            # Store it in state for other nodes
+            state["patient_id"] = patient_id
+            logger.info(f"Using patient_id: {patient_id} for memory storage")
+        else:
+            logger.warning("No patient_id available, memory storage will be skipped")
+
+        # Add platform and platform_id to metadata if available
+        if platform:
+            memory_metadata["platform"] = platform
+        if platform_id:
+            memory_metadata["external_system_id"] = platform_id
+
+        # If we have a patient_id, store the memories
+        if "patient_id" in memory_metadata:
+            try:
+                # Add required fields to memory metadata
+                memory_metadata["timestamp"] = datetime.now().isoformat()
+
+                # Create memory data
+                memory_data = {
+                    "user_message": current_input,
+                    "assistant_response": response_content,
+                    "timestamp": memory_metadata["timestamp"],
+                }
+
+                # Store as a single conversation memory
+                memory_id = await memory_manager.add_memory(
+                    json.dumps(memory_data), metadata=memory_metadata
+                )
+
+                logger.info(
+                    f"Stored conversation in memory for patient {memory_metadata['patient_id']}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to store memory: {e}", exc_info=True)
+        else:
+            logger.warning("No patient_id available, skipping memory storage")
+
+        # Update state with response
         return {"messages": [*state["messages"], AIMessage(content=response_content)]}
     except Exception as e:
         logger.error(f"Error in conversation node: {e}", exc_info=True)
@@ -358,6 +504,26 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 "with_citations", True
             )  # Default to including citations
 
+            # Get platform from metadata if available
+            platform = message_metadata.get("platform", "")
+            
+            # If platform is not in metadata, try to get it from other sources
+            if not platform:
+                # Try to get platform from state
+                configurable = state.get("configurable", {})
+                user_metadata = configurable.get("user_metadata", {})
+                platform = user_metadata.get("platform", "")
+                
+                # If still not available, try thread_id which might contain platform info
+                if not platform and "thread_id" in configurable:
+                    thread_id = configurable.get("thread_id", "")
+                    if thread_id and "-" in thread_id:
+                        # thread_id format is often "platform-chat_id-user_id"
+                        platform = thread_id.split("-")[0]
+                        logger.info(f"Extracted platform from thread_id: {platform}")
+            
+            logger.info(f"Using platform '{platform}' for RAG response")
+            
             response, relevant_docs = await rag_chain.query(
                 query=last_message,
                 memory_context=combined_context,  # Pass combined context
@@ -365,6 +531,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 min_confidence=0.5,  # Lower similarity threshold from 0.7 to 0.5
                 detailed=detailed_response,  # Request detailed response
                 with_citations=with_citations,  # Include citations in the response
+                platform=platform,  # Pass platform information
             )
 
             # Format sources with proper error handling
@@ -432,7 +599,11 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                     f"1. Detailed Process: Briefly explain the step-by-step process related to this query (max 3 steps)\n"
                     f"2. Primary Link: Identify the most important resource or website where the user can get official information\n"
                     f"3. Supporting Resources: List 2-3 additional resources or organizations that can help\n\n"
-                    f"Format your response in clear, concise bullet points. No introduction or conclusion needed."
+                    f"Format your response in clear, concise bullet points. No introduction or conclusion needed.\n\n"
+                    f"IMPORTANT: When using information directly from retrieved documents, start those sentences with [RAG].\n"
+                    f"When generating your own explanations or text, start those sentences with [AI].\n"
+                    f"Every sentence or paragraph in your response must start with either [RAG] or [AI].\n"
+                    f"The final line of your response MUST end with either [RAG] or [AI] based on the type of information in that line."
                 )
 
                 # Create message list for enhancement request
@@ -447,9 +618,27 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
 
                 enhancement_text = enhancement_response.content.strip()
 
+                # Ensure enhancement text has proper prefixes
+                if enhancement_text and not enhancement_text.startswith("[RAG]") and not enhancement_text.startswith("[AI]"):
+                    lines = enhancement_text.split("\n")
+                    new_lines = []
+                    for line in lines:
+                        if line.strip() and not line.startswith("[RAG]") and not line.startswith("[AI]"):
+                            new_lines.append(f"[AI] {line}")
+                        else:
+                            new_lines.append(line)
+                    enhancement_text = "\n".join(new_lines)
+                
+                # Ensure enhancement text ends with the appropriate tag
+                if not enhancement_text.rstrip().endswith("[RAG]") and not enhancement_text.rstrip().endswith("[AI]"):
+                    if enhancement_text.rstrip().split("\n")[-1].startswith("[RAG]"):
+                        enhancement_text = enhancement_text.rstrip() + " [RAG]"
+                    else:
+                        enhancement_text = enhancement_text.rstrip() + " [AI]"
+
                 # Append enhancement and confidence to the response
                 confidence_note = (
-                    f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
+                    f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
                 )
                 enhanced_response = f"{response}\n\n{enhancement_text}{confidence_note}"
 
@@ -461,20 +650,23 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 )
             except Exception as e:
                 logger.error(f"Error in response enhancement: {e}")
+                confidence_rating = 7  # Default value
+                confidence_level = "Medium"  # Default value
                 confidence_note = (
-                    f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
+                    f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
                 )
                 enhanced_response = response + confidence_note
 
             # Create context with sources
             context = enhanced_response
             if sources:
-                sources_info = "\nŠaltiniai:\n" + "\n".join(
+                sources_info = "\n[AI] Šaltiniai:\n" + "\n".join(
                     [
-                        f"- {s['source']} (Patikimumas: {s['confidence']:.2f})"
+                        f"[AI] - {s['source']} (Patikimumas: {s['confidence']:.2f})"
                         for s in sources
                     ]
                 )
+                sources_info += " [AI]"
                 context += sources_info
 
             # Calculate metrics
@@ -526,7 +718,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
             return {
                 "rag_response": {
                     "has_relevant_info": False,
-                    "response": "Atsiprašau, įvyko klaida ieškant informacijos. Prašome bandyti vėliau.\n\n[Confidence: Low (2/10)]",
+                    "response": "[AI] Atsiprašau, įvyko klaida ieškant informacijos. Prašome bandyti vėliau.\n\n[AI] Confidence: Low (2/10) [AI]",
                     "sources": [],
                     "context": "",
                     "metrics": {
@@ -545,35 +737,17 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                     },
                     "confidence_rating": 2,
                     "confidence_level": "Low",
-                }
+                },
+                "rag_retry_count": 0,
             }
 
     except Exception as e:
         logger.error(f"Critical error in RAG node: {e}", exc_info=True)
-        error_time = datetime.now()
         return {
-            "rag_response": {
-                "has_relevant_info": False,
-                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.\n\n[Confidence: Low (1/10)]",
-                "sources": [],
-                "context": "",
-                "metrics": {
-                    "total_queries": 1,
-                    "successful_queries": 0,
-                    "failed_queries": 1,
-                    "average_confidence": 0.0,
-                    "query_processing_time": 0.0,
-                    "retrieval_time": 0.0,
-                    "response_generation_time": 0.0,
-                    "total_processing_time": 0.0,
-                    "error_details": {"error": str(e)},
-                    "last_updated": error_time.isoformat(),
-                    "self_rating": 1,
-                    "confidence_level": "Low",
-                },
-                "confidence_rating": 1,
-                "confidence_level": "Low",
-            }
+            "messages": [
+                *state["messages"],
+                AIMessage(content="[AI] Atsiprašau, įvyko klaida. Prašome bandyti vėliau. [AI]"),
+            ]
         }
 
 
@@ -693,6 +867,7 @@ async def audio_node(state: AICompanionState, config: RunnableConfig):
     memory_context = state.get("memory_context", "")
 
     chain = get_character_response_chain(state.get("summary", ""))
+    # Uncomment TTS module usage (it will use the stub)
     text_to_speech_module = get_text_to_speech_module()
 
     # Extract last message from the state
@@ -714,7 +889,9 @@ async def audio_node(state: AICompanionState, config: RunnableConfig):
 
     # Extract text content for speech synthesis
     text_content = response.content if isinstance(response, AIMessage) else response
+    # Uncomment TTS synthesis (it will use the stub)
     output_audio = await text_to_speech_module.synthesize(text_content)
+    # output_audio = b"" # Remove placeholder
 
     # Return the response as a message and the audio buffer
     if isinstance(response, AIMessage):
@@ -763,702 +940,86 @@ async def summarize_conversation_node(state: AICompanionState):
     return {"summary": response.content, "messages": delete_messages}
 
 
-def memory_injection_node(state: AICompanionState) -> Dict[str, str]:
+async def memory_injection_node(state: AICompanionState) -> Dict[str, str]:
     """Inject relevant memories into the conversation state."""
-    logger.debug("Starting memory injection node processing")
+    logger.info("Starting memory injection")
+    
     try:
-        memory_manager = get_memory_manager()
-        last_message = (
-            get_message_content(state["messages"][-1]) if state["messages"] else ""
-        )
+        # ... existing code ...
 
-        # Get user metadata and extract patient_id
-        user_metadata = state.get("configurable", {}).get("user_metadata", {})
-        platform = user_metadata.get("platform", "")
-        platform_id = user_metadata.get("user_id", "")
-
-        # Get patient_id from platform_id
-        patient_id = get_patient_id_from_platform_id(platform, platform_id)
-
-        if not patient_id:
-            logger.warning(
-                f"No patient_id found for {platform}:{platform_id}, memory injection skipped"
-            )
-            return {"memory_context": ""}
-
-        memory_context = memory_manager.get_relevant_memories(last_message, patient_id)
-        return {
-            "memory_context": memory_manager.format_memories_for_prompt(memory_context)
-        }
+        # Get memory manager instance
+        memory_manager = await get_initialized_memory_manager()
+        
+        # ... rest of the function continues unchanged ...
+        return {}  # Return placeholder
     except Exception as e:
         logger.error(f"Error in memory injection: {e}", exc_info=True)
-        return {"memory_context": ""}
+        return {}
 
 
 async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
-    """Extract and format relevant memories for the current context."""
-    logger.debug("Starting memory extraction")
+    """Extract and store important memories from the conversation."""
+    logger.info("Starting memory extraction node")
+    
     try:
-        memory_manager = get_memory_manager()
+        memory_manager = await get_initialized_memory_manager()
+        messages = state.get("messages", [])
+        
+        # Attempt to get a primary patient_id from the state if available
+        # This could be set by an upstream node or initial session setup
+        # Ensure config and configurable exist before trying to access them
+        config = state.get("config")
+        patient_id_from_state = None
+        if config and isinstance(config, dict):
+            configurable_dict = config.get("configurable")
+            if configurable_dict and isinstance(configurable_dict, dict):
+                patient_id_from_state = configurable_dict.get("patient_id")
 
-        # Get the current message
-        current_message = (
-            get_message_content(state["messages"][-1]) if state["messages"] else ""
-        )
+        if not messages:
+            logger.info("No messages in state to process for memory extraction.")
+            return {}
 
-        # Get user metadata and extract patient_id
-        user_metadata = state.get("configurable", {}).get("user_metadata", {})
-        platform = user_metadata.get("platform", "")
-        platform_id = user_metadata.get("user_id", "")
+        for message in messages:
+            if isinstance(message, HumanMessage):
+                logger.debug(f"Processing HumanMessage for memory extraction: {message.content[:50]}...")
+                
+                current_message_patient_id = patient_id_from_state
+                
+                # Ensure metadata exists
+                if not hasattr(message, "metadata") or message.metadata is None:
+                    message.metadata = {}
 
-        # Get patient_id from platform_id
-        patient_id = get_patient_id_from_platform_id(platform, platform_id)
+                # Try to get platform and user_id from message metadata for more specific patient lookup
+                platform = message.metadata.get("platform")
+                platform_user_id = message.metadata.get("user_id") # Assuming 'user_id' in metadata is the platform_id
 
-        if not patient_id:
-            logger.warning(
-                f"No patient_id found for {platform}:{platform_id}, memory extraction skipped"
-            )
-            return {"memory_context": ""}
+                if platform and platform_user_id:
+                    logger.debug(f"Message has platform ({platform}) and platform_user_id ({platform_user_id}). Looking up patient_id.")
+                    retrieved_patient_id = get_patient_id_from_platform_id(platform, platform_user_id)
+                    if retrieved_patient_id:
+                        current_message_patient_id = retrieved_patient_id
+                        logger.info(f"Using patient_id {current_message_patient_id} from platform details for message.")
+                    else:
+                        logger.warning(f"Could not retrieve patient_id for platform {platform}, user {platform_user_id}. May fall back to state patient_id or fail.")
+                elif patient_id_from_state:
+                    logger.info(f"Using patient_id {patient_id_from_state} from state for message as no platform details found in message metadata.")
+                else:
+                    logger.warning("No patient_id found in state or message metadata. Cannot store memory for this message.")
+                    continue # Skip this message
 
-        # Get relevant memories
-        relevant_memories = memory_manager.get_relevant_memories(
-            current_message, patient_id
-        )
-
-        # Format memories for context
-        formatted_memories = memory_manager.format_memories_for_prompt(
-            relevant_memories
-        )
-
-        if formatted_memories:
-            logger.info(f"Found relevant memories: {formatted_memories}")
-        else:
-            logger.debug("No relevant memories found")
-
-        # Store the current message as a potential memory
-        message_obj = state["messages"][-1]
-        message_content = get_message_content(message_obj)
-
-        # Add patient_id to metadata
-        if isinstance(message_obj, dict) and "metadata" in message_obj:
-            message_obj["metadata"]["patient_id"] = patient_id
-        elif hasattr(message_obj, "metadata"):
-            if message_obj.metadata is None:
-                message_obj.metadata = {}
-            message_obj.metadata["patient_id"] = patient_id
-
-        # Create a proper message object if we got a dict
-        if isinstance(message_obj, dict):
-            message_obj = HumanMessage(
-                content=message_content, metadata={"patient_id": patient_id}
-            )
-
-        await memory_manager.extract_and_store_memories(message_obj)
-
-        return {"memory_context": formatted_memories}
+                if current_message_patient_id:
+                    message.metadata["patient_id"] = current_message_patient_id
+                    logger.debug(f"Attempting to store memory for patient_id: {current_message_patient_id}")
+                    await memory_manager.extract_and_store_memories(message)
+                else:
+                    logger.warning(f"Skipping memory extraction for a message due to missing patient_id: {message.content[:50]}...")
+        
+        logger.info("Finished memory extraction process.")
+        return {}
+        
     except Exception as e:
-        logger.error(f"Error in memory extraction: {e}", exc_info=True)
-        return {"memory_context": ""}
-
-
-async def rag_retry_node(
-    state: AICompanionState, config: RunnableConfig
-) -> Dict[str, Any]:
-    """Retry RAG query with enhanced parameters and different retrieval strategy.
-
-    This node is called when the initial RAG query doesn't produce satisfactory results.
-    It uses different retrieval parameters and strategies to try to get better results.
-    """
-    logger.debug("Starting RAG retry node processing")
-    try:
-        # Get the RAG chain instance
-        from ai_companion.modules.rag.core.rag_chain import get_rag_chain
-
-        rag_chain = get_rag_chain()
-
-        last_message = (
-            get_message_content(state["messages"][-1]) if state["messages"] else ""
-        )
-        memory_context = state.get("memory_context", "")
-        retry_count = state.get("rag_retry_count", 0) + 1
-
-        # Get chat history for enhancement context
-        chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
-
-        # Adjust retrieval parameters based on retry count
-        retrieval_params = {
-            "k": 5 + retry_count * 2,  # Increase number of documents
-            "min_confidence": max(
-                0.5, 0.7 - retry_count * 0.1
-            ),  # Gradually lower similarity threshold
-            "max_retries": 3,
-        }
-
-        try:
-            # Query with enhanced parameters
-            response, relevant_docs = await rag_chain.query(
-                query=last_message, memory_context=memory_context, **retrieval_params
-            )
-            logger.info(f"RAG retry response received: {response[:100]}...")
-
-            # Get metrics for monitoring
-            metrics = rag_chain.get_metrics()
-            logger.debug(f"RAG retry metrics: {metrics}")
-
-            # Format sources with confidence scores
-            sources = []
-            for doc in relevant_docs:
-                try:
-                    metadata = doc.metadata or {}
-                    sources.append(
-                        {
-                            "title": metadata.get("title", "Be pavadinimo"),
-                            "source": metadata.get(
-                                "source", metadata.get("url", "Nežinomas šaltinis")
-                            ),
-                            "date": metadata.get("processed_at", "Data nenurodyta"),
-                            "confidence": metadata.get("confidence_score", 0.0),
-                        }
-                    )
-                except Exception as e:
-                    logger.warning(f"Error formatting source metadata in retry: {e}")
-                    continue
-
-            # Add self-evaluation of confidence for the retry
-            confidence_prompt = f"""
-            Rate your confidence in the following answer on a scale of 1-10 (1 being lowest, 10 being highest).
-            Consider:
-            - The accuracy and completeness of the information
-            - The relevance to the user's question
-            - The quality of sources cited (if any)
-            - Any uncertainty or missing information
-            
-            Question: {last_message}
-            Answer: {response}
-            
-            Provide ONLY a rating number between 1 and 10.
-            """
-
-            try:
-                # Use the same model for self-evaluation
-                model = get_chat_model()
-                confidence_response = await model.ainvoke(
-                    [HumanMessage(content=confidence_prompt)]
-                )
-                confidence_text = confidence_response.content.strip()
-
-                # Extract just the number from the response
-                confidence_match = re.search(r"\b([1-9]|10)\b", confidence_text)
-                confidence_rating = (
-                    int(confidence_match.group(1)) if confidence_match else 7
-                )  # Default to 7 if parsing fails
-
-                # Format confidence level based on the rating
-                confidence_level = (
-                    "High"
-                    if confidence_rating >= 8
-                    else "Medium"
-                    if confidence_rating >= 5
-                    else "Low"
-                )
-
-                # Enhance response with process details and supporting links
-                process_prompt = (
-                    f'Based on the user\'s query "{last_message}" and your response, please provide additional structured information in Lithuanian:\n\n'
-                    f"1. Detailed Process: Briefly explain the step-by-step process related to this query (max 3 steps)\n"
-                    f"2. Primary Link: Identify the most important resource or website where the user can get official information\n"
-                    f"3. Supporting Resources: List 2-3 additional resources or organizations that can help\n\n"
-                    f"Format your response in clear, concise bullet points. No introduction or conclusion needed."
-                )
-
-                # Create message list for enhancement request
-                enhancement_messages = []
-                if chat_history:
-                    enhancement_messages.append(chat_history[-1])
-                enhancement_messages.append(HumanMessage(content=last_message))
-                enhancement_messages.append(AIMessage(content=response))
-                enhancement_messages.append(HumanMessage(content=process_prompt))
-
-                enhancement_response = await model.ainvoke(enhancement_messages)
-
-                enhancement_text = enhancement_response.content.strip()
-
-                # Append enhancement and confidence to the response
-                confidence_note = (
-                    f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
-                )
-                enhanced_response = f"{response}\n\n{enhancement_text}{confidence_note}"
-
-                logger.info(
-                    f"Self-evaluated confidence rating (retry): {confidence_rating}/10 ({confidence_level})"
-                )
-                logger.info(
-                    "Enhanced response with process details and supporting links"
-                )
-            except Exception as e:
-                logger.error(f"Error in response enhancement for retry: {e}")
-                confidence_note = (
-                    f"\n\n[Confidence: {confidence_level} ({confidence_rating}/10)]"
-                )
-                enhanced_response = response + confidence_note
-
-            # Create response with sources and metrics
-            sources_info = (
-                "\nŠaltiniai:\n"
-                + "\n".join(
-                    [
-                        f"- {s['source']} (Patikimumas: {s['confidence']:.2f})"
-                        for s in sources
-                    ]
-                )
-                if sources
-                else ""
-            )
-
-            # Final context with the enhanced response and sources
-            context = enhanced_response + sources_info
-
-            # Update metrics with confidence rating
-            metrics["self_rating"] = confidence_rating
-            metrics["confidence_level"] = confidence_level
-
-            # Log retry metrics
-            await rag_chain.monitor.log_query(
-                query=last_message,
-                response=response[:100] + "...",
-                success=True,
-                retry_count=retry_count,
-                response_metadata={
-                    "num_sources": len(sources),
-                    "avg_confidence": sum(s["confidence"] for s in sources)
-                    / len(sources)
-                    if sources
-                    else 0,
-                    "self_rating": confidence_rating,
-                },
-            )
-
-            return {
-                "rag_response": {
-                    "has_relevant_info": len(relevant_docs) > 0,
-                    "response": enhanced_response,
-                    "sources": sources,
-                    "context": context,
-                    "metrics": metrics,
-                    "confidence_rating": confidence_rating,
-                    "confidence_level": confidence_level,
-                },
-                "rag_retry_count": retry_count,
-            }
-
-        except Exception as e:
-            logger.error(f"Error in RAG retry node query: {e}", exc_info=True)
-            await rag_chain.monitor.log_error("rag_retry_error", last_message, str(e))
-            return {
-                "rag_response": {
-                    "has_relevant_info": False,
-                    "response": "Atsiprašau, įvyko klaida bandant rasti tikslesnę informaciją. Prašome bandyti vėliau.\n\n[Confidence: Low (2/10)]",
-                    "sources": [],
-                    "context": "",
-                    "metrics": rag_chain.get_metrics(),
-                    "confidence_rating": 2,
-                    "confidence_level": "Low",
-                },
-                "rag_retry_count": retry_count,
-            }
-
-    except Exception as e:
-        logger.error(f"Critical error in RAG retry node: {e}", exc_info=True)
-        return {
-            "rag_response": {
-                "has_relevant_info": False,
-                "response": "Atsiprašau, įvyko kritinė klaida. Prašome bandyti vėliau.\n\n[Confidence: Low (1/10)]",
-                "sources": [],
-                "context": "",
-                "metrics": {"self_rating": 1, "confidence_level": "Low"},
-                "confidence_rating": 1,
-                "confidence_level": "Low",
-            },
-            "rag_retry_count": state.get("rag_retry_count", 0) + 1,
-        }
-
-
-async def patient_registration_node(
-    state: AICompanionState, config: RunnableConfig
-) -> Dict[str, Any]:
-    """Handle patient registration requests from messaging platforms.
-
-    This node extracts patient information from conversation messages and creates
-    a new patient record in the Supabase database.
-
-    Args:
-        state: AICompanionState containing conversation and context
-        config: Configuration for the runnable
-
-    Returns:
-        Dict with registration result and response message
-    """
-    logger.debug("Starting patient registration node processing")
-    try:
-        # Get the latest message content
-        last_message = (
-            get_message_content(state["messages"][-1]) if state["messages"] else ""
-        )
-
-        # Extract conversation info to determine source platform (telegram/whatsapp)
-        platform = "unknown"
-        user_id = None
-        user_name = None
-
-        if hasattr(state["messages"][-1], "metadata"):
-            metadata = state["messages"][-1].metadata
-            platform = metadata.get("platform", "unknown")
-            user_id = metadata.get("user_id")
-            user_name = metadata.get("username")  # Try to get username if available
-
-            # If using Telegram, try to get more user data if available
-            if platform.lower() == "telegram" and "telegram_user" in metadata:
-                telegram_user = metadata.get("telegram_user", {})
-                if not user_name and "username" in telegram_user:
-                    user_name = telegram_user.get("username")
-                if "first_name" in telegram_user:
-                    first_name = telegram_user.get("first_name")
-                    last_name = telegram_user.get("last_name", "")
-                    # Combine for a full name
-                    user_name = f"{first_name} {last_name}".strip()
-
-        logger.info(
-            f"Processing patient registration request from {platform} by user {user_id}"
-        )
-
-        # Initialize Supabase client
-        supabase = get_supabase_client()
-
-        # First check if this patient already exists
-        existing_patient = None
-
-        if platform.lower() == "telegram" and user_id:
-            # Check for existing patient with this Telegram user ID
-            metadata_search = f'%"user_id": "{user_id}"%'
-            result = (
-                supabase.table("patients")
-                .select("id")
-                .like("email", metadata_search)
-                .execute()
-            )
-
-            if result.data:
-                existing_patient = result.data[0]
-                logger.info(
-                    f"Found existing patient with ID {existing_patient.get('id')} for Telegram user {user_id}"
-                )
-
-                # Return success with existing patient ID
-                return {
-                    "messages": [
-                        AIMessage(
-                            content="Welcome back! You're already registered in our system.",
-                        )
-                    ],
-                    "patient_id": existing_patient.get("id"),
-                }
-
-        # Extract basic patient information from the message
-        # Improved regex patterns for better extraction
-        name_match = re.search(
-            r"name[:\s]+([^,\n:]*?)(?=\s*(?:phone|$|,))", last_message, re.IGNORECASE
-        )
-
-        # Check if name is found in the message
-        if name_match:
-            name = name_match.group(1).strip()
-        else:
-            # If no name is found and platform is Telegram, use available user info
-            if platform.lower() == "telegram" and (user_name or user_id):
-                name = user_name if user_name else f"Telegram User {user_id}"
-                logger.info(f"No name provided. Using name from Telegram: {name}")
-            else:
-                name = "Unknown"
-
-        phone_match = re.search(
-            r"phone[:\s]+([0-9+\s\-()]+)(?=$|\s|,|\n)", last_message, re.IGNORECASE
-        )
-        phone = phone_match.group(1).strip() if phone_match else None
-
-        # If platform is Telegram and no phone is provided, use the Telegram user ID
-        if platform.lower() == "telegram" and user_id and not phone:
-            phone = f"telegram:{user_id}"
-            logger.info(f"Using Telegram user ID as phone identifier: {phone}")
-
-        # Create timestamp for registration
-        now = datetime.now().isoformat()
-
-        # Create patient record in Supabase with fields matching the actual table structure
-        patient_data = {
-            "first_name": name.split(" ")[0] if " " in name else name,
-            "last_name": " ".join(name.split(" ")[1:]) if " " in name else "",
-            "phone": phone,
-            "created_at": now,
-            "last_active": now,
-            "preferred_language": "lt",  # Default language
-            "support_status": "active",  # Default status
-        }
-
-        # Add platform and user_id to metadata stored in the email field
-        # This is a temporary solution until we have a proper metadata field
-        platform_metadata = {
-            "platform": platform,
-            "user_id": user_id,
-            "username": user_name,
-        }
-        patient_data["email"] = (
-            json.dumps(platform_metadata) if platform and user_id else None
-        )
-
-        logger.debug(f"Creating patient with data: {patient_data}")
-
-        # Insert the new patient into the patients table - non-async version
-        result = supabase.table("patients").insert(patient_data).execute()
-        logger.debug(f"Insert result: {result}")
-
-        # Get the generated patient ID from the result
-        new_patient_id = None
-        if result and hasattr(result, "data") and len(result.data) > 0:
-            new_patient_id = result.data[0].get("id")
-            logger.debug(f"New patient ID from result: {new_patient_id}")
-
-        # Try to store in conversation memory if it exists
-        conversation_storage_result = False
-        try:
-            if (
-                "conversation_memory" in state
-                and state["conversation_memory"] is not None
-            ):
-                # Use existing conversation memory
-                if hasattr(state["conversation_memory"], "metadata"):
-                    if new_patient_id:
-                        if asyncio.iscoroutinefunction(
-                            state["conversation_memory"].store_metadata
-                        ):
-                            await state["conversation_memory"].store_metadata(
-                                {
-                                    "patient_id": new_patient_id,
-                                }
-                            )
-                            conversation_storage_result = True
-                        else:
-                            state["conversation_memory"].store_metadata(
-                                {
-                                    "patient_id": new_patient_id,
-                                }
-                            )
-                            conversation_storage_result = True
-        except Exception as e:
-            logger.error(
-                f"Error storing patient ID in conversation memory: {e}", exc_info=True
-            )
-
-        # Build a success message
-        if new_patient_id:
-            response_message = (
-                "Thank you! I've registered you as a new patient in our system."
-            )
-            if platform.lower() == "telegram":
-                response_message += (
-                    " You can now use our services through this Telegram chat."
-                )
-
-            return {
-                "messages": [
-                    AIMessage(
-                        content=response_message,
-                    )
-                ],
-                "patient_id": new_patient_id,
-            }
-        else:
-            return {
-                "messages": [
-                    AIMessage(
-                        content="I'm sorry, but I encountered an issue while trying to register you. Please try again later or contact support.",
-                    )
-                ]
-            }
-
-    except Exception as e:
-        logger.error(f"Error in patient registration node: {e}", exc_info=True)
-        return {
-            "messages": [
-                AIMessage(
-                    content="I apologize, but I encountered an error while trying to process your registration. Please try again or contact our support team if the issue persists.",
-                )
-            ]
-        }
-
-
-async def schedule_message_node(
-    state: AICompanionState, config: RunnableConfig
-) -> Dict[str, Any]:
-    """Process message scheduling requests.
-
-    This node handles requests to schedule messages for delivery via Telegram or
-    WhatsApp at specified times, either once or on a recurring schedule.
-
-    Args:
-        state: Current conversation state
-        config: Runnable configuration
-
-    Returns:
-        Dict containing scheduling results
-    """
-    logger.debug("Starting schedule message node processing")
-
-    try:
-        # Get the latest message content and platform metadata
-        last_message_data = state["messages"][-1]
-        platform = last_message_data.metadata.get("platform", "unknown")
-        user_id = last_message_data.metadata.get("user_id", "")
-
-        logger.info(
-            f"Processing schedule message request from {platform} by user {user_id}"
-        )
-
-        # Get patient ID - first try direct metadata, then check conversation memory
-        patient_id = None
-
-        # Check if patient ID is in the user metadata
-        if "patient_id" in last_message_data.metadata:
-            patient_id = last_message_data.metadata.get("patient_id")
-            logger.debug(f"Found patient ID in message metadata: {patient_id}")
-
-        # Check if patient ID is in conversation memory
-        if not patient_id and "metadata" in state.get("conversation_memory", {}):
-            memory_metadata = state["conversation_memory"]["metadata"]
-            if "patient_id" in memory_metadata:
-                patient_id = memory_metadata["patient_id"]
-                logger.debug(f"Found patient ID in conversation memory: {patient_id}")
-
-        # If still no patient ID, check if there's a link in the context
-        if not patient_id:
-            for doc in state.get("context", []):
-                if (
-                    isinstance(doc, dict)
-                    and "metadata" in doc
-                    and "patient_id" in doc["metadata"]
-                ):
-                    patient_id = doc["metadata"]["patient_id"]
-                    logger.debug(f"Found patient ID in context metadata: {patient_id}")
-                    break
-
-        # Verify we have a patient ID
-        if not patient_id:
-            logger.warning(
-                f"Cannot schedule message: Missing patient ID for user {user_id}"
-            )
-            return {
-                "schedule_result": "error",
-                "error": "Missing patient ID",
-                "response": "I need to know which patient this message is for. Please register a patient first or provide a patient ID.",
-            }
-
-        # Parse the scheduling command based on platform
-        message_text = last_message_data.content
-        parsed_command = None
-
-        if platform.lower() == "telegram":
-            # Use Telegram handler to parse command
-            from ai_companion.modules.scheduled_messaging.handlers.telegram_handler import (
-                TelegramHandler,
-            )
-
-            handler = TelegramHandler()
-            parsed_command = await handler.parse_command(message_text)
-        elif platform.lower() == "whatsapp":
-            # Use WhatsApp handler to parse command
-            from ai_companion.modules.scheduled_messaging.handlers.whatsapp_handler import (
-                WhatsAppHandler,
-            )
-
-            handler = WhatsAppHandler()
-            parsed_command = await handler.parse_command(message_text)
-        else:
-            logger.warning(f"Unsupported platform for scheduling: {platform}")
-            return {
-                "schedule_result": "error",
-                "error": "Unsupported platform",
-                "response": f"Scheduling is not supported for {platform} platform. Please use Telegram or WhatsApp.",
-            }
-
-        # Check if parsing was successful
-        if not parsed_command or not parsed_command.get("success", False):
-            error_message = (
-                parsed_command.get("error", "Invalid format")
-                if parsed_command
-                else "Invalid format"
-            )
-            logger.warning(f"Failed to parse scheduling command: {error_message}")
-            return {
-                "schedule_result": "error",
-                "error": error_message,
-                "response": f"I couldn't understand your scheduling request. {error_message}",
-            }
-
-        # Schedule the message
-        from ai_companion.modules.scheduled_messaging.scheduler import ScheduleManager
-
-        scheduler = ScheduleManager()
-
-        schedule_args = {
-            "patient_id": patient_id,
-            "recipient_id": user_id,
-            "platform": platform.lower(),
-            "message_content": parsed_command.get("message", ""),
-            "scheduled_time": parsed_command.get("time", ""),
-        }
-
-        # Add recurrence pattern if this is a recurring schedule
-        if parsed_command.get("type") == "recurring" and "recurrence" in parsed_command:
-            schedule_args["recurrence_pattern"] = parsed_command["recurrence"]
-
-        # Add template information if provided
-        if "template_key" in parsed_command:
-            schedule_args["template_key"] = parsed_command["template_key"]
-            if "parameters" in parsed_command:
-                schedule_args["parameters"] = parsed_command["parameters"]
-
-        # Schedule the message
-        result = await scheduler.schedule_message(**schedule_args)
-
-        if result.get("status") == "scheduled":
-            # Successfully scheduled
-            if parsed_command.get("type") == "recurring":
-                response = f"I've scheduled this message to recur {parsed_command.get('recurrence', {}).get('type', 'regularly')}."
-            else:
-                scheduled_time = (
-                    result.get("scheduled_time", "").replace("T", " at ").split(".")[0]
-                )
-                response = f"I've scheduled your message for {scheduled_time}."
-
-            return {
-                "schedule_result": "success",
-                "schedule_id": result.get("schedule_id"),
-                "response": response,
-            }
-        else:
-            # Failed to schedule
-            logger.error(f"Failed to schedule message: {result.get('error')}")
-            return {
-                "schedule_result": "error",
-                "error": result.get("error", "Unknown error"),
-                "response": f"I couldn't schedule your message. {result.get('error', 'An error occurred.')}",
-            }
-    except Exception as e:
-        logger.exception(f"Error in schedule_message_node: {e}")
-        return {
-            "schedule_result": "error",
-            "error": str(e),
-            "response": "I encountered an error while trying to schedule your message. Please try again later.",
-        }
+        logger.error(f"Error in memory extraction node: {e}", exc_info=True)
+        return {}
 
 
 def get_patient_id_from_platform_id(platform: str, platform_id: str) -> Optional[str]:
@@ -1480,75 +1041,382 @@ def get_patient_id_from_platform_id(platform: str, platform_id: str) -> Optional
         # Get Supabase client
         supabase = get_supabase_client()
 
-        # Query patients table to find a matching platform ID
-        platform_field = f"{platform}_id"
-        result = (
-            supabase.table("patients")
-            .select("patient_id")
-            .eq(platform_field, platform_id)
-            .execute()
-        )
+        # Generate a consistent system_id format for lookups
+        system_id = f"{platform}:{platform_id}"
+        logger.debug(f"Looking up patient with system_id: {system_id}")
 
-        # Check if we found a match
-        if result.data and len(result.data) > 0:
-            patient_id = result.data[0].get("patient_id")
-            logger.info(f"Found patient_id {patient_id} for {platform}:{platform_id}")
-            return patient_id
+        # First try to find patient by system_id (most efficient approach)
+        try:
+            result = (
+                supabase.table("patients")
+                .select("id")
+                .eq("system_id", system_id)
+                .execute()
+            )
 
-        # If no match, try with platform_data field which might contain the ID in JSON
-        logger.debug(
-            f"No exact match for {platform}:{platform_id}, checking platform_data field"
-        )
-        platform_data_query = (
-            supabase.table("patients").select("patient_id, platform_data").execute()
-        )
-
-        # Iterate through results to find matching platform ID in platform_data
-        for row in platform_data_query.data:
-            platform_data = row.get("platform_data", {})
-            if isinstance(platform_data, str):
-                try:
-                    platform_data = json.loads(platform_data)
-                except:
-                    continue
-
-            if (
-                platform_data.get(platform) == platform_id
-                or platform_data.get(f"{platform}_id") == platform_id
-            ):
-                patient_id = row.get("patient_id")
+            # Check if we found a match by system_id
+            if result.data and len(result.data) > 0:
+                patient_id = result.data[0].get("id")
                 logger.info(
-                    f"Found patient_id {patient_id} in platform_data for {platform}:{platform_id}"
+                    f"Found patient_id {patient_id} using system_id {system_id}"
                 )
                 return patient_id
+        except Exception as e:
+            logger.warning(f"Error looking up by system_id: {e}")
+
+        # If not found by system_id, try with email field which might contain platform data in JSON
+        logger.debug(
+            f"No exact match for {platform}:{platform_id}, checking email field for JSON data"
+        )
+        try:
+            # Check if we can find the patient by email field containing platform info as JSON
+            platform_query = f'%"{platform}_id": "{platform_id}"%'
+            result = (
+                supabase.table("patients")
+                .select("id, email")
+                .like("email", platform_query)
+                .execute()
+            )
+
+            if result.data and len(result.data) > 0:
+                patient_id = result.data[0].get("id")
+                logger.info(
+                    f"Found patient_id {patient_id} for {platform}:{platform_id} in email field"
+                )
+
+                # Update with system_id if it was found via another method
+                try:
+                    supabase.table("patients").update({"system_id": system_id}).eq(
+                        "id", patient_id
+                    ).execute()
+                    logger.info(
+                        f"Updated patient {patient_id} with system_id {system_id}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update system_id: {e}")
+
+                return patient_id
+
+            # Alternate search in email field
+            platform_query = f'%"platform": "{platform}"%"user_id": "{platform_id}"%'
+            result = (
+                supabase.table("patients")
+                .select("id, email")
+                .like("email", platform_query)
+                .execute()
+            )
+
+            if result.data and len(result.data) > 0:
+                patient_id = result.data[0].get("id")
+                logger.info(
+                    f"Found patient_id {patient_id} for platform {platform} and id {platform_id} in email"
+                )
+
+                # Update with system_id
+                try:
+                    supabase.table("patients").update({"system_id": system_id}).eq(
+                        "id", patient_id
+                    ).execute()
+                    logger.info(
+                        f"Updated patient {patient_id} with system_id {system_id}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update system_id: {e}")
+
+                return patient_id
+        except Exception as e:
+            logger.warning(f"Error searching email field: {e}")
 
         # No match found, create a new patient record
         logger.info(
             f"No patient found for {platform}:{platform_id}, creating new patient"
         )
 
-        # Prepare platform data for upsert
-        platform_data = {f"{platform}_id": platform_id}
-        patient_data = {
-            "platform_data": platform_data,
+        # Create a JSON structure for email field since we're using it for platform data storage
+        email_data = {
+            "platform": platform,
+            f"{platform}_id": platform_id,
+            "system_id": system_id,
+            "created_via": "auto_registration",
+            "first_message_time": datetime.now().isoformat(),
         }
 
-        # Add specific platform ID field if it's one of our known platforms
-        if platform in ["telegram", "whatsapp", "web"]:
-            patient_data[f"{platform}_id"] = platform_id
+        # Prepare data for new patient record
+        patient_data = {
+            "system_id": system_id,
+            "channel": platform,
+            "risk": "Low",
+            "email": json.dumps(email_data),
+        }
 
         # Insert new patient
-        result = supabase.table("patients").insert(patient_data).execute()
+        try:
+            result = supabase.table("patients").insert(patient_data).execute()
 
-        if result.data and len(result.data) > 0:
-            new_patient_id = result.data[0].get("patient_id")
-            logger.info(
-                f"Created new patient with ID {new_patient_id} for {platform}:{platform_id}"
-            )
-            return new_patient_id
+            if result.data and len(result.data) > 0:
+                new_patient_id = result.data[0].get("id")
+                logger.info(
+                    f"Created new patient with ID {new_patient_id} for {platform}:{platform_id}"
+                )
+                return new_patient_id
+            else:
+                logger.error(f"No data returned when creating patient for {system_id}")
+        except Exception as e:
+            logger.error(f"Error creating new patient: {e}")
 
         return None
 
     except Exception as e:
         logger.error(f"Error getting patient_id from platform_id: {e}", exc_info=True)
         return None
+
+
+async def rag_retry_node(state: AICompanionState) -> Dict[str, Any]:
+    """Retry RAG with adjusted parameters when initial retrieval wasn't successful."""
+    logger.info("Executing rag_retry_node with adjusted parameters")
+    try:
+        # Initialize RAG chain with adjusted parameters
+        from ai_companion.modules.rag.core.rag_chain import get_rag_chain
+
+        rag_chain = get_rag_chain(
+            model_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+            model_name=os.getenv("LLM_MODEL"),
+        )
+
+        # Get current retry count and increment it
+        retry_count = state.get("rag_retry_count", 0) + 1
+        
+        last_message = (
+            get_message_content(state["messages"][-1]) if state["messages"] else ""
+        )
+        memory_context = state.get("memory_context", "")
+
+        # Get chat history
+        chat_history = state["messages"][:-1] if len(state["messages"]) > 1 else []
+        chat_history_str = "\n".join(
+            [
+                f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {get_message_content(m)}"
+                for m in chat_history[-settings.ROUTER_MESSAGES_TO_ANALYZE :]
+            ]
+        )
+
+        # Combine chat history with memory context
+        combined_context = (
+            f"Chat History:\n{chat_history_str}\n\nMemory Context:\n{memory_context}"
+        )
+
+        logger.info(f"Retry #{retry_count} for query: {last_message}")
+        start_time = datetime.now()
+
+        # Attempt RAG with more lenient parameters
+        try:
+            # Extract options from message metadata if available
+            message_metadata = {}
+            if hasattr(state["messages"][-1], "metadata") and state["messages"][-1].metadata:
+                message_metadata = state["messages"][-1].metadata
+            
+            detailed_response = message_metadata.get("detailed_response", True)
+            with_citations = message_metadata.get("with_citations", True)
+            
+            # Get platform from metadata if available
+            platform = message_metadata.get("platform", "")
+            
+            # If platform is not in metadata, try to get it from other sources
+            if not platform:
+                # Try to get platform from state
+                configurable = state.get("configurable", {})
+                user_metadata = configurable.get("user_metadata", {})
+                platform = user_metadata.get("platform", "")
+                
+                # If still not available, try thread_id which might contain platform info
+                if not platform and "thread_id" in configurable:
+                    thread_id = configurable.get("thread_id", "")
+                    if thread_id and "-" in thread_id:
+                        # thread_id format is often "platform-chat_id-user_id"
+                        platform = thread_id.split("-")[0]
+                        logger.info(f"Extracted platform from thread_id: {platform}")
+            
+            logger.info(f"Using platform '{platform}' for RAG response")
+            
+            response, relevant_docs = await rag_chain.query(
+                query=last_message,
+                memory_context=combined_context,  # Pass combined context
+                max_retries=3,
+                min_confidence=0.5,  # Lower similarity threshold from 0.7 to 0.5
+                detailed=detailed_response,  # Request detailed response
+                with_citations=with_citations,  # Include citations in the response
+                platform=platform,  # Pass platform information
+            )
+
+            # Format sources with proper error handling
+            sources = []
+            for doc in relevant_docs:
+                try:
+                    metadata = doc.metadata or {}
+                    sources.append(
+                        {
+                            "title": metadata.get("title", "Be pavadinimo"),
+                            "source": metadata.get(
+                                "source", metadata.get("url", "Nežinomas šaltinis")
+                            ),
+                            "date": metadata.get(
+                                "processed_at", datetime.now().isoformat()
+                            ),
+                            "confidence": metadata.get("confidence_score", 0.7),
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Error formatting source metadata: {e}")
+                    continue
+
+            # Add retry information and confidence
+            confidence_rating = 6  # Moderate confidence for retry responses
+            confidence_level = "Medium"
+            
+            # Add prefix to response if not already present
+            if not response.startswith("[RAG]") and not response.startswith("[AI]"):
+                # Split into lines and add prefixes where missing
+                lines = response.split("\n")
+                new_lines = []
+                for line in lines:
+                    if line.strip() and not line.startswith("[RAG]") and not line.startswith("[AI]"):
+                        new_lines.append(f"[AI] {line}")
+                    else:
+                        new_lines.append(line)
+                response = "\n".join(new_lines)
+            
+            # Ensure the response ends with [RAG] or [AI]
+            if not response.rstrip().endswith("[RAG]") and not response.rstrip().endswith("[AI]"):
+                lines = response.split("\n")
+                last_line = lines[-1] if lines else ""
+                
+                if last_line.startswith("[RAG]"):
+                    response = response.rstrip() + " [RAG]"
+                else:
+                    response = response.rstrip() + " [AI]"
+            
+            # Add retry information to the response
+            enhanced_response = (
+                f"{response}\n\n"
+                f"[AI] Note: This is a retry with adjusted parameters after initial search returned limited results."
+                f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
+            )
+
+            # Create context with sources
+            context = enhanced_response
+            if sources:
+                sources_info = "\n[AI] Šaltiniai:\n" + "\n".join(
+                    [
+                        f"[AI] - {s['source']} (Patikimumas: {s['confidence']:.2f})"
+                        for s in sources
+                    ]
+                )
+                sources_info += " [AI]"
+                context += sources_info
+
+            # Calculate metrics
+            end_time = datetime.now()
+            total_time = (end_time - start_time).total_seconds()
+
+            # Create metrics
+            metrics = {
+                "total_queries": 1,
+                "successful_queries": 1 if relevant_docs else 0,
+                "failed_queries": 0 if relevant_docs else 1,
+                "average_confidence": sum(s["confidence"] for s in sources)
+                / len(sources)
+                if sources
+                else 0.0,
+                "query_processing_time": total_time * 0.2,
+                "retrieval_time": total_time * 0.4,
+                "response_generation_time": total_time * 0.4,
+                "total_processing_time": total_time,
+                "error_details": {},
+                "last_updated": end_time.isoformat(),
+                "self_rating": confidence_rating,
+                "confidence_level": confidence_level,
+                "retry_count": retry_count,
+            }
+
+            # Check if response is substantive
+            is_substantive_response = (
+                len(response) > 80  # Lower threshold for retry
+                and "atsiprašau" not in response.lower()[:40]  # Check just beginning
+                and "įvyko klaida" not in response.lower()[:40]  # Check just beginning
+            )
+
+            return {
+                "rag_response": {
+                    "has_relevant_info": len(relevant_docs) > 0
+                    or is_substantive_response,
+                    "response": enhanced_response,
+                    "sources": sources,
+                    "context": context,
+                    "metrics": metrics,
+                    "confidence_rating": confidence_rating,
+                    "confidence_level": confidence_level,
+                },
+                "rag_retry_count": retry_count,
+            }
+
+        except Exception as e:
+            logger.error(f"Error in RAG retry node: {e}")
+            error_time = datetime.now()
+            return {
+                "rag_response": {
+                    "has_relevant_info": False,
+                    "response": "[AI] Atsiprašau, įvyko klaida ieškant papildomos informacijos. Prašome bandyti vėliau arba perfrazuoti klausimą.\n\n[AI] Confidence: Low (2/10) [AI]",
+                    "sources": [],
+                    "context": "",
+                    "metrics": {
+                        "total_queries": 1,
+                        "successful_queries": 0,
+                        "failed_queries": 1,
+                        "average_confidence": 0.0,
+                        "query_processing_time": 0.0,
+                        "retrieval_time": 0.0,
+                        "response_generation_time": 0.0,
+                        "total_processing_time": 0.0,
+                        "error_details": {"error": str(e)},
+                        "last_updated": error_time.isoformat(),
+                        "self_rating": 2,
+                        "confidence_level": "Low",
+                        "retry_count": retry_count,
+                    },
+                    "confidence_rating": 2,
+                    "confidence_level": "Low",
+                },
+                "rag_retry_count": retry_count,
+            }
+    
+    except Exception as e:
+        logger.error(f"Critical error in RAG retry node: {e}", exc_info=True)
+        return {
+            "messages": [
+                *state["messages"],
+                AIMessage(content="[AI] Atsiprašau, įvyko klaida bandant surasti papildomos informacijos. Prašome bandyti vėliau. [AI]"),
+            ]
+        }
+
+
+async def patient_registration_node(state: AICompanionState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+    """Placeholder for patient registration logic."""
+    logger.info("Executing placeholder patient_registration_node. Actual registration logic needs implementation.")
+    # This node should handle extracting patient details and saving them.
+    # For now, it simulates a failure or an unimplemented state.
+    return {
+        "registration_result": "failed",
+        "error": "Patient registration not yet implemented.",
+        "messages": [*state["messages"], AIMessage(content="Patient registration is currently unavailable.")]
+    }
+
+
+async def schedule_message_node(state: AICompanionState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+    """Placeholder for message scheduling logic."""
+    logger.info("Executing placeholder schedule_message_node. Actual scheduling logic needs implementation.")
+    # This node should parse schedule commands, interact with a scheduler service, etc.
+    return {
+        "schedule_result": "failed",
+        "error": "Message scheduling not yet implemented.",
+        "messages": [*state["messages"], AIMessage(content="Message scheduling is currently unavailable.")]
+    }

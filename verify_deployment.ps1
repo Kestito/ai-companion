@@ -190,13 +190,13 @@ if (-not $backendCorrect) {
               QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwiZXhwIjoxNzQ3MDY5MzcyfQ.plLwDbnIi7ggn_d98e-OsxpF60lcNq9nzZ0EzwFAnQw `
               AZURE_OPENAI_ENDPOINT=https://ai-kestutis9429ai265477517797.openai.azure.com `
               AZURE_OPENAI_API_KEY=Ec1hyYbP5j6AokTzLWtc3Bp970VbCnpRMhNmQjxgJh1LrYzlsrrOJQQJ99ALACHYHv6XJ3w3AAAAACOG0Kyl `
-              AZURE_OPENAI_API_VERSION=2024-08-01-preview `
-              AZURE_OPENAI_DEPLOYMENT=gpt-4o `
+              AZURE_OPENAI_API_VERSION=2025-04-16 `
+              AZURE_OPENAI_DEPLOYMENT=o4-mini `
               AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small `
               OPENAI_API_TYPE=azure `
-              OPENAI_API_VERSION=2024-08-01-preview `
+              OPENAI_API_VERSION=2025-04-16 `
               EMBEDDING_MODEL=text-embedding-3-small `
-              LLM_MODEL=gpt-4o `
+              LLM_MODEL=o4-mini `
               SUPABASE_URL=https://aubulhjfeszmsheonmpy.supabase.co `
               SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YnVsaGpmZXN6bXNoZW9ubXB5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNTI4NzQxMiwiZXhwIjoyMDUwODYzNDEyfQ.aI0lG4QDWytCV5V0BLK6Eus8fXqUgTiTuDa7kqpCCkc `
               COLLECTION_NAME=Information `

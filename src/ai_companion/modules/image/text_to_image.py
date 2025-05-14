@@ -1,9 +1,11 @@
 import base64
 import logging
 import os
-from typing import Optional
+import asyncio
+import random
+from typing import Optional, List
 
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field
 from together import Together

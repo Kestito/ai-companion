@@ -86,7 +86,7 @@ param (
 $IMAGE_NAME = "ai-companion"
 $WEB_UI_IMAGE_NAME = "web-ui-companion"
 $VERSION_FILE = "./.version"               # New file to store version
-$TAG = "v1.0.10"                           # Default tag (will be updated if auto-increment)
+$TAG = "v1.0.33"                           # Default tag (will be updated if auto-increment)
 $RESOURCE_GROUP = "evelina-rg-20250308115110"  # Use existing resource group
 $ACR_NAME = "evelinaacr8677"  # Use existing ACR
 $BACKEND_APP_NAME = "backend-app"
@@ -99,7 +99,7 @@ $BACKEND_SRC_PATH = "./src/ai_companion"  # Path to backend source
 $FRONTEND_SRC_PATH = "./src/ai_companion/interfaces/web-ui"  # Path to frontend source
 $BACKEND_DOCKERFILE_PATH = "./Dockerfile"  # Path to backend Dockerfile (in root directory)
 $FRONTEND_DOCKERFILE_PATH = "$FRONTEND_SRC_PATH/Dockerfile"  # Correctly define the path to frontend Dockerfile
-$FORCE_REBUILD = $false  # Set to true to force rebuilding images even if they exist in ACR
+$FORCE_REBUILD = $true  # Set to true to force rebuilding images even if they exist in ACR
 $BACKEND_HASH_FILE = "./.backend-hash"  # File to store hash of backend code
 $FRONTEND_HASH_FILE = "./.frontend-hash"  # File to store hash of frontend code
 $DETECT_CHANGES = -not $SkipChangeDetection  # Flag to enable/disable change detection

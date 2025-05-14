@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/azure-functions/python:3.9-python3.9 AS builder
+FROM python:3.11-slim AS builder
 
 # Set working directory
 WORKDIR /app
@@ -10,15 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files first for better layer caching
-COPY uv.lock pyproject.toml README.md /app/
+# Copy requirements file
+COPY requirements.txt /app/
 
 # Copy application code
 COPY src/ /app/src/
+COPY pyproject.toml /app/
 
 # Install dependencies
-RUN pip install --no-cache-dir uv && \
-    uv sync --frozen --no-cache && \
+RUN pip install --no-cache-dir -r requirements.txt && \
     pip install -e .
 
 # Create necessary files and directories
@@ -83,7 +83,7 @@ case "$INTERFACE" in\n\
 esac' > /app/start.sh && chmod +x /app/start.sh
 
 # Runtime stage with minimal dependencies
-FROM mcr.microsoft.com/azure-functions/python:3.9-python3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -97,16 +97,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Copy only necessary files from builder stage
 COPY --from=builder /app/src /app/src
-COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /app/start.sh /app/start.sh
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
 COPY --from=builder /app/chainlit.md /app/chainlit.md
 COPY --from=builder /app/.chainlit /app/.chainlit
 COPY --from=builder /app/public /app/public
 COPY --from=builder /app/ai_companion /app/ai_companion
-
-# Update PATH to use virtual environment
-ENV PATH="/app/.venv/bin:$PATH"
 
 # Create symbolic link required for Azure Functions
 RUN ln -sf /app/src/ai_companion /app/ai_companion && \

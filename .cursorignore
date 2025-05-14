@@ -1,0 +1,44 @@
+# Node modules
+node_modules/
+
+# Python virtual environments
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Log files
+logs/
+*.log
+
+# Environment files (you might want to exclude these from Cursor indexing)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Large data files
+data/
+*.csv
+*.json
+*.parquet
+
+# Cache directories
+.cache/
+.ruff_cache/
+
+# IDE specific files
+.vscode/
+.idea/
+
+# OS specific files
+.DS_Store
+Thumbs.db

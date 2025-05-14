@@ -1,5 +1,6 @@
 import os
-from typing import Optional, List
+import asyncio
+from typing import Optional, List, Dict, Any
 from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime
@@ -48,6 +49,7 @@ class VectorStore:
 
     _instance: Optional["VectorStore"] = None
     _initialized: bool = False
+    _initialization_lock = asyncio.Lock()
 
     def __new__(cls) -> "VectorStore":
         if cls._instance is None:
@@ -55,29 +57,63 @@ class VectorStore:
         return cls._instance
 
     def __init__(self) -> None:
-        try:
-            self._validate_env_vars()
-            self.qdrant_client = QdrantClient(
-                url=settings.QDRANT_URL,
-                api_key=settings.QDRANT_API_KEY,
-                timeout=30,  # Increased timeout for more reliability
-            )
+        # Set up the logger first
+        self.logger = logging.getLogger(__name__)
+        self._initialized = False
+        self.qdrant_client = None
+        self.azure_client = None
 
-            self.azure_client = AzureOpenAI(
-                api_key=settings.AZURE_OPENAI_API_KEY,
-                api_version=settings.AZURE_OPENAI_API_VERSION,
-                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            )
+        # Note: Actual initialization is deferred to async_initialize()
+        # This allows the constructor to return immediately without blocking
 
-            self._initialized = True
-            self.logger = logging.getLogger(__name__)
-            self.logger.info("VectorStore initialized successfully")
-        except Exception as e:
-            self._initialized = False
-            self.qdrant_client = None
-            self.azure_client = None
-            self.logger = logging.getLogger(__name__)
-            self.logger.error(f"Failed to initialize VectorStore: {e}", exc_info=True)
+    async def async_initialize(self) -> bool:
+        """
+        Asynchronously initialize the VectorStore.
+        Returns True if initialization was successful, False otherwise.
+        """
+        # Skip if already initialized
+        if self._initialized:
+            return True
+
+        # Use a lock to prevent multiple concurrent initializations
+        async with self._initialization_lock:
+            # Double-check if initialized while waiting for lock
+            if self._initialized:
+                return True
+
+            try:
+                self._validate_env_vars()
+
+                # Move the blocking QdrantClient initialization to a thread
+                self.qdrant_client = await asyncio.to_thread(
+                    lambda: QdrantClient(
+                        url=settings.QDRANT_URL,
+                        api_key=settings.QDRANT_API_KEY,
+                        timeout=30,  # Increased timeout for more reliability
+                        check_compatibility=False  # Added to suppress version check warning
+                    )
+                )
+
+                # Move the AzureOpenAI client initialization to a thread as well
+                self.azure_client = await asyncio.to_thread(
+                    lambda: AzureOpenAI(
+                        api_key=settings.AZURE_OPENAI_API_KEY,
+                        api_version=settings.AZURE_OPENAI_API_VERSION,
+                        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                    )
+                )
+
+                self._initialized = True
+                self.logger.info("VectorStore initialized successfully")
+                return True
+            except Exception as e:
+                self._initialized = False
+                self.qdrant_client = None
+                self.azure_client = None
+                self.logger.error(
+                    f"Failed to initialize VectorStore: {e}", exc_info=True
+                )
+                return False
 
     def _validate_env_vars(self) -> None:
         """Validate that all required environment variables are set."""
@@ -87,18 +123,33 @@ class VectorStore:
                 f"Missing required environment variables: {', '.join(missing_vars)}"
             )
 
-    def ensure_collection(self, collection_name: str) -> bool:
+    async def ensure_collection(self, collection_name: str) -> bool:
         """
         Ensures a collection exists, creates it if it doesn't.
         Returns True if successful, False otherwise.
         """
         try:
-            if not self._initialized or not self.qdrant_client:
+            # Make sure we're initialized first
+            if not self._initialized:
+                initialized = await self.async_initialize()
+                if not initialized:
+                    self.logger.error("Failed to initialize VectorStore")
+                    return False
+
+            if not self.qdrant_client:
                 self.logger.error("VectorStore not properly initialized")
                 return False
 
-            if not self._collection_exists(collection_name):
-                return self._create_collection(collection_name)
+            # Move collection existence check to a thread
+            exists = await asyncio.to_thread(
+                lambda: self._collection_exists(collection_name)
+            )
+
+            if not exists:
+                # Move collection creation to a thread
+                return await asyncio.to_thread(
+                    lambda: self._create_collection(collection_name)
+                )
             return True
         except Exception as e:
             self.logger.error(
@@ -169,6 +220,45 @@ class VectorStore:
             self.logger.error(f"Error generating embedding: {e}", exc_info=True)
             return None
 
+    async def _get_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Get embedding for a text asynchronously.
+        Returns None if embedding generation fails.
+        """
+        try:
+            if not self._initialized or not self.azure_client:
+                self.logger.error("Cannot generate embedding - client not initialized")
+                return None
+
+            # If text is empty, log and return None
+            if not text or text.strip() == "":
+                self.logger.warning("Empty text provided to _get_embedding, skipping")
+                return None
+
+            # Generate embedding
+            response = self.azure_client.embeddings.create(
+                input=text, model=settings.AZURE_EMBEDDING_DEPLOYMENT
+            )
+
+            # Verify the response has data
+            if not response.data or len(response.data) == 0:
+                self.logger.error("Azure OpenAI returned empty embedding data")
+                return None
+
+            # Verify the embedding exists and is not empty
+            embedding = response.data[0].embedding
+            if not embedding or len(embedding) == 0:
+                self.logger.error("Azure OpenAI returned empty embedding vector")
+                return None
+
+            self.logger.debug(
+                f"Successfully generated embedding of dimension {len(embedding)}"
+            )
+            return embedding
+        except Exception as e:
+            self.logger.error(f"Error generating embedding: {e}", exc_info=True)
+            return None
+
     def find_similar_memory(
         self, text: str, filter_conditions: Optional[dict] = None
     ) -> Optional[Memory]:
@@ -182,6 +272,25 @@ class VectorStore:
             Optional Memory if a similar one is found
         """
         results = self.search_memories(text, k=1, filter_conditions=filter_conditions)
+        if results and results[0].score >= self.SIMILARITY_THRESHOLD:
+            return results[0]
+        return None
+
+    async def find_similar_memory(
+        self, text: str, filter_conditions: Optional[dict] = None
+    ) -> Optional[Memory]:
+        """Find if a similar memory already exists.
+
+        Args:
+            text: The text to search for
+            filter_conditions: Dictionary of conditions to filter search results (e.g. patient_id)
+
+        Returns:
+            Optional Memory if a similar one is found
+        """
+        results = await self.search_memories(
+            text, k=1, filter_conditions=filter_conditions
+        )
         if results and results[0].score >= self.SIMILARITY_THRESHOLD:
             return results[0]
         return None
@@ -250,6 +359,87 @@ class VectorStore:
                 f"Qdrant returned unexpected response while storing memory: {e}"
             )
             return False
+        except Exception as e:
+            self.logger.error(f"Error storing memory: {e}", exc_info=True)
+            return False
+
+    async def store_memory(self, text: str, metadata: dict) -> bool:
+        """Store a new memory in the vector store or update if similar exists.
+
+        Args:
+            text: The text content of the memory
+            metadata: Additional information about the memory (must include patient_id)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Make sure we're initialized
+            if not self._initialized:
+                initialized = await self.async_initialize()
+                if not initialized:
+                    self.logger.error("Failed to initialize VectorStore")
+                    return False
+
+            # Validate minimal metadata
+            if "patient_id" not in metadata:
+                self.logger.error("Missing required patient_id in memory metadata")
+                return False
+
+            # Add timestamp if not present
+            if "timestamp" not in metadata:
+                metadata["timestamp"] = datetime.now().isoformat()
+
+            # Ensure collection exists
+            collection_name = self.COLLECTION_NAME
+            collection_ready = await self.ensure_collection(collection_name)
+            if not collection_ready:
+                self.logger.error(f"Failed to ensure collection {collection_name}")
+                return False
+
+            # Get embedding for text
+            embedding = await self._get_embedding(text)
+            if embedding is None:
+                self.logger.error("Failed to generate embedding for memory")
+                return False
+
+            # Generate ID based on content hash and timestamp to make it consistent
+            import hashlib
+
+            content_hash = hashlib.md5(
+                f"{text}-{metadata['patient_id']}".encode()
+            ).hexdigest()
+            memory_id = f"mem-{content_hash}"
+            metadata["id"] = memory_id
+
+            # Check if similar memory exists with same patient context
+            similar_memory = await self.find_similar_memory(
+                text,
+                filter_conditions={"patient_id": metadata["patient_id"]},
+            )
+
+            point_id = memory_id
+            if similar_memory:
+                # Update existing memory instead of creating new one
+                point_id = similar_memory.id
+                self.logger.info(f"Updating similar existing memory: {point_id}")
+
+            # Store or update the memory using a thread
+            operation = await asyncio.to_thread(
+                lambda: self.qdrant_client.upsert(
+                    collection_name=collection_name,
+                    points=[
+                        models.PointStruct(
+                            id=point_id,
+                            vector=embedding,
+                            payload={"text": text, "metadata": metadata},
+                        )
+                    ],
+                )
+            )
+
+            self.logger.info(f"Memory stored successfully with ID: {point_id}")
+            return True
         except Exception as e:
             self.logger.error(f"Error storing memory: {e}", exc_info=True)
             return False
@@ -358,12 +548,134 @@ class VectorStore:
             )
             return []
 
+    async def search_memories(
+        self, query: str, k: int = 3, filter_conditions: Optional[dict] = None
+    ) -> List[Memory]:
+        """Search for relevant memories based on semantic similarity.
+
+        Args:
+            query: The search query text
+            k: Number of results to return
+            filter_conditions: Dictionary of conditions to filter search results
+
+        Returns:
+            List of Memory objects ordered by relevance
+        """
+        try:
+            # Make sure we're initialized
+            if not self._initialized:
+                initialized = await self.async_initialize()
+                if not initialized:
+                    self.logger.error("Failed to initialize VectorStore")
+                    return []
+
+            # Ensure collection exists
+            collection_name = self.COLLECTION_NAME
+            collection_ready = await self.ensure_collection(collection_name)
+            if not collection_ready:
+                self.logger.error(f"Collection {collection_name} not ready")
+                return []
+
+            # Get embedding for query
+            query_embedding = await self._get_embedding(query)
+            if query_embedding is None:
+                self.logger.error("Failed to generate embedding for search query")
+                return []
+
+            # Build filter conditions
+            search_filter = None
+            if filter_conditions:
+                # Use a thread for the filter building to avoid any potential blocking
+                search_filter = await asyncio.to_thread(
+                    lambda: self._build_filter_from_conditions(filter_conditions)
+                )
+
+            # Perform the search using a thread
+            search_result = await asyncio.to_thread(
+                lambda: self.qdrant_client.search(
+                    collection_name=collection_name,
+                    query_vector=query_embedding,
+                    limit=k,
+                    query_filter=search_filter,
+                    with_payload=True,
+                )
+            )
+
+            # Convert results to Memory objects
+            memories = []
+            for point in search_result:
+                payload = point.payload
+                text = payload.get("text", "")
+                metadata = payload.get("metadata", {})
+                score = point.score
+
+                memories.append(Memory(text=text, metadata=metadata, score=score))
+
+            return memories
+        except Exception as e:
+            self.logger.error(f"Error searching memories: {e}", exc_info=True)
+            return []
+
+    def _build_filter_from_conditions(
+        self, conditions: Dict[str, Any]
+    ) -> Optional[models.Filter]:
+        """
+        Build a Qdrant filter from a dictionary of conditions.
+
+        Args:
+            conditions: Dictionary of field conditions to filter by
+
+        Returns:
+            Qdrant filter object
+        """
+        if not conditions:
+            return None
+
+        must_conditions = []
+
+        # Convert each condition to a proper field condition
+        for key, value in conditions.items():
+            # Handle the "metadata." prefix if needed
+            field_key = f"metadata.{key}" if not key.startswith("metadata.") else key
+
+            if isinstance(value, list):
+                # For list values, create OR condition
+                should_conditions = [
+                    models.FieldCondition(
+                        key=field_key, match=models.MatchValue(value=v)
+                    )
+                    for v in value
+                ]
+                if should_conditions:
+                    must_conditions.append(models.Filter(should=should_conditions))
+            else:
+                # For single values, create exact match condition
+                must_conditions.append(
+                    models.FieldCondition(
+                        key=field_key, match=models.MatchValue(value=value)
+                    )
+                )
+
+        if not must_conditions:
+            return None
+
+        return models.Filter(must=must_conditions)
+
 
 @lru_cache
 def get_vector_store() -> VectorStore:
-    """Get a singleton instance of the VectorStore.
-
-    Returns:
-        VectorStore instance
+    """
+    Get or create a VectorStore instance.
+    NOTE: This version does not initialize the store, call async_initialize() before using.
     """
     return VectorStore()
+
+
+async def get_initialized_vector_store() -> VectorStore:
+    """
+    Get or create a fully initialized VectorStore instance.
+    This async function ensures the vector store is properly initialized before returning.
+    """
+    store = get_vector_store()
+    await store.async_initialize()
+    return store

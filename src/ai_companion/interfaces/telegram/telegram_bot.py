@@ -3,11 +3,13 @@ import logging
 from typing import Dict, Optional, Union, Any, List
 import signal
 from datetime import datetime, timedelta
-import os
 import random
+import json
 
 import httpx
 
+# Import the message classes from langchain_core
+from langchain_core.messages import HumanMessage
 from ai_companion.graph import graph_builder
 from ai_companion.modules.image import ImageToText
 from ai_companion.modules.speech import SpeechToText, TextToSpeech
@@ -18,16 +20,26 @@ from ai_companion.modules.scheduler import (
     get_scheduler_worker,
     get_scheduled_message_service,
 )
+from ai_companion.graph.nodes import get_patient_id_from_platform_id
 
 # Define color codes for terminal output
 GREEN = "\033[32m"
 RESET = "\033[0m"
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Configure logging based on settings
+log_level = getattr(logging, settings.LOGGING_LEVEL, logging.INFO)
+logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+# Set HTTP client libraries to log at WARNING level to suppress debug logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+# Configure scheduler logger separately with custom log level
+scheduler_logger = logging.getLogger("ai_companion.modules.scheduler")
+scheduler_log_level = getattr(logging, settings.SCHEDULER_LOG_LEVEL, logging.ERROR)
+scheduler_logger.setLevel(scheduler_log_level)
 
 # Global module instances
 speech_to_text = SpeechToText()
@@ -55,10 +67,8 @@ class TelegramBot:
         self.client = httpx.AsyncClient(timeout=60.0)
         self.session = self.client  # Add session alias for compatibility
         self._running = True
-        self.checkpoint_dir = os.path.join(os.path.dirname(__file__), "checkpoints")
 
-        # Create checkpoint directory if it doesn't exist
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        # Removed checkpoint directory functionality as it's not needed with Supabase
 
         self._setup_signal_handlers()
 
@@ -76,13 +86,15 @@ class TelegramBot:
         # Initialize scheduled message service
         try:
             self.scheduled_message_service = get_scheduled_message_service()
-            logger.info("Successfully initialized ScheduledMessageService")
+            #  if scheduler_log_level <= logging.INFO:
+            #     logger.info("Successfully initialized ScheduledMessageService")
 
             # Test connection to scheduled_messages table
             self.scheduled_message_service.supabase.table("scheduled_messages").select(
                 "id"
             ).limit(1).execute()
-            logger.info("Test connection to scheduled_messages table successful")
+            #  if scheduler_log_level <= logging.INFO:
+            #    logger.info("Test connection to scheduled_messages table successful")
         except Exception as e:
             logger.error(
                 f"Error initializing ScheduledMessageService: {e}", exc_info=True
@@ -92,9 +104,21 @@ class TelegramBot:
         # Initialize scheduler worker with this bot instance for sending messages
         self.scheduler_worker = get_scheduler_worker(self)
 
-        logger.info(
-            "Initialized Telegram bot with standardized memory service approach"
-        )
+        # Skip memory cleanup initialization per user request
+        logger.info("Memory cleanup scheduler initialization skipped per user request")
+        self.memory_cleanup_thread = None
+
+        #  logger.info(
+
+    #       "Initialized Telegram bot with standardized memory service approach"
+    #  )
+
+    async def _run_initial_memory_cleanup(self):
+        """Run initial memory cleanup on startup."""
+        try:
+            logger.info("Initial memory cleanup skipped as requested by user")
+        except Exception as e:
+            logger.error(f"Error in memory cleanup handling: {e}")
 
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
@@ -118,7 +142,8 @@ class TelegramBot:
 
             # Start the scheduler worker
             await self.scheduler_worker.start(self)
-            logger.info("Started scheduler worker")
+            #  if scheduler_log_level <= logging.INFO:
+            #    logger.info("Started scheduler worker")
 
             await self._poll_updates()
         except Exception as e:
@@ -151,8 +176,22 @@ class TelegramBot:
             try:
                 # Check Supabase connection via memory manager
                 test_user_id = "test_health_check_user"  # Use a fixed test user ID for health checks
+
+                # Get a real patient ID instead of using a hardcoded test value
+                patient_id = get_patient_id_from_platform_id("telegram", test_user_id)
+
+                # If no patient found, use the system ID format directly
+                if not patient_id:
+                    patient_id = f"telegram:{test_user_id}"
+                    logger.debug(
+                        f"No patient found for health check, using system_id: {patient_id}"
+                    )
+
                 test_memories = await self.memory_service.get_session_memory(
-                    platform="telegram", user_id=test_user_id, limit=10
+                    platform="telegram",
+                    user_id=test_user_id,
+                    patient_id=patient_id,
+                    limit=10,
                 )
                 logger.info(
                     f"Supabase connection successful, found {len(test_memories)} active memories"
@@ -237,264 +276,272 @@ class TelegramBot:
                     await asyncio.sleep(5)
 
     async def _process_update(self, update: Dict):
-        """Process incoming update from Telegram."""
+        """Process a single update from Telegram."""
         try:
-            # Extract message from update
-            if "message" not in update:
-                logger.warning(f"Update contains no message: {update}")
+            if "update_id" in update:
+                # Update the offset for the next poll
+                self.offset = update["update_id"] + 1
+
+                if "message" in update:
+                    message = update["message"]
+                    await self._handle_message(message)
+                elif "edited_message" in update:
+                    # Just log edited messages for now
+                    edited_message = update["edited_message"]
+                    logger.info(
+                        f"User edited message: {edited_message.get('text', '')}"
+                    )
+        except Exception as e:
+            logger.error(f"Error processing update: {e}", exc_info=True)
+
+    async def _handle_message(self, message: Dict):
+        """Handle a message from Telegram."""
+        try:
+            # Skip empty messages
+            if not message:
                 return
 
-            message = update["message"]
             chat_id = message.get("chat", {}).get("id")
-            # Using _ for unused variable
-            _ = message.get("from", {}).get("id")
-            text = message.get("text", "")
+            user_id = message.get("from", {}).get("id")
 
-            if not chat_id:
-                logger.warning(f"Missing chat_id in message: {message}")
+            if not chat_id or not user_id:
+                logger.warning("Missing chat_id or user_id in message")
                 return
 
-            # Generate a unique session ID for this chat using standard format
-            session_id = f"telegram-{chat_id}-{_}"
-
-            # Only use checkpoint_dir if needed for file operations
-            checkpoint_path = os.path.join(self.checkpoint_dir, f"{session_id}.json")
-
-            # Check for command messages first
-            if "text" in message and message["text"].startswith("/"):
-                # Handle command message
-                command_result = await self._handle_command(message)
-                if command_result:
-                    # Command was handled, stop processing
-                    return
-
-            # Check if this is a file or text message
-            message_type = None
-            content = None
-
-            # Extract message content based on type
-            if "text" in message:
-                message_type = "text"
-                content = message["text"]
-            elif "voice" in message:
-                message_type = "voice"
-                file_id = message["voice"]["file_id"]
-                voice_data = await self._download_file(file_id)
-
-                # Convert voice to text
-                content = await speech_to_text.transcribe(voice_data)
-                logger.info(f"Transcribed voice message: {content}")
-            elif "photo" in message:
-                message_type = "photo"
-                # Get the largest photo (last in array)
-                file_id = message["photo"][-1]["file_id"]
-                photo_data = await self._download_file(file_id)
-
-                # Extract text from image
-                content = await image_to_text.process_image(photo_data)
-                logger.info(f"Extracted text from image: {content}")
-            else:
-                # Handle other message types or send a response about unsupported format
-                logger.warning(f"Unsupported message type: {message}")
-                await self._send_message(
-                    chat_id,
-                    "I can process text, voice messages, and images. Please send one of these formats.",
+            # Get patient_id for this user
+            patient_id = await self._get_patient_id(user_id)
+            if patient_id:
+                logger.info(
+                    f"PATIENT MESSAGE | ID: {patient_id} | User ID: {user_id} | Chat ID: {chat_id}"
                 )
+            else:
+                logger.info(
+                    f"UNKNOWN USER MESSAGE | User ID: {user_id} | Chat ID: {chat_id}"
+                )
+
+            # Check if this is a command first
+            if await self._handle_command(message):
                 return
 
-            # Print user message in green to terminal
-            print_green(f"USER ({chat_id}): {content}")
+            # Extract message content
+            content_result = await self._extract_message_content(message)
+            if not content_result:
+                logger.warning("Unable to extract message content")
+                return
 
-            # Collect user metadata
-            username = message.get("from", {}).get("username")
-            first_name = message.get("from", {}).get("first_name", "")
-            last_name = message.get("from", {}).get("last_name", "")
+            message_type, message_content = content_result
 
-            user_metadata = {
-                "user_id": _,
-                "username": username,
-                "first_name": first_name,
-                "last_name": last_name,
-                "chat_id": chat_id,
-                "platform": "telegram",
-            }
+            # Log the incoming message
+            if message_type == "text":
+                logger.info(
+                    f"PATIENT TEXT | ID: {patient_id} | Content: {message_content}"
+                )
+                print(f"USER ({user_id}): {message_content}")
+            elif message_type == "voice":
+                logger.info(
+                    f"PATIENT VOICE | ID: {patient_id} | Duration: {message.get('voice', {}).get('duration', 0)}s"
+                )
+                print(f"USER ({user_id}): [VOICE MESSAGE]")
+            elif message_type == "photo":
+                logger.info(f"PATIENT PHOTO | ID: {patient_id}")
+                print(f"USER ({user_id}): [PHOTO]")
 
-            # Process the message and generate response
+            # Show typing indicator
             await self._send_typing_action(chat_id)
 
-            # Process message through the graph agent using standardized LangGraph approach
-            try:
-                logger.debug("Starting graph processing with LangGraph")
+            # Get the conversation history for enhanced context
+            conversation_history = await self._get_conversation_history(
+                chat_id, user_id, max_messages=20
+            )
 
-                # Create a human message from the content
-                from langchain_core.messages import HumanMessage
+            # Create user metadata for graph processing
+            user_metadata = {
+                "platform": "telegram",
+                "external_system_id": str(user_id),
+                "chat_id": chat_id,
+                "message_type": message_type,
+            }
 
-                human_message = HumanMessage(content=content)
+            # Add patient_id to metadata if available
+            if patient_id:
+                user_metadata["patient_id"] = patient_id
+                logger.info(f"Added patient_id {patient_id} to user_metadata for graph")
 
-                # Standard LangGraph configuration with use_supabase_only flag
-                config = {
-                    "configurable": {
-                        "thread_id": session_id,
-                        "memory_manager": self.memory_service.short_term_memory,
-                        "use_supabase_only": True,  # Flag to use only Supabase for memory
-                        "detailed_response": True,
-                        "conversation_history": [],  # Will be populated below
-                        "interface": "telegram",
-                        "user_metadata": user_metadata,
-                    }
+            # Pass conversation history in the metadata for proper context management
+            user_metadata["conversation_history"] = conversation_history
+            logger.info(f"Looking up patient with system_id: telegram:{user_id}")
+            patient_id = get_patient_id_from_platform_id("telegram", str(user_id))
+
+            # Prepare for graph processing - graph_builder is already the compiled graph
+            graph = graph_builder  # Don't call it as a function
+
+            # Create thread ID with consistent format - always include patient_id if available
+            thread_id = f"telegram-{chat_id}-{user_id}"
+            if patient_id:
+                thread_id += f"-patient-{patient_id}"
+
+            # Create message for graph processing with metadata
+            human_message = HumanMessage(
+                content=message_content, metadata=user_metadata
+            )
+
+            # Set up graph config with appropriate patient_id if available
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "user_metadata": user_metadata,
                 }
+            }
 
-                # Try to get existing memories for context enhancement
-                try:
-                    recent_memories = await self.memory_service.get_session_memory(
-                        platform="telegram", user_id=str(_), limit=10
-                    )
+            # Process message through graph
+            result = await graph.ainvoke({"messages": [human_message]}, config)
 
-                    if recent_memories:
-                        # Format memories for LLM consumption
-                        formatted_history = []
-                        for memory in recent_memories:
-                            if "content" in memory and memory["content"]:
-                                formatted_history.append(
-                                    {
-                                        "role": "human",
-                                        "content": memory.get("content", ""),
-                                    }
-                                )
-                            if "response" in memory and memory["response"]:
-                                formatted_history.append(
-                                    {
-                                        "role": "ai",
-                                        "content": memory.get("response", ""),
-                                    }
-                                )
+            # Extract the response
+            response_message = result["messages"][-1]
+            response_text = (
+                response_message.content
+                if hasattr(response_message, "content")
+                else str(response_message)
+            )
 
-                        # Add conversation history to config
-                        config["configurable"]["conversation_history"] = (
-                            formatted_history
-                        )
-                        logger.debug(
-                            f"Added {len(formatted_history)} conversation turns from memory"
-                        )
-                except Exception as e:
-                    logger.warning(f"Error retrieving previous conversation turns: {e}")
-                    # Continue without history - don't fail the entire process
+            # Configure the workflow for further processing
+            workflow = "conversation"  # default workflow
+            result_data = {}  # default empty result data
 
-                # Create a new graph instance with the standardized config
-                try:
-                    graph = graph_builder.with_config(config)
+            # Check if the response has a workflow attribute
+            if (
+                hasattr(response_message, "additional_kwargs")
+                and "workflow" in response_message.additional_kwargs
+            ):
+                workflow = response_message.additional_kwargs["workflow"]
 
-                    # Invoke the graph with the human message
-                    result = await graph.ainvoke({"messages": [human_message]})
-                except Exception as e:
-                    logger.error(
-                        f"Error creating or invoking graph: {e}", exc_info=True
-                    )
+            # Extract result data if available
+            if (
+                hasattr(response_message, "additional_kwargs")
+                and "result" in response_message.additional_kwargs
+            ):
+                result_data = response_message.additional_kwargs["result"]
+
+            # Send the response based on workflow
+            await self._send_response(
+                chat_id, response_text, workflow, result_data, message_type
+            )
+
+            # Save to database for history tracking
+            await self._save_to_database(
+                user_metadata, message_content, response_text, patient_id
+            )
+        except Exception as e:
+            logger.error(f"Error handling message: {e}", exc_info=True)
+            try:
+                # Try to send a simple error message as fallback
+                if chat_id:
                     await self._send_message(
                         chat_id,
-                        "I'm sorry, but I encountered a processing error. Please try again later.",
+                        "Atsiprašau, įvyko klaida apdorojant jūsų žinutę. Prašome bandyti vėliau.",
                     )
-                    return
+            except Exception as inner_e:
+                logger.error(f"Failed to send error message: {inner_e}")
 
-                # Get the response from the result
-                response_message = None
-                workflow = "conversation"
+    async def _get_conversation_history(
+        self, chat_id: int, user_id: int, max_messages: int = 20
+    ) -> List[Dict[str, Any]]:
+        """
+        Get conversation history using standardized memory service.
 
-                # Handle different result types
-                if isinstance(result, dict) and "messages" in result:
-                    messages = result["messages"]
-                    if messages and len(messages) > 0:
-                        last_message = messages[-1]
-                        if hasattr(last_message, "content"):
-                            response_message = last_message.content
+        Args:
+            chat_id: Telegram chat ID
+            user_id: Telegram user ID
+            max_messages: Maximum number of messages to retrieve
 
-                            # Get workflow info
-                            if (
-                                hasattr(last_message, "metadata")
-                                and last_message.metadata
-                            ):
-                                metadata = last_message.metadata
-                                if "workflow" in metadata:
-                                    workflow = metadata["workflow"]
-                    elif "error" in result:
-                        response_message = f"I encountered an error: {result['error']}"
-                    else:
-                        response_message = "I'm not sure how to respond to that."
-                elif isinstance(result, dict) and "response" in result:
-                    response_message = result["response"]
+        Returns:
+            List of message dictionaries with content and role
+        """
+        try:
+            # Get patient_id for this user
+            patient_id = await self._get_patient_id(user_id)
 
-                    # Check for workflow specification
-                    if "workflow" in result:
-                        workflow = result["workflow"]
-                elif isinstance(result, str):
-                    # Simple string response
-                    response_message = result
-                else:
-                    # Fallback for unrecognized format
-                    logger.warning(f"Unrecognized result format: {type(result)}")
-                    response_message = "I processed your message but couldn't formulate a proper response."
-
-                # Verify we have a valid response
-                if not response_message:
-                    response_message = "I'm sorry, but I wasn't able to generate a response. Please try again."
-
-                # Extract the complete graph state using aget_state
-                try:
-                    # Get the graph state using LangGraph's aget_state method
-                    graph_state = await graph.aget_state(config)
-                    logger.info("Retrieved graph state from LangGraph using aget_state")
-
-                    # Store in memory service with the complete state
-                    conversation_data = {
-                        "user_message": content,
-                        "bot_response": response_message,
-                    }
-
-                    # Store the memory with the conversation data and complete state
-                    memory_id = await self.memory_service.store_session_memory(
-                        platform="telegram",
-                        user_id=str(_),
-                        state=graph_state,  # Store complete graph state
-                        conversation=conversation_data,
-                        ttl_minutes=1440,  # 24 hours default
-                    )
-
-                    logger.info(f"Stored complete memory state with ID: {memory_id}")
-                except Exception as e:
-                    # Log error but don't fail the response - memory storage is non-critical
-                    logger.error(f"Error extracting or storing graph state: {e}")
-                    # Continue with sending the response even if memory storage failed
-
-                # Send the response directly from the node-based workflow
-                try:
-                    await self._send_direct_response(
-                        chat_id, response_message, workflow, result, message_type
-                    )
-                except Exception as e:
-                    logger.error(f"Error sending direct response: {e}", exc_info=True)
-                    # Fallback to simple message if direct response fails
-                    try:
-                        await self._send_message(
-                            chat_id,
-                            "Sorry, I had trouble formulating my response. Please try again.",
-                        )
-                    except Exception as e2:
-                        logger.error(f"Failed to send fallback error message: {e2}")
-
-            except Exception as e:
-                logger.error(f"Error in graph processing: {e}", exc_info=True)
-                await self._send_message(
-                    chat_id, "Sorry, I encountered an error processing your message."
+            if not patient_id:
+                logger.warning(
+                    f"No patient_id found for telegram user {user_id}, cannot retrieve conversation history"
                 )
+                return []
+
+            # Use memory service directly with standardized approach, including patient_id
+            raw_memories = await self.memory_service.get_session_memory(
+                platform="telegram",
+                user_id=str(user_id),
+                patient_id=patient_id,
+                limit=max_messages * 2,
+            )
+
+            # Format the conversation history
+            conversation_history = []
+
+            for memory in raw_memories:
+                try:
+                    # Check for new format with both user message and bot response
+                    if "response" in memory:
+                        # Add user message
+                        conversation_history.append(
+                            {"role": "user", "content": memory.get("content", "")}
+                        )
+                        # Add bot response
+                        conversation_history.append(
+                            {"role": "assistant", "content": memory.get("response", "")}
+                        )
+                    else:
+                        # Try to parse content - it might be a JSON string
+                        content = memory.get("content", "")
+                        if isinstance(content, str):
+                            # Try to parse as JSON if it looks like JSON
+                            if content.startswith("{") and content.endswith("}"):
+                                try:
+                                    content_obj = json.loads(content)
+                                    if isinstance(content_obj, dict):
+                                        # Extract user message and bot response if available
+                                        user_msg = content_obj.get("user_message", "")
+                                        bot_msg = content_obj.get("bot_response", "")
+                                        if user_msg:
+                                            conversation_history.append(
+                                                {"role": "user", "content": user_msg}
+                                            )
+                                        if bot_msg:
+                                            conversation_history.append(
+                                                {
+                                                    "role": "assistant",
+                                                    "content": bot_msg,
+                                                }
+                                            )
+                                except json.JSONDecodeError:
+                                    # Not valid JSON, treat as regular content
+                                    pass
+
+                        # If not JSON or parsing failed, use the content as is
+                        if (
+                            not content.startswith("{")
+                            or len(conversation_history) == 0
+                        ):
+                            # Try to determine the role based on metadata
+                            metadata = memory.get("metadata", {})
+                            role = (
+                                "user"
+                                if metadata.get("sender") == "patient"
+                                else "assistant"
+                            )
+                            conversation_history.append(
+                                {"role": role, "content": content}
+                            )
+                except Exception as e:
+                    logger.warning(f"Error parsing conversation history entry: {e}")
+                    continue
+
+            # Limit to max_messages most recent entries, ensuring we have complete pairs
+            return conversation_history[-max_messages:] if conversation_history else []
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
-            try:
-                await self._send_message(
-                    chat_id, "Sorry, I encountered an error processing your message."
-                )
-            except Exception as e2:
-                logger.error(f"Failed to send error message: {e2}")
+            logger.error(f"Error retrieving conversation history: {e}", exc_info=True)
+            return []
 
     async def _handle_command(self, message: Dict) -> bool:
         """
@@ -1151,12 +1198,91 @@ class TelegramBot:
                 logger.warning(f"Invalid response text: {response_text}")
                 response_text = "Sorry, I encountered an error generating a response."
 
+            # Try to get patient_id for enhanced logging
+            patient_id = "unknown"
+            user_id = None
+            try:
+                # Prioritize getting user_id and patient_id from the most reliable source:
+                # 1. Check the user_metadata within the configurable part of the result
+                if isinstance(result, dict) and "configurable" in result:
+                    config = result.get("configurable", {})
+                    user_metadata = config.get("user_metadata", {})
+                    user_id = user_metadata.get(
+                        "external_system_id"
+                    )  # Use the correct key
+                    patient_id_from_config = user_metadata.get("patient_id")
+                    if user_id:
+                        logger.debug(
+                            f"Extracted user_id '{user_id}' from result['configurable']['user_metadata']"
+                        )
+                    if patient_id_from_config:
+                        patient_id = patient_id_from_config
+                        logger.debug(
+                            f"Extracted patient_id '{patient_id}' from result['configurable']['user_metadata']"
+                        )
+
+                # 2. If not found in config, try the metadata of the last message in the result
+                if not user_id or patient_id == "unknown":
+                    if isinstance(result, dict) and "messages" in result:
+                        messages = result.get("messages", [])
+                        if (
+                            messages
+                            and hasattr(messages[-1], "metadata")
+                            and messages[-1].metadata
+                        ):
+                            msg_metadata = messages[-1].metadata
+                            if not user_id:
+                                user_id = msg_metadata.get(
+                                    "external_system_id"
+                                )  # Use the correct key
+                                if user_id:
+                                    logger.debug(
+                                        f"Extracted user_id '{user_id}' from last message metadata"
+                                    )
+                            if patient_id == "unknown":
+                                patient_id_from_msg = msg_metadata.get("patient_id")
+                                if patient_id_from_msg:
+                                    patient_id = patient_id_from_msg
+                                    logger.debug(
+                                        f"Extracted patient_id '{patient_id}' from last message metadata"
+                                    )
+
+                # 3. If still no user_id, use chat_id as a fallback (less ideal)
+                if not user_id:
+                    user_id = str(chat_id)  # Ensure it's a string
+                    logger.debug(f"Using chat_id '{user_id}' as fallback for user_id")
+
+                # 4. If we have user_id but still no patient_id, look it up
+                if user_id and patient_id == "unknown":
+                    patient_id_result = await self._get_patient_id(user_id)
+                    if patient_id_result:
+                        patient_id = patient_id_result
+                        logger.info(
+                            f"Looked up patient_id '{patient_id}' for user_id '{user_id}'"
+                        )
+                    else:
+                        logger.warning(
+                            f"Could not find patient_id for user_id '{user_id}'"
+                        )
+
+            except Exception as e:
+                logger.error(
+                    f"Error getting patient_id/user_id for response logging: {e}",
+                    exc_info=True,
+                )
+
             # Print bot response in green to terminal
             print_green(f"BOT → {chat_id}: {response_text}")
 
+            # Log the response with patient context
             logger.info(
-                f"Sending direct response with workflow '{workflow}', length: {len(response_text)} chars"
+                f"BOT RESPONSE | Patient: {patient_id} | Chat: {chat_id} | Workflow: {workflow} | Length: {len(response_text)} chars"
             )
+
+            # For long responses, log a snippet
+            if len(response_text) > 100:
+                snippet = response_text[:97] + "..."
+                logger.debug(f"Response snippet: {snippet}")
 
             # Handle the case where result is not a dictionary
             if not isinstance(result, dict):
@@ -1829,13 +1955,23 @@ class TelegramBot:
             if patient_id:
                 state["patient_id"] = patient_id
 
-            # Store using memory service
+            # Get patient_id for this user
+            if not patient_id:
+                patient_id = await self._get_patient_id(user_metadata.get("user_id"))
+
+            if not patient_id:
+                logger.warning(
+                    f"No patient_id found for {platform} user {user_metadata.get('user_id')}, cannot store memory"
+                )
+                return None
+
+            # Store using memory service with patient_id
             memory_id = await self.memory_service.store_session_memory(
                 platform=platform,
                 user_id=str(user_metadata.get("user_id")),
+                patient_id=patient_id,  # Add required patient_id
                 state=state,
                 conversation=conversation_data,
-                ttl_minutes=1440,  # Standard 24-hour TTL
             )
 
             logger.info(
@@ -1862,9 +1998,21 @@ class TelegramBot:
             List of memory contents as dictionaries
         """
         try:
-            # Use standard session ID format through memory service
+            # Get patient_id for this user
+            patient_id = await self._get_patient_id(user_id)
+
+            if not patient_id:
+                logger.warning(
+                    f"No patient_id found for telegram user {user_id}, cannot retrieve memories"
+                )
+                return []
+
+            # Use standard session ID format through memory service, including patient_id
             memories = await self.memory_service.get_session_memory(
-                platform="telegram", user_id=str(user_id), limit=limit
+                platform="telegram",
+                user_id=str(user_id),
+                patient_id=patient_id,
+                limit=limit,
             )
 
             return memories
@@ -1887,9 +2035,21 @@ class TelegramBot:
             List of message dictionaries with content and role
         """
         try:
-            # Use memory service directly with standardized approach
+            # Get patient_id for this user
+            patient_id = await self._get_patient_id(user_id)
+
+            if not patient_id:
+                logger.warning(
+                    f"No patient_id found for telegram user {user_id}, cannot retrieve conversation history"
+                )
+                return []
+
+            # Use memory service directly with standardized approach, including patient_id
             raw_memories = await self.memory_service.get_session_memory(
-                platform="telegram", user_id=str(user_id), limit=max_messages
+                platform="telegram",
+                user_id=str(user_id),
+                patient_id=patient_id,
+                limit=max_messages * 2,
             )
 
             # Format the conversation history
@@ -1908,9 +2068,37 @@ class TelegramBot:
                             {"role": "assistant", "content": memory.get("response", "")}
                         )
                     else:
-                        # Old format may have just content
+                        # Try to parse content - it might be a JSON string
                         content = memory.get("content", "")
-                        if content:
+                        if isinstance(content, str):
+                            # Try to parse as JSON if it looks like JSON
+                            if content.startswith("{") and content.endswith("}"):
+                                try:
+                                    content_obj = json.loads(content)
+                                    if isinstance(content_obj, dict):
+                                        # Extract user message and bot response if available
+                                        user_msg = content_obj.get("user_message", "")
+                                        bot_msg = content_obj.get("bot_response", "")
+                                        if user_msg:
+                                            conversation_history.append(
+                                                {"role": "user", "content": user_msg}
+                                            )
+                                        if bot_msg:
+                                            conversation_history.append(
+                                                {
+                                                    "role": "assistant",
+                                                    "content": bot_msg,
+                                                }
+                                            )
+                                except json.JSONDecodeError:
+                                    # Not valid JSON, treat as regular content
+                                    pass
+
+                        # If not JSON or parsing failed, use the content as is
+                        if (
+                            not content.startswith("{")
+                            or len(conversation_history) == 0
+                        ):
                             # Try to determine the role based on metadata
                             metadata = memory.get("metadata", {})
                             role = (
@@ -1925,7 +2113,7 @@ class TelegramBot:
                     logger.warning(f"Error parsing conversation history entry: {e}")
                     continue
 
-            # Limit to max_messages
+            # Limit to max_messages most recent entries, ensuring we have complete pairs
             return conversation_history[-max_messages:] if conversation_history else []
 
         except Exception as e:
@@ -1950,7 +2138,7 @@ class TelegramBot:
                 result = (
                     self.supabase.table("short_term_memory")
                     .select("*")
-                    .order("expires_at", desc=True)
+                    .order("id", desc=True)  # Order by id instead of expires_at
                     .limit(10)
                     .execute()
                 )
@@ -1985,9 +2173,7 @@ class TelegramBot:
                             logger.info(
                                 f"    Created: {context.get('created_at', 'N/A')}"
                             )
-                            logger.info(
-                                f"    Expires: {record.get('expires_at', 'N/A')}"
-                            )
+                            # REMOVED: logger.info(f"    Expires: {record.get('expires_at', 'N/A')}")
 
                             # Print conversation data if available
                             conversation = context.get("conversation", {})
@@ -2040,10 +2226,8 @@ class TelegramBot:
         """
         try:
             # Get all memory sources for comprehensive context
-            # 1. Check cache memory first
+            # Use standardized session ID format
             session_id = f"telegram-{chat_id}-{user_id}"
-            # Using _ for unused variable
-            _ = os.path.join(self.checkpoint_dir, f"{session_id}.json")
 
             # Track important entities and topics mentioned
             important_topics = set()
@@ -2359,6 +2543,85 @@ class TelegramBot:
             chat_id=chat_id, status=status, limit=limit
         )
 
+    async def _get_patient_id(self, telegram_id: Union[int, str]) -> Optional[str]:
+        """
+        Get or create a patient ID for a Telegram user ID.
+
+        Args:
+            telegram_id: The Telegram user ID
+
+        Returns:
+            The patient ID or None if retrieval fails
+        """
+        try:
+            # Convert ID to string if it's an integer
+            telegram_id_str = str(telegram_id)
+
+            # Generate the system_id format
+            system_id = f"telegram:{telegram_id_str}"
+
+            # Log the lookup attempt
+            logger.info(f"Looking up patient with system_id: {system_id}")
+
+            # Use the utility function from nodes.py to get the patient_id directly
+            # This is not an async function, so we don't use await
+            patient_id = get_patient_id_from_platform_id("telegram", telegram_id_str)
+
+            if patient_id:
+                logger.debug(f"Found patient_id {patient_id} for system_id {system_id}")
+                return patient_id
+            else:
+                logger.warning(
+                    f"Could not retrieve or create patient_id for system_id {system_id}"
+                )
+
+                # Try creating directly with Supabase as a fallback
+                try:
+                    if self.supabase:
+                        # Create a JSON structure for email field since we're using it for platform data storage
+                        email_data = {
+                            "platform": "telegram",
+                            "telegram_id": telegram_id_str,
+                            "system_id": system_id,
+                            "created_via": "telegram_bot",
+                            "first_message_time": datetime.now().isoformat(),
+                        }
+
+                        # Prepare data for new patient record
+                        patient_data = {
+                            "system_id": system_id,
+                            "channel": "telegram",
+                            "risk": "Low",
+                            "email": json.dumps(email_data),
+                        }
+
+                        # Insert directly
+                        result = (
+                            self.supabase.table("patients")
+                            .insert(patient_data)
+                            .execute()
+                        )
+                        if result.data and len(result.data) > 0:
+                            new_patient_id = result.data[0].get("id")
+                            logger.info(
+                                f"Created new patient with ID {new_patient_id} for {system_id}"
+                            )
+                            return new_patient_id
+                except Exception as e:
+                    logger.error(f"Failed to create patient as fallback: {e}")
+
+                return None
+        except Exception as e:
+            logger.error(
+                f"Error in _get_patient_id for {telegram_id}: {e}", exc_info=True
+            )
+
+            # In development mode only, return a fallback ID
+            if settings.ENVIRONMENT == "development":
+                logger.warning("Using development fallback ID")
+                return f"telegram-dev-{telegram_id}"
+            return None
+
 
 async def run_telegram_bot():
     """Run the Telegram bot with proper shutdown handling."""
@@ -2376,4 +2639,13 @@ async def run_telegram_bot():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_telegram_bot())
+    try:
+        asyncio.run(run_telegram_bot())
+    except KeyboardInterrupt:
+        logger.info("Application shutdown requested by user (KeyboardInterrupt).")
+    except Exception as e:
+        logging.critical(f"CRITICAL ERROR in telegram_bot.py __main__: {e}", exc_info=True)
+        # Optionally, re-raise or exit with error code
+        # raise
+        import sys
+        sys.exit(1) # Ensure a non-zero exit code on critical failure

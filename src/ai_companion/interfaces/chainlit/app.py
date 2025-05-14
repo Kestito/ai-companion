@@ -1,16 +1,21 @@
-from io import BytesIO
 import logging
 import uuid
 
 import chainlit as cl
 from langchain_core.messages import AIMessageChunk, HumanMessage
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+# Remove SQLite import
+# from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from ai_companion.graph.graph import create_workflow_graph  # Import the graph factory function
+from ai_companion.graph.graph import (
+    create_workflow_graph,
+)  # Import the graph factory function
 from ai_companion.modules.image import ImageToText
 from ai_companion.modules.speech import SpeechToText, TextToSpeech
+from ai_companion.graph.nodes import (
+    get_patient_id_from_platform_id,
+)  # Import patient_id helper
+from ai_companion.modules.memory.service import get_memory_service
 
-from ai_companion.settings import settings
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -20,6 +25,7 @@ logger.setLevel(logging.INFO)
 speech_to_text = SpeechToText()
 text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
+memory_service = get_memory_service()  # Add memory service instance
 
 
 @cl.on_chat_start
@@ -36,7 +42,7 @@ async def on_message(message: cl.Message):
     # Initialize message for streaming
     msg = cl.Message(content="")
     await msg.send()  # Start streaming
-    
+
     # Add processing indicator
     with cl.Step("Processing") as step:
         # Process any attached images
@@ -66,85 +72,121 @@ async def on_message(message: cl.Message):
         sources_to_display = []
 
         async with cl.Step(type="run"):
-            async with AsyncSqliteSaver.from_conn_string(
-                settings.SHORT_TERM_MEMORY_DB_PATH
-            ) as short_term_memory:
-                # Create a new graph instance with the checkpointer
-                graph = create_workflow_graph()
-                graph.checkpointer = short_term_memory
-                
-                async for chunk in graph.astream(
-                    {"messages": [HumanMessage(content=content)]},
-                    {"configurable": {"thread_id": thread_id}},
-                    stream_mode="messages",
-                ):
-                    # Handle different types of chunks
-                    if isinstance(chunk, tuple) and len(chunk) == 2:
-                        node_name = chunk[1].get("langgraph_node")
-                        chunk_data = chunk[0]
-                        
-                        if node_name == "rag_node":
-                            rag_used = True
-                            # Handle streaming chunks from RAG
-                            if isinstance(chunk_data, dict):
-                                if "chunk" in chunk_data and chunk_data["type"] == "stream":
-                                    await msg.stream_token(chunk_data["chunk"])
-                                    has_streamed_content = True
-                                elif "rag_response" in chunk_data:
-                                    rag_info = chunk_data["rag_response"]
-                                    # Update step with RAG info
-                                    step.output = f"""
-                                        🔍 RAG System Results:
-                                        - Found Relevant Info: {rag_info['has_relevant_info']}
-                                        - Confidence: {rag_info.get('confidence', 0.0):.2f}
-                                        - Sources Used: {len(rag_info.get('sources', []))}
-                                        """
-                                    
-                                    # Prepare sources for display
-                                    if rag_info['has_relevant_info']:
-                                        sources_to_display = [
-                                            f"📚 {s['title']}\n   🔗 {s['source']}\n   📅 {s['date']}"
-                                            for s in rag_info['sources']
-                                        ]
-                        
-                        elif node_name == "conversation_node":
-                            try:
-                                if isinstance(chunk_data, AIMessageChunk):
-                                    await msg.stream_token(chunk_data.content)
-                                    has_streamed_content = True
-                                elif isinstance(chunk_data, dict) and "messages" in chunk_data:
-                                    last_message = chunk_data["messages"][-1]
-                                    if isinstance(last_message, AIMessageChunk):
-                                        await msg.stream_token(last_message.content)
-                                        has_streamed_content = True
-                                    elif hasattr(last_message, 'content'):
-                                        await msg.stream_token(last_message.content)
-                                        has_streamed_content = True
-                            except Exception as e:
-                                logger.error(f"Error streaming message: {e}")
-                                await msg.stream_token("Atsiprašau, įvyko klaida siunčiant žinutę.")
-                                has_streamed_content = True
-
-                # Get final state
-                output_state = await graph.aget_state(
-                    config={"configurable": {"thread_id": thread_id}}
+            # Create a unique patient ID or get existing for this session
+            patient_id = cl.user_session.get("patient_id")
+            if not patient_id:
+                user_id = (
+                    f"web_{thread_id}"  # Create a unique user ID for web interface
                 )
+                patient_id = await get_patient_id_from_platform_id("web", user_id)
+                cl.user_session.set("patient_id", patient_id)
+                logger.info(f"Using patient ID: {patient_id} for web session")
+
+            # Create a new graph instance with user metadata
+            graph = create_workflow_graph()
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "user_metadata": {
+                        "platform": "web",
+                        "external_system_id": thread_id,
+                        "patient_id": patient_id,
+                    },
+                }
+            }
+
+            # Add metadata to the message
+            message_metadata = {
+                "platform": "web",
+                "external_system_id": thread_id,
+                "patient_id": patient_id,
+            }
+
+            # Create message with metadata
+            human_message = HumanMessage(content=content, metadata=message_metadata)
+
+            # Invoke the graph with the message
+            async for chunk in graph.astream(
+                {"messages": [human_message]},
+                config,
+                stream_mode="messages",
+            ):
+                # Handle different types of chunks
+                if isinstance(chunk, tuple) and len(chunk) == 2:
+                    node_name = chunk[1].get("langgraph_node")
+                    chunk_data = chunk[0]
+
+                    if node_name == "rag_node":
+                        rag_used = True
+                        # Handle streaming chunks from RAG
+                        if isinstance(chunk_data, dict):
+                            if "chunk" in chunk_data and chunk_data["type"] == "stream":
+                                await msg.stream_token(chunk_data["chunk"])
+                                has_streamed_content = True
+                            elif "rag_response" in chunk_data:
+                                rag_info = chunk_data["rag_response"]
+                                # Update step with RAG info
+                                step.output = f"""
+                                    🔍 RAG System Results:
+                                    - Found Relevant Info: {rag_info['has_relevant_info']}
+                                    - Confidence: {rag_info.get('confidence', 0.0):.2f}
+                                    - Sources Used: {len(rag_info.get('sources', []))}
+                                    """
+
+                                # Prepare sources for display
+                                if rag_info["has_relevant_info"]:
+                                    sources_to_display = [
+                                        f"📚 {s['title']}\n   🔗 {s['source']}\n   📅 {s['date']}"
+                                        for s in rag_info["sources"]
+                                    ]
+
+                    elif node_name == "conversation_node":
+                        try:
+                            if isinstance(chunk_data, AIMessageChunk):
+                                await msg.stream_token(chunk_data.content)
+                                has_streamed_content = True
+                            elif (
+                                isinstance(chunk_data, dict)
+                                and "messages" in chunk_data
+                            ):
+                                last_message = chunk_data["messages"][-1]
+                                if isinstance(last_message, AIMessageChunk):
+                                    await msg.stream_token(last_message.content)
+                                    has_streamed_content = True
+                                elif hasattr(last_message, "content"):
+                                    await msg.stream_token(last_message.content)
+                                    has_streamed_content = True
+                        except Exception as e:
+                            logger.error(f"Error streaming message: {e}")
+                            await msg.stream_token(
+                                "Atsiprašau, įvyko klaida siunčiant žinutę."
+                            )
+                            has_streamed_content = True
+
+            # Get final state
+            output_state = await graph.aget_state(
+                config={"configurable": {"thread_id": thread_id}}
+            )
 
         # Log final RAG usage summary
         if rag_used:
             logger.info("\n=== RAG Usage Summary ===")
             logger.info("✓ RAG system was used for this response")
             if rag_info:
-                logger.info(f"✓ Found relevant information: {rag_info['has_relevant_info']}")
+                logger.info(
+                    f"✓ Found relevant information: {rag_info['has_relevant_info']}"
+                )
                 logger.info(f"✓ Confidence: {rag_info.get('confidence', 0.0):.2f}")
-                logger.info(f"✓ Number of sources used: {len(rag_info.get('sources', []))}")
-                
+                logger.info(
+                    f"✓ Number of sources used: {len(rag_info.get('sources', []))}"
+                )
+
                 # Add sources as elements if available
                 if sources_to_display:
                     sources_element = cl.Text(
                         name="Sources",
                         content="\n\n".join(sources_to_display),
-                        language="markdown"
+                        language="markdown",
                     )
                     await msg.add_elements([sources_element])
             logger.info("=====================\n")
@@ -158,9 +200,10 @@ async def on_message(message: cl.Message):
         elif not has_streamed_content:
             # If no content was streamed, send a default message
             await msg.stream_token("Atsiprašau, negalėjau sugeneruoti atsakymo.")
-        
+
         # Update the message content to mark it as complete
         await msg.update()
+
 
 # Temporarily commenting out audio functionality
 # @cl.on_audio_chunk
@@ -193,13 +236,35 @@ async def on_message(message: cl.Message):
 
 #     thread_id = cl.user_session.get("thread_id")
 
-#     async with AsyncSqliteSaver.from_conn_string(
-#         settings.SHORT_TERM_MEMORY_DB_PATH
-#     ) as short_term_memory:
-#         # Create a new graph instance with the checkpointer
-#         graph = create_workflow_graph()
-#         graph.checkpointer = short_term_memory
-#         
+#     # Get or create patient ID
+#     patient_id = cl.user_session.get("patient_id")
+#     if not patient_id:
+#         user_id = f"web_{thread_id}"
+#         patient_id = await get_patient_id_from_platform_id("web", user_id)
+#         cl.user_session.set("patient_id", patient_id)
+#
+#     # Create config with patient metadata
+#     config = {
+#         "configurable": {
+#             "thread_id": thread_id,
+#             "user_metadata": {
+#                 "platform": "web",
+#                 "external_system_id": thread_id,
+#                 "patient_id": patient_id
+#             }
+#         }
+#     }
+#
+#     # Create message with metadata
+#     message_metadata = {
+#         "platform": "web",
+#         "external_system_id": thread_id,
+#         "patient_id": patient_id
+#     }
+#
+#     # Create graph with proper configuration
+#     graph = create_workflow_graph()
+#
 #         output_state = await graph.ainvoke(
 #             {"messages": [HumanMessage(content=transcription)]},
 #             {"configurable": {"thread_id": thread_id}},

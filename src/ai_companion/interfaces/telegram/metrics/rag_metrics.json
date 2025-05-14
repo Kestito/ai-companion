@@ -19,27 +19,7 @@
     "avg_generation_time": 0.17387514114379884,
     "avg_total_time": 0.0
   },
-  "hourly_stats": {
-    "2025-02-26-17": {
-      "queries": 1,
-      "successful": 1,
-      "failed": 0
-    }
-  },
-  "daily_stats": {
-    "2025-02-26": {
-      "queries": 1,
-      "successful": 1,
-      "failed": 0
-    }
-  },
-  "last_updated": "2025-02-26T17:37:05.926769",
-  "search_sources": {
-    "vector_only": 0,
-    "keyword_only": 1,
-    "hybrid": 0,
-    "total_vector_docs": 0,
-    "total_keyword_docs": 3
-  },
-  "avg_document_count": 3
+  "hourly_stats": {},
+  "daily_stats": {},
+  "last_updated": "2025-02-26T17:37:05.926769"
 }

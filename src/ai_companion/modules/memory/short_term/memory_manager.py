@@ -12,13 +12,54 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage
 
 from ai_companion.utils.supabase import get_supabase_client
 from ai_companion.modules.memory.cache import MemoryCache
+from ai_companion.modules.memory.types import Memory
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MemoryItem:
+    """Represents an item in memory."""
+
+    session_id: str
+    created_at: datetime
+    content: Dict[str, Any]
+    metadata: Dict[str, Any]
+    patient_id: Optional[str] = None  # Added patient_id
+    conversation_id: Optional[str] = None
+
+    def __init__(
+        self,
+        session_id,
+        created_at,
+        content,
+        metadata,
+        patient_id=None,
+        conversation_id=None,
+    ):
+        self.session_id = session_id
+        self.created_at = created_at
+        self.content = content
+        self.metadata = metadata
+        self.patient_id = patient_id
+        self.conversation_id = conversation_id
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert MemoryItem to dictionary."""
+        return {
+            "session_id": self.session_id,
+            "created_at": self.created_at.isoformat(),
+            "content": self.content,
+            "metadata": self.metadata,
+            "patient_id": self.patient_id,
+            "conversation_id": self.conversation_id,
+        }
 
 
 class Memory:
@@ -82,7 +123,7 @@ class ShortTermMemoryManager:
         self.cache = MemoryCache(
             max_conversations=max_cached_conversations,
             max_messages_per_conversation=max_messages_per_conversation,
-            default_ttl_minutes=60,
+            default_ttl_minutes=525600,  # 1 year - memories should not expire
         )
 
         # Database sync task
@@ -240,9 +281,17 @@ class ShortTermMemoryManager:
                 ).isoformat()
 
                 # Gather session info from metadata
-                user_id = metadata.get("user_id", "unknown")
-                chat_id = metadata.get("chat_id", "unknown")
-                platform = metadata.get("platform", "unknown")
+                user_id = metadata.get("user_id", "unknown") if metadata else "unknown"
+                chat_id = metadata.get("chat_id", "unknown") if metadata else "unknown"
+                platform = (
+                    metadata.get("platform", "unknown") if metadata else "unknown"
+                )
+                patient_id = metadata.get("patient_id") if metadata else None
+                conversation_id = (
+                    metadata.get("conversation_id")
+                    if metadata and "conversation_id" in metadata
+                    else None
+                )
 
                 # Prepare the record
                 record = {
@@ -251,8 +300,19 @@ class ShortTermMemoryManager:
                     "user_id": str(user_id),
                     "chat_id": str(chat_id),
                     "platform": platform,
+                    "patient_id": patient_id,
+                    "conversation_id": conversation_id,
                     "content": content,
-                    "metadata": json.dumps(metadata),
+                    "context": json.dumps(
+                        {
+                            "metadata": metadata,
+                            "content": content,
+                            "platform": platform,
+                            "user_id": user_id,
+                            "created_at": datetime.now().isoformat(),
+                        }
+                    ),
+                    "created_at": expires_at,
                     "expires_at": expires_at,
                 }
 
@@ -284,7 +344,6 @@ class ShortTermMemoryManager:
     async def store_memory(
         self,
         content: str,
-        ttl_minutes: int = 60,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Memory:
         """
@@ -292,7 +351,7 @@ class ShortTermMemoryManager:
 
         Args:
             content: Memory content to store
-            ttl_minutes: Time-to-live in minutes
+            ttl_minutes: Time-to-live in minutes (default: 1 year, memories should not expire)
             metadata: Additional metadata for the memory
 
         Returns:
@@ -303,7 +362,8 @@ class ShortTermMemoryManager:
 
         # Set timestamps
         created_at = datetime.now()
-        expires_at = created_at + timedelta(minutes=ttl_minutes)
+        # Set expires_at to a year from now (we don't use expiration)
+        expires_at = created_at + timedelta(days=365)
 
         # Create memory object
         memory = Memory(
@@ -328,30 +388,58 @@ class ShortTermMemoryManager:
         }
 
         # Add to cache first (non-blocking)
-        await self.cache.add_message(session_id, cache_message, ttl_minutes)
+        await self.cache.add_message(session_id, cache_message)
 
         # If database is available, store there too
         if self.supabase and self.table_exists:
             try:
                 # Extract info from metadata
                 user_id = metadata.get("user_id", "unknown") if metadata else "unknown"
-                chat_id = metadata.get("chat_id", "unknown") if metadata else "unknown"
                 platform = (
                     metadata.get("platform", "unknown") if metadata else "unknown"
                 )
 
-                # Create record for database
+                # Explicitly extract patient_id from metadata
+                patient_id = None
+                if metadata:
+                    # Try to get patient_id directly from metadata
+                    patient_id = metadata.get("patient_id")
+
+                    # If not found, look in nested structures
+                    if not patient_id and "context" in metadata:
+                        context = metadata.get("context", {})
+                        if isinstance(context, dict):
+                            patient_id = context.get("patient_id")
+
+                conversation_id = (
+                    metadata.get("conversation_id")
+                    if metadata and "conversation_id" in metadata
+                    else None
+                )
+
+                # Create record for database using only columns that exist in the schema
                 record = {
                     "id": memory_id,
-                    "session_id": session_id,
-                    "user_id": str(user_id),
-                    "chat_id": str(chat_id),
-                    "platform": platform,
-                    "content": content,
-                    "metadata": json.dumps(metadata) if metadata else "{}",
-                    "created_at": created_at.isoformat(),
-                    "expires_at": expires_at.isoformat(),
+                    "patient_id": patient_id,  # Store patient_id in dedicated column
+                    "conversation_id": conversation_id,
+                    "context": json.dumps(
+                        {
+                            "metadata": metadata,
+                            "content": content,
+                            "platform": platform,
+                            "user_id": user_id,
+                            "created_at": datetime.now().isoformat(),
+                        }
+                    ),
                 }
+
+                # Log the patient_id being stored
+                if patient_id:
+                    logger.info(
+                        f"Storing memory {memory_id} with patient_id: {patient_id}"
+                    )
+                else:
+                    logger.warning(f"Storing memory {memory_id} without patient_id")
 
                 # Store in database
                 result = self.supabase.table(self.table_name).insert(record).execute()
@@ -397,12 +485,12 @@ class ShortTermMemoryManager:
         # If database is available, also fetch memories from there
         if self.supabase and self.table_exists:
             try:
-                # Get non-expired memories
-                now = datetime.now().isoformat()
+                # Get all memories from the database with a limit
                 result = (
                     self.supabase.table(self.table_name)
                     .select("*")
-                    .gt("expires_at", now)
+                    .order("id", desc=True)  # Order by ID
+                    .limit(10)  # Add a limit to prevent fetching too many records
                     .execute()
                 )
 
@@ -410,9 +498,29 @@ class ShortTermMemoryManager:
                     # Convert to Memory objects
                     for item in result.data:
                         try:
-                            metadata = json.loads(item.get("metadata", "{}"))
-                            created_at = datetime.fromisoformat(item.get("created_at"))
-                            expires_at = datetime.fromisoformat(item.get("expires_at"))
+                            metadata = {}
+                            if "context" in item:
+                                context = item.get("context", "{}")
+                                if isinstance(context, str):
+                                    context_data = json.loads(context)
+                                    metadata = context_data.get("metadata", {})
+                                elif isinstance(context, dict):
+                                    metadata = context.get("metadata", {})
+
+                            created_at = datetime.now()  # Default to now
+                            if "created_at" in item:
+                                created_at = datetime.fromisoformat(
+                                    item.get("created_at")
+                                )
+                            elif "context" in item and isinstance(
+                                item["context"], dict
+                            ):
+                                context_created = item["context"].get("created_at")
+                                if context_created:
+                                    created_at = datetime.fromisoformat(context_created)
+
+                            # Just use created_at plus a year for expires_at since that column is gone
+                            expires_at = created_at + timedelta(days=365)
 
                             memory = Memory(
                                 id=item.get("id"),
@@ -450,72 +558,29 @@ class ShortTermMemoryManager:
         self, session_id: str, limit: int = 10, patient_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get messages from cache with patient context validation.
+        Get cached messages for a session.
+
+        This is a compatibility method that simply calls get_messages_parallel.
 
         Args:
             session_id: The session identifier
-            limit: Maximum number of messages to return
-            patient_id: The patient ID for validation
+            limit: Maximum number of messages to retrieve
+            patient_id: Optional patient ID
 
         Returns:
-            List of messages for the session
+            List of message dictionaries
         """
-        messages = []
-
         try:
-            # Get from cache
-            cached_data = await self.cache.get_messages(session_id, limit)
-
-            # Process and filter by patient
-            for item in cached_data:
-                try:
-                    if not item or "content" not in item:
-                        continue
-
-                    # Parse content
-                    if isinstance(item["content"], str):
-                        try:
-                            content_data = json.loads(item["content"])
-                        except:
-                            content_data = {"content": item["content"]}
-                    else:
-                        content_data = item["content"]
-
-                    # Extract metadata
-                    metadata = content_data.get("metadata", {})
-                    item_patient_id = metadata.get("patient_id")
-
-                    # Validate patient context if provided
-                    if patient_id and item_patient_id != patient_id:
-                        logger.warning(
-                            f"Skipping memory with mismatched patient_id: expected {patient_id}, got {item_patient_id}"
-                        )
-                        continue
-
-                    # Add to results
-                    messages.append(
-                        {
-                            "id": item.get("id", ""),
-                            "content": content_data,
-                            "created_at": item.get("created_at", ""),
-                            "metadata": metadata,
-                        }
-                    )
-
-                except Exception as e:
-                    logger.error(f"Error processing cached message: {e}")
-
-            logger.debug(
-                f"Retrieved {len(messages)} messages from cache for session {session_id}"
+            logger.info(
+                f"get_cached_messages called with session_id={session_id}, patient_id={patient_id}"
             )
-            return messages
-
+            return await self.get_messages_parallel(session_id, limit, patient_id)
         except Exception as e:
-            logger.error(f"Error getting cached messages: {e}")
+            logger.error(f"Error in get_cached_messages: {e}", exc_info=True)
             return []
 
     async def get_messages_parallel(
-        self, session_id: str, limit: int = 10
+        self, session_id: str, limit: int = 20, patient_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get messages for a session from both cache and database in parallel.
@@ -523,83 +588,88 @@ class ShortTermMemoryManager:
         Args:
             session_id: The session identifier
             limit: Maximum number of messages to return
+            patient_id: Optional patient ID
 
         Returns:
             Combined list of message dictionaries (newest first)
         """
-        # Create tasks for parallel execution
-        cache_task = self.cache.get_messages(session_id, limit)
-        db_task = self._get_database_messages(session_id, limit)
-
-        # Run tasks in parallel
-        cache_messages, db_messages = await asyncio.gather(cache_task, db_task)
-
-        # Combine results, removing duplicates (prefer cache versions)
-        cache_ids = set(msg.get("id") for msg in cache_messages if "id" in msg)
-        unique_db_messages = [
-            msg for msg in db_messages if msg.get("id") not in cache_ids
-        ]
-
-        # Sort by timestamp
-        combined = cache_messages + unique_db_messages
-        combined.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-
-        return combined[:limit]
-
-    async def _get_database_messages(
-        self, session_id: str, limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """
-        Get messages for a session from the database.
-
-        Args:
-            session_id: The session identifier
-            limit: Maximum number of messages to return
-
-        Returns:
-            List of message dictionaries from database (newest first)
-        """
-        if not self.supabase or not self.table_exists:
-            return []
+        logger.debug(
+            f"Getting messages for session: {session_id}, patient: {patient_id}, limit: {limit}"
+        )
+        now = datetime.utcnow().isoformat()
 
         try:
-            # Query database for messages
-            result = (
-                self.supabase.table(self.table_name)
-                .select("*")
-                .eq("session_id", session_id)
-                .order("created_at", {"ascending": False})
-                .limit(limit)
-                .execute()
+            # Construct the query
+            query = self.supabase.table(self.table_name).select(
+                "id, context, patient_id, conversation_id"
             )
 
-            if not result.data:
+            # Add patient_id filter if provided
+            if patient_id:
+                query = query.eq("patient_id", patient_id)
+                logger.debug(f"Filtering messages by patient_id: {patient_id}")
+            else:
+                # If no patient_id, filter by session_id as fallback (less ideal but necessary for some cases)
+                query = query.eq("session_id", session_id)
+                logger.debug(
+                    f"Filtering messages by session_id: {session_id} (no patient_id provided)"
+                )
+
+            # Order by 'id' assuming it reflects insertion order.
+            # If a reliable 'created_at' exists at the top level, use that.
+            query = query.order("id", desc=True)
+
+            result = query.limit(limit).execute()
+
+            if result.data:
+                messages = []
+                for item in result.data:
+                    context = item.get("context", {})
+                    # Try to get conversation data directly
+                    conversation_data = context.get("conversation")
+                    if conversation_data:
+                        messages.append(conversation_data)
+                    # Fallback: Check if state contains messages (older format?)
+                    elif "state" in context and "messages" in context["state"]:
+                        state_messages = context["state"]["messages"]
+                        if isinstance(state_messages, list) and state_messages:
+                            # Add messages from state, trying to format consistently
+                            for msg in reversed(
+                                state_messages
+                            ):  # Add most recent first from state
+                                role = "unknown"
+                                content = ""
+                                if isinstance(msg, dict):
+                                    content = msg.get("content", "")
+                                    if msg.get("type") == "human":
+                                        role = "user"
+                                    elif msg.get("type") == "ai":
+                                        role = "assistant"
+                                elif hasattr(msg, "content"):
+                                    content = msg.content
+                                    if hasattr(msg, "type"):
+                                        if msg.type == "human":
+                                            role = "user"
+                                        elif msg.type == "ai":
+                                            role = "assistant"
+                                if role != "unknown" and content:
+                                    messages.append({"role": role, "content": content})
+
+                logger.info(
+                    f"Retrieved {len(messages)} messages for session {session_id} / patient {patient_id}"
+                )
+                return messages  # Return in chronological order (oldest first)
+            else:
+                logger.info(
+                    f"No messages found for session {session_id} / patient {patient_id}"
+                )
                 return []
 
-            # Convert to consistent format
-            messages = []
-            for item in result.data:
-                try:
-                    metadata = json.loads(item.get("metadata", "{}"))
-                    content = item.get("content", "{}")
-
-                    messages.append(
-                        {
-                            "id": item.get("id"),
-                            "content": content,
-                            "metadata": metadata,
-                            "created_at": item.get("created_at"),
-                            "expires_at": item.get("expires_at"),
-                            "source": "database",
-                        }
-                    )
-                except Exception as e:
-                    logger.error(f"Error parsing message from database: {e}")
-
-            return messages
-
         except Exception as e:
-            logger.error(f"Error fetching messages from database: {e}")
+            logger.error(
+                f"Error retrieving messages for session {session_id}: {e}",
+                exc_info=True,
+            )
             return []
 
     async def store_with_cache(
@@ -607,7 +677,6 @@ class ShortTermMemoryManager:
         content: str,
         session_id: str,
         metadata: Optional[Dict[str, Any]] = None,
-        ttl_minutes: int = 60,
     ) -> Dict[str, Any]:
         """
         Store a message with cache-first approach.
@@ -616,7 +685,7 @@ class ShortTermMemoryManager:
             content: Message content
             session_id: Session identifier
             metadata: Additional metadata (must include patient_id)
-            ttl_minutes: Time-to-live in minutes
+            ttl_minutes: Time-to-live in minutes (default: 1 year, memories should not expire)
 
         Returns:
             Dictionary with memory information including ID
@@ -631,7 +700,7 @@ class ShortTermMemoryManager:
         full_metadata["session_id"] = session_id
 
         # Create memory through main method
-        memory = await self.store_memory(content, ttl_minutes, full_metadata)
+        memory = await self.store_memory(content, full_metadata)
 
         return memory.to_dict()
 
@@ -655,25 +724,176 @@ class ShortTermMemoryManager:
         content = message.content if hasattr(message, "content") else str(message)
 
         # Store as a memory
-        memory = await self.store_memory(content, 60, metadata)
+        memory = await self.store_memory(content, metadata)
 
         return [memory]
 
-    def get_relevant_memories(self, query: str) -> List[Dict[str, Any]]:
+    def get_relevant_memories(
+        self, query: str, patient_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Get memories relevant to a query.
-
-        This is a placeholder for future semantic search implementation.
-        Currently just returns an empty list.
+        Get memories relevant to a query for a specific patient.
 
         Args:
             query: The query to find relevant memories for
+            patient_id: The patient ID to filter memories by
 
         Returns:
             List of relevant memory data
         """
-        # This is where semantic search would go for advanced retrieval
-        # For now, just return an empty list
+        if not patient_id:
+            logger.warning("No patient_id provided for get_relevant_memories")
+            return []
+
+        # If database is not available, return empty list
+        if not self.supabase or not self.table_exists:
+            logger.warning("Database not available for get_relevant_memories")
+            return []
+
+        try:
+            # Log the query being made
+            logger.info(
+                f"Querying memories for patient_id={patient_id} with query: {query[:50]}..."
+            )
+
+            # For now, use a simple approach: fetch recent memories for this patient
+            # Directly query the patient_id column in the database
+            result = (
+                self.supabase.table(self.table_name)
+                .select("*")
+                .eq("patient_id", patient_id)  # Query by dedicated patient_id column
+                .order("id", desc=True)  # Order by id as a proxy for recency
+                .limit(10)
+                .execute()
+            )
+
+            # Log raw results for debugging
+            logger.info(
+                f"Raw DB query returned {len(result.data)} records for patient {patient_id}"
+            )
+            if result.data and len(result.data) > 0:
+                logger.debug(f"First record sample: {str(result.data[0])[:200]}...")
+
+            # Format the data
+            memories = []
+            for item in result.data:
+                try:
+                    # Extract full item data for debugging
+                    if logger.level <= logging.DEBUG:
+                        item_keys = list(item.keys() if hasattr(item, "keys") else {})
+                        logger.debug(f"Memory item keys: {item_keys}")
+
+                    # Try to parse context as JSON
+                    context_data = {}
+                    if item.get("context"):
+                        try:
+                            context_str = item.get("context")
+                            context_data = (
+                                json.loads(context_str)
+                                if isinstance(context_str, str)
+                                else context_str
+                            )
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse context as JSON: {item.get('context')[:50]}..."
+                            )
+
+                    # Initialize metadata dict
+                    metadata = {}
+
+                    # Try to get metadata from context
+                    if isinstance(context_data, dict):
+                        metadata = context_data.get("metadata", {})
+
+                    # If metadata exists directly in item, use it as fallback
+                    if not metadata and item.get("metadata"):
+                        try:
+                            metadata_str = item.get("metadata")
+                            metadata = (
+                                json.loads(metadata_str)
+                                if isinstance(metadata_str, str)
+                                else metadata_str
+                            )
+                        except (json.JSONDecodeError, TypeError):
+                            logger.warning(
+                                f"Failed to parse metadata: {item.get('metadata')[:50]}..."
+                            )
+
+                    # Extract content - try multiple locations
+                    content = None
+
+                    # 1. Try content from context
+                    if isinstance(context_data, dict) and "content" in context_data:
+                        content = context_data.get("content")
+
+                    # 2. Try content directly from item
+                    if not content and item.get("content"):
+                        content = item.get("content")
+
+                    # If we still don't have content, use empty string
+                    if content is None:
+                        logger.warning(
+                            f"No content found in memory item {item.get('id')}"
+                        )
+                        content = ""
+
+                    # Log the content source and type for debugging
+                    logger.debug(
+                        f"Memory content type: {type(content).__name__}, length: {len(str(content))}"
+                    )
+
+                    # Parse as JSON if it looks like JSON
+                    if (
+                        content
+                        and isinstance(content, str)
+                        and (content.startswith("{") or content.startswith("["))
+                    ):
+                        try:
+                            content_data = json.loads(content)
+                            # Check for common memory format
+                            if isinstance(content_data, dict):
+                                if (
+                                    "user_message" in content_data
+                                    and "assistant_response" in content_data
+                                ):
+                                    # Format as conversation
+                                    display_content = f"User: {content_data.get('user_message', '')}\nAssistant: {content_data.get('assistant_response', '')}"
+                                    content = display_content
+                        except json.JSONDecodeError:
+                            # Not valid JSON, keep as is
+                            pass
+
+                    # Create memory entry
+                    memory_item = {
+                        "id": item.get("id"),
+                        "content": content,
+                        "metadata": metadata,
+                        "created_at": context_data.get(
+                            "created_at", item.get("created_at")
+                        ),
+                        "timestamp": metadata.get(
+                            "timestamp",
+                            context_data.get("created_at", item.get("created_at")),
+                        ),
+                        "relevance": 0.8,  # Placeholder for future relevance scores
+                    }
+
+                    # Add memory to results
+                    memories.append(memory_item)
+
+                except Exception as e:
+                    logger.error(
+                        f"Error parsing memory {item.get('id', 'unknown')}: {e}",
+                        exc_info=True,
+                    )
+
+            logger.info(
+                f"Successfully parsed {len(memories)} memories for patient {patient_id}"
+            )
+            return memories
+
+        except Exception as e:
+            logger.error(f"Error in get_relevant_memories: {e}", exc_info=True)
         return []
 
     def format_memories_for_prompt(self, memories: List[Dict[str, Any]]) -> str:
@@ -689,16 +909,67 @@ class ShortTermMemoryManager:
         if not memories:
             return ""
 
+        logger.info(f"Formatting {len(memories)} memories for prompt")
+
         # Simple formatting of memories
         memory_text = []
-        for memory in memories:
-            if isinstance(memory, dict) and "content" in memory:
-                memory_text.append(f"- {memory.get('content', '')}")
+        for i, memory in enumerate(memories):
+            try:
+                if not isinstance(memory, dict):
+                    logger.warning(
+                        f"Memory #{i} is not a dict: {type(memory).__name__}"
+                    )
+                    continue
 
-        return "\n".join(memory_text)
+                if "content" not in memory:
+                    logger.warning(
+                        f"Memory #{i} has no content field: {list(memory.keys())}"
+                    )
+                    continue
+
+                content = memory.get("content", "")
+                # Skip empty content
+                if not content or not isinstance(content, str) or content.strip() == "":
+                    logger.debug(f"Skipping empty content in memory #{i}")
+                    continue
+
+                # Format timestamp if available
+                timestamp = ""
+                if memory.get("timestamp"):
+                    try:
+                        # Try to parse timestamp in various formats
+                        ts = memory.get("timestamp")
+                        if isinstance(ts, str):
+                            if "T" in ts:
+                                # ISO format
+                                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                            else:
+                                # Try simple format
+                                dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                            timestamp = f"[{dt.strftime('%Y-%m-%d %H:%M')}] "
+                    except (ValueError, TypeError):
+                        # If timestamp parsing fails, ignore it
+                        pass
+
+                # Add formatted memory to the list
+                memory_text.append(f"- {timestamp}{content}")
+                logger.debug(f"Added memory #{i} to prompt: {content[:50]}...")
+
+            except Exception as e:
+                logger.error(f"Error formatting memory #{i}: {e}")
+
+        formatted_text = "\n".join(memory_text)
+        logger.info(
+            f"Formatted {len(memory_text)} memories into {len(formatted_text)} characters"
+        )
+        return formatted_text
 
     async def add_memory(
-        self, content: str, metadata: Optional[Dict[str, Any]] = None
+        self,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+        patient_id: Optional[str] = None,
     ) -> Memory:
         """
         Add a new memory.
@@ -706,12 +977,19 @@ class ShortTermMemoryManager:
         Args:
             content: Memory content
             metadata: Additional metadata
+            session_id: Optional session ID
+            patient_id: Optional patient ID
 
         Returns:
             Memory object representing the stored memory
         """
         # Generate session ID if not provided in metadata
-        if metadata and "session_id" in metadata:
+        if session_id:
+            if not metadata:
+                metadata = {"session_id": session_id}
+            else:
+                metadata["session_id"] = session_id
+        elif metadata and "session_id" in metadata:
             session_id = metadata["session_id"]
         else:
             session_id = f"default-{uuid.uuid4()}"
@@ -720,8 +998,158 @@ class ShortTermMemoryManager:
             else:
                 metadata = {"session_id": session_id}
 
-        # Store the memory
-        return await self.store_memory(content, 60, metadata)
+        # Add patient_id to metadata if provided
+        if patient_id and metadata:
+            metadata["patient_id"] = patient_id
+
+        # Store the memory without ttl_minutes
+        return await self.store_memory(content, metadata=metadata)
+
+    async def get_recent_messages(
+        self, patient_id: str, limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Get the most recent messages for a patient without semantic search.
+
+        Args:
+            patient_id: The patient ID to get messages for
+            limit: Maximum number of messages to return (default: 5)
+
+        Returns:
+            List of message dictionaries, newest first
+        """
+        if not patient_id:
+            logger.warning("No patient_id provided for get_recent_messages")
+            return []
+
+        # If database is not available, return empty list
+        if not self.supabase or not self.table_exists:
+            logger.warning("Database not available for get_recent_messages")
+            return []
+
+        try:
+            # Log the query being made
+            logger.info(
+                f"Getting recent messages for patient_id={patient_id}, limit={limit}"
+            )
+
+            # Directly query the most recent messages by timestamp
+            result = (
+                self.supabase.table(self.table_name)
+                .select("*")
+                .eq("patient_id", patient_id)  # Filter by patient_id
+                .order("id", desc=True)  # Order by ID (newest first)
+                .limit(limit)  # Limit number of results
+                .execute()
+            )
+
+            # Log results
+            logger.info(
+                f"Retrieved {len(result.data) if result.data else 0} recent messages for patient {patient_id}"
+            )
+
+            # Format the data
+            messages = []
+            for item in result.data:
+                try:
+                    # Extract the context and handle potential string/JSON format issues
+                    context_data = {}
+                    context = item.get("context", {})
+
+                    # Handle string/JSON format issues - try multiple approaches
+                    if isinstance(context, str):
+                        try:
+                            # Try to parse JSON string
+                            context_data = json.loads(context)
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse context as JSON: {context[:50]}..."
+                            )
+                    elif isinstance(context, dict):
+                        context_data = context
+                    elif isinstance(context, int):
+                        # Handle integer context (seen in some corrupted records)
+                        logger.warning(f"Context is integer value: {context}")
+                        continue
+
+                    # Extract content - handle different formats
+                    content = None
+                    metadata = {}
+
+                    # Try to get content from context
+                    if isinstance(context_data, dict):
+                        # Try to extract conversation data
+                        conversation = context_data.get("conversation", {})
+                        if conversation and isinstance(conversation, dict):
+                            user_msg = conversation.get("user_message", "")
+                            bot_msg = conversation.get("bot_response", "")
+                            if user_msg or bot_msg:
+                                content = f"User: {user_msg}\nAssistant: {bot_msg}"
+
+                        # If no conversation found, try content field
+                        if not content and "content" in context_data:
+                            content_field = context_data.get("content")
+                            # If content is a JSON string, try to parse it
+                            if isinstance(content_field, str) and (
+                                content_field.startswith("{")
+                                or content_field.startswith("[")
+                            ):
+                                try:
+                                    content_obj = json.loads(content_field)
+                                    if (
+                                        isinstance(content_obj, dict)
+                                        and "user_message" in content_obj
+                                    ):
+                                        user_msg = content_obj.get("user_message", "")
+                                        bot_msg = content_obj.get(
+                                            "assistant_response", ""
+                                        )
+                                        content = (
+                                            f"User: {user_msg}\nAssistant: {bot_msg}"
+                                        )
+                                    else:
+                                        content = content_field
+                                except json.JSONDecodeError:
+                                    content = content_field
+                            else:
+                                content = content_field
+
+                        # Get metadata
+                        metadata = context_data.get("metadata", {})
+
+                    # If we still don't have content, use fallback
+                    if not content:
+                        content = f"Memory record {item.get('id', 'unknown')}"
+
+                    # Create memory dictionary
+                    timestamp = None
+                    if isinstance(context_data, dict):
+                        timestamp = context_data.get("created_at")
+                        if not timestamp and "conversation" in context_data:
+                            timestamp = context_data["conversation"].get("timestamp")
+
+                    # Add to results
+                    messages.append(
+                        {
+                            "id": item.get("id"),
+                            "content": content,
+                            "metadata": metadata,
+                            "timestamp": timestamp or datetime.now().isoformat(),
+                            "patient_id": patient_id,
+                        }
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"Error parsing memory {item.get('id', 'unknown')}: {e}",
+                        exc_info=True,
+                    )
+
+            return messages
+
+        except Exception as e:
+            logger.error(f"Error in get_recent_messages: {e}", exc_info=True)
+            return []
 
 
 def get_short_term_memory_manager():

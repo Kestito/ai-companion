@@ -1,24 +1,21 @@
 import logging
-import os
 from io import BytesIO
 from typing import Dict
 
 import httpx
 from fastapi import APIRouter, Request, Response
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph.constants import CONF, CONFIG_KEY_CHECKPOINTER
 
 from ai_companion.graph import graph_builder
 from ai_companion.modules.image import ImageToText
 from ai_companion.modules.speech import SpeechToText, TextToSpeech
+from ai_companion.modules.memory.service import get_memory_service
+from ai_companion.graph.nodes import get_patient_id_from_platform_id
 
-from ai_companion.settings import settings
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -26,6 +23,7 @@ logger = logging.getLogger(__name__)
 speech_to_text = SpeechToText()
 text_to_speech = TextToSpeech()
 image_to_text = ImageToText()
+memory_service = get_memory_service()  # Initialize memory service
 
 # Router for WhatsApp responses with path-based routing
 whatsapp_router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
@@ -37,8 +35,11 @@ WHATSAPP_VERIFY_TOKEN = "xxx"
 
 # Add debug logging for environment variables
 logger.debug(f"WHATSAPP_TOKEN: {'Set' if WHATSAPP_TOKEN else 'Not Set'}")
-logger.debug(f"WHATSAPP_PHONE_NUMBER_ID: {'Set' if WHATSAPP_PHONE_NUMBER_ID else 'Not Set'}")
+logger.debug(
+    f"WHATSAPP_PHONE_NUMBER_ID: {'Set' if WHATSAPP_PHONE_NUMBER_ID else 'Not Set'}"
+)
 logger.debug(f"WHATSAPP_VERIFY_TOKEN: {'Set' if WHATSAPP_VERIFY_TOKEN else 'Not Set'}")
+
 
 @whatsapp_router.api_route("/webhook", methods=["GET", "POST"])
 async def whatsapp_handler(request: Request) -> Response:
@@ -57,7 +58,7 @@ async def whatsapp_handler(request: Request) -> Response:
     try:
         data = await request.json()
         logger.debug(f"Received webhook data: {data}")
-        
+
         change_value = data["entry"][0]["changes"][0]["value"]
         logger.debug(f"Change value: {change_value}")
 
@@ -95,31 +96,56 @@ async def whatsapp_handler(request: Request) -> Response:
                 logger.info(f"Received text message: {content}")
 
             # Process message through the graph agent
-            async with AsyncSqliteSaver.from_conn_string(
-                settings.SHORT_TERM_MEMORY_DB_PATH
-            ) as short_term_memory:
-                logger.debug("Starting graph processing")
-                try:
-                    # Create a new graph instance with the checkpointer
-                    config = {
-                        "configurable": {"thread_id": session_id},
-                        CONFIG_KEY_CHECKPOINTER: short_term_memory
-                    }
-                    logger.debug("Graph configuration set with checkpointer")
-                    
-                    # Invoke the graph with the message
-                    result = await graph_builder.ainvoke(
-                        {"messages": [HumanMessage(content=content)]},
-                        config
+            logger.debug("Starting graph processing")
+            try:
+                # Create a unique patient ID or get existing one
+                patient_id = await get_patient_id_from_platform_id(
+                    "whatsapp", from_number
+                )
+                if not patient_id:
+                    logger.warning(
+                        f"No patient ID found for WhatsApp user {from_number}"
                     )
-                    logger.debug("Graph invocation completed")
+                    # Default to using the WhatsApp number itself as identifier
+                    patient_id = f"whatsapp:{from_number}"
 
-                    # Get the workflow type and response from the state
-                    output_state = await graph_builder.aget_state(config)
-                    logger.debug(f"Retrieved state: {output_state}")
-                except Exception as e:
-                    logger.error(f"Error during graph processing: {e}", exc_info=True)
-                    return Response(content="Error processing message", status_code=500)
+                # Create a new graph instance with user metadata
+                config = {
+                    "configurable": {
+                        "thread_id": session_id,
+                        "user_metadata": {
+                            "platform": "whatsapp",
+                            "external_system_id": from_number,
+                            "patient_id": patient_id,
+                        },
+                    }
+                }
+                logger.debug(f"Graph configuration set with patient_id: {patient_id}")
+
+                # Set metadata on the message
+                message_metadata = {
+                    "platform": "whatsapp",
+                    "external_system_id": from_number,
+                    "patient_id": patient_id,
+                }
+
+                # Invoke the graph with the message
+                result = await graph_builder.ainvoke(
+                    {
+                        "messages": [
+                            HumanMessage(content=content, metadata=message_metadata)
+                        ]
+                    },
+                    config,
+                )
+                logger.debug("Graph invocation completed")
+
+                # Get the workflow type and response from the state
+                output_state = await graph_builder.aget_state(config)
+                logger.debug(f"Retrieved state: {output_state}")
+            except Exception as e:
+                logger.error(f"Error during graph processing: {e}", exc_info=True)
+                return Response(content="Error processing message", status_code=500)
 
             workflow = output_state.values.get("workflow", "conversation")
             response_message = output_state.values["messages"][-1].content
@@ -147,7 +173,9 @@ async def whatsapp_handler(request: Request) -> Response:
                         from_number, response_message, "audio", audio_buffer
                     )
                     # Then send the text response
-                    text_success = await send_response(from_number, response_message, "text")
+                    text_success = await send_response(
+                        from_number, response_message, "text"
+                    )
                     success = voice_success and text_success
                 except Exception as e:
                     logger.error(f"Error generating voice response: {e}", exc_info=True)
@@ -171,10 +199,12 @@ async def whatsapp_handler(request: Request) -> Response:
         logger.error(f"Error processing message: {e}", exc_info=True)
         return Response(content="Internal server error", status_code=500)
 
+
 @whatsapp_router.get("/health")
 async def health_check():
     """Health check endpoint for WhatsApp webhook."""
     return {"status": "healthy", "service": "whatsapp"}
+
 
 async def download_media(media_id: str) -> bytes:
     logger.debug(f"Downloading media with ID: {media_id}")

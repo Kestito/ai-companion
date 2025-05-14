@@ -8,7 +8,9 @@ from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, Field
 
 from ai_companion.core.prompts import MEMORY_ANALYSIS_PROMPT
-from ai_companion.modules.memory.long_term.vector_store import get_vector_store
+from ai_companion.modules.memory.long_term.vector_store import (
+    get_initialized_vector_store,
+)
 from ai_companion.settings import settings
 
 
@@ -28,7 +30,7 @@ class MemoryManager:
     """Manager class for handling long-term memory operations."""
 
     def __init__(self):
-        self.vector_store = get_vector_store()
+        self.vector_store = None  # Will be initialized async
         self.logger = logging.getLogger(__name__)
         self.llm = AzureChatOpenAI(
             deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
@@ -40,6 +42,15 @@ class MemoryManager:
         self.has_greeted = False
         self.recent_memories = []  # Cache for recent memories
         self.memory_cache_size = 20  # Number of recent memories to keep in cache
+        self._is_initialized = False
+
+    async def ensure_initialized(self) -> None:
+        """Ensure the memory manager is fully initialized."""
+        if not self._is_initialized:
+            # Initialize the vector store asynchronously
+            self.vector_store = await get_initialized_vector_store()
+            self._is_initialized = True
+            self.logger.info("Memory manager initialized successfully")
 
     async def _analyze_memory(self, message: str, metadata: dict) -> MemoryAnalysis:
         """Analyze a message to determine importance and format if needed."""
@@ -53,6 +64,9 @@ class MemoryManager:
             content: Text content of the message
             metadata: Must contain patient_id and other context information
         """
+        # Ensure we're initialized
+        await self.ensure_initialized()
+
         # Validate required metadata
         if not metadata or "patient_id" not in metadata:
             self.logger.error("Missing required patient_id in memory metadata")
@@ -77,7 +91,7 @@ class MemoryManager:
                 }
 
                 # Store in vector store
-                self.vector_store.store_memory(memory_content, memory_metadata)
+                await self.vector_store.store_memory(memory_content, memory_metadata)
 
                 # Also keep in recent memory cache
                 self.recent_memories.append(
@@ -117,7 +131,7 @@ class MemoryManager:
         except Exception as e:
             self.logger.error(f"Error extracting memories: {e}", exc_info=True)
 
-    def get_relevant_memories(self, context: str, patient_id: str) -> List[str]:
+    async def get_relevant_memories(self, context: str, patient_id: str) -> List[str]:
         """Retrieve relevant memories with patient context isolation.
 
         Args:
@@ -127,6 +141,9 @@ class MemoryManager:
         Returns:
             List of relevant memories for this patient only
         """
+        # Ensure we're initialized
+        await self.ensure_initialized()
+
         if not patient_id:
             self.logger.error("Patient ID is required for memory retrieval")
             return []
@@ -141,7 +158,7 @@ class MemoryManager:
 
         # Then get relevant memories from vector store (with patient filter)
         filter_conditions = {"patient_id": patient_id}
-        vector_memories = self.vector_store.search_memories(
+        vector_memories = await self.vector_store.search_memories(
             context,
             k=max(1, settings.MEMORY_TOP_K - len(memories)),
             filter_conditions=filter_conditions,
@@ -180,6 +197,16 @@ class MemoryManager:
         return "\n".join(formatted_memories)
 
 
+async def get_initialized_memory_manager() -> MemoryManager:
+    """Get a fully initialized MemoryManager instance."""
+    manager = MemoryManager()
+    await manager.ensure_initialized()
+    return manager
+
+
 def get_memory_manager() -> MemoryManager:
-    """Get a MemoryManager instance."""
+    """
+    Get a MemoryManager instance.
+    NOTE: This returns an uninitialized manager. Call ensure_initialized() before using.
+    """
     return MemoryManager()

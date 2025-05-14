@@ -11,8 +11,12 @@ from ai_companion.modules.scheduler.scheduled_message_service import (
 )
 from ai_companion.graph import graph_builder
 from langchain_core.messages import HumanMessage
+from ai_companion.settings import settings
 
+# Configure scheduler-specific logger
 logger = logging.getLogger(__name__)
+scheduler_log_level = getattr(logging, settings.SCHEDULER_LOG_LEVEL, logging.ERROR)
+logger.setLevel(scheduler_log_level)
 
 
 class SchedulerWorker:

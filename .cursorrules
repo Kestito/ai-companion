@@ -7,9 +7,10 @@
         "database": "supabase",
         "vector_store": "qdrant",
         "embedding_model": "text-embedding-3-small",
-        "rag_model": "gpt-4o",
-        "rag_chain": "gpt-4o",
-        "main_llm" : "gpt-4o"
+        "embedding_api_version": "2023-05-15",
+        "rag_model": "o4-mini",
+        "rag_chain": "o4-mini",
+        "main_llm" : "o4-mini"
     },
     "dependencies": {
         "required": [

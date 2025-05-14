@@ -183,7 +183,6 @@ class MemoryCache:
         self,
         session_id: str,
         message: Dict[str, Any],
-        ttl_minutes: Optional[int] = None,
     ) -> bool:
         """
         Add a message to the cache.
@@ -191,7 +190,6 @@ class MemoryCache:
         Args:
             session_id: Unique session identifier
             message: Message data dictionary (must include patient_id in metadata)
-            ttl_minutes: Optional time-to-live in minutes
 
         Returns:
             True if successful, False otherwise
@@ -203,9 +201,9 @@ class MemoryCache:
                 logger.error("Attempted to cache message without patient_id")
                 return False
 
-            ttl = ttl_minutes or self._default_ttl_minutes
+            # Use default TTL
             current_time = time.time()
-            expires_at = current_time + (ttl * 60)
+            expires_at = current_time + (self._default_ttl_minutes * 60)
 
             # Deep copy to avoid shared references
             message_copy = copy.deepcopy(message)

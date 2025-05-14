@@ -176,7 +176,7 @@ export async function POST(request: Request) {
       
       const completion = await openai.chat.completions.create({
         messages: [{ role: 'system', content: prompt }],
-        model: process.env.CHAT_MODEL || 'gpt-4o',
+        model: process.env.CHAT_MODEL || 'o4-mini',
         response_format: { type: 'json_object' }
       });
       

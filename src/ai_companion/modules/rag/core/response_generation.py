@@ -9,6 +9,7 @@ from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 import json
 from ai_companion.settings import settings
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,7 +73,8 @@ class LithuanianResponseGenerator:
                         text = doc.page_content if hasattr(doc, 'page_content') else doc.text
                         metadata = doc.metadata or {}
                         doc_id = metadata.get('id', 'unknown')
-                        source_texts.append(f"Document ID {doc_id}: {text}")
+                        # Add [RAG] prefix to document content
+                        source_texts.append(f"Document ID {doc_id}: [RAG] {text}")
                     
                     if source_texts:
                         organized_text += f"\nSource: {source}\n" + "\n".join(source_texts) + "\n"
@@ -83,7 +85,8 @@ class LithuanianResponseGenerator:
                     text = doc.page_content if hasattr(doc, 'page_content') else doc.text
                     metadata = doc.metadata or {}
                     source = metadata.get('source', 'Unknown')
-                    doc_texts.append(f"Document {i+1} (Source: {source}): {text}")
+                    # Add [RAG] prefix to document content
+                    doc_texts.append(f"Document {i+1} (Source: {source}): [RAG] {text}")
                 
                 organized_text = "\n\n".join(doc_texts)
 
@@ -136,6 +139,10 @@ class LithuanianResponseGenerator:
             8. Respond in Lithuanian language with proper grammar and style
             9. If information is incomplete, acknowledge limitations while providing the best available answer
             10. When applicable, offer additional context or related information that may be helpful
+            11. IMPORTANT: When using information directly from the provided documents, start those sentences with [RAG].
+            12. When generating your own explanations or transitional text, start those sentences with [AI].
+            13. Every sentence or paragraph in your response must start with either [RAG] or [AI].
+            14. The final line of your response MUST end with either [RAG] or [AI] based on whether the conclusion is from retrieved information or your own analysis.
 
             Your response should be comprehensive yet well-organized. Aim to fully address the query with 
             sufficient detail while maintaining clarity. Include specific information rather than general statements.
@@ -144,11 +151,76 @@ class LithuanianResponseGenerator:
 
             # Generate response
             response = await self.llm.ainvoke(prompt)
-            return response.content if hasattr(response, 'content') else str(response)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Ensure the response properly uses [RAG] and [AI] prefixes
+            if not response_text.startswith("[RAG]") and not response_text.startswith("[AI]"):
+                lines = response_text.split("\n")
+                new_lines = []
+                for line in lines:
+                    if line.strip() and not line.startswith("[RAG]") and not line.startswith("[AI]"):
+                        new_lines.append(f"[AI] {line}")
+                    else:
+                        new_lines.append(line)
+                response_text = "\n".join(new_lines)
+            
+            # Ensure the response ends with [RAG] or [AI]
+            if not response_text.rstrip().endswith("[RAG]") and not response_text.rstrip().endswith("[AI]"):
+                # Check the last line to determine appropriate tag
+                lines = response_text.split("\n")
+                last_line = lines[-1] if lines else ""
+                
+                if last_line.startswith("[RAG]"):
+                    response_text = response_text.rstrip() + " [RAG]"
+                else:
+                    response_text = response_text.rstrip() + " [AI]"
+
+            # Check if the platform is Telegram and remove [RAG] and [AI] tags if needed
+            platform = kwargs.get('platform', '')
+            if platform.lower() == 'telegram':
+                # More thorough removal of all variations of [RAG] and [AI] tags
+                # Remove tags at the beginning of lines with different spacing
+                response_text = re.sub(r'\[RAG\]\s*', '', response_text)
+                response_text = re.sub(r'\[AI\]\s*', '', response_text)
+                
+                # Remove tags at the end of lines with different spacing
+                response_text = re.sub(r'\s*\[RAG\]', '', response_text)
+                response_text = re.sub(r'\s*\[AI\]', '', response_text)
+                
+                # Remove any remaining tags (in case they appear in the middle)
+                response_text = response_text.replace('[RAG]', '')
+                response_text = response_text.replace('[AI]', '')
+                
+                logger.info("Removed [RAG] and [AI] tags for Telegram platform response")
+            
+            return response_text
 
         except Exception as e:
             self.logger.error(f"Error generating response: {e}", exc_info=True)
-            return "Atsiprašau, bet įvyko klaida generuojant atsakymą. Ar galėtumėte perfrazuoti klausimą?"
+            error_response = "[AI] Atsiprašau, bet įvyko klaida generuojant atsakymą. Ar galėtumėte perfrazuoti klausimą? [AI]"
+            
+            # Check if the platform is Telegram and remove [RAG] and [AI] tags if needed
+            platform = kwargs.get('platform', '')
+            if platform.lower() == 'telegram':
+                error_response = error_response.replace("[AI] ", "")
+                error_response = error_response.replace(" [AI]", "")
+            
+            # More thorough removal of all variations of [RAG] and [AI] tags
+            # Remove tags at the beginning of lines with different spacing
+            error_response = re.sub(r'\[RAG\]\s*', '', error_response)
+            error_response = re.sub(r'\[AI\]\s*', '', error_response)
+            
+            # Remove tags at the end of lines with different spacing
+            error_response = re.sub(r'\s*\[RAG\]', '', error_response)
+            error_response = re.sub(r'\s*\[AI\]', '', error_response)
+            
+            # Remove any remaining tags (in case they appear in the middle)
+            error_response = error_response.replace('[RAG]', '')
+            error_response = error_response.replace('[AI]', '')
+            
+            logger.info("Removed [RAG] and [AI] tags from error response for Telegram platform")
+            
+            return error_response
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def generate_response_old(
@@ -676,8 +748,8 @@ Source documents:
                         'score': metadata.get('score', 0.0)
                     })
                     
-                # Format document with page content and metadata
-                formatted_doc = f"Document {i+1} [Source: {search_type}]:\n{doc.page_content}\n"
+                # Format document with page content and metadata - add [RAG] prefix to each document content
+                formatted_doc = f"Document {i+1} [Source: {search_type}]:\n[RAG] {doc.page_content}\n"
                 formatted_documents.append(formatted_doc)
 
             formatted_docs_text = "\n".join(formatted_documents)
@@ -688,7 +760,12 @@ You work for an organization helping Lithuanian cancer patients, so respond in L
 Make your response helpful, concise, accurate, and in a warm, empathetic tone appropriate for medical information.
 
 Base your response ONLY on the provided documents. If you don't know or the documents don't contain relevant information, say so clearly.
-DO NOT make up information or draw from knowledge outside the provided documents."""
+DO NOT make up information or draw from knowledge outside the provided documents.
+
+IMPORTANT: When using information directly from the provided documents, preserve the [RAG] prefix at the beginning of that information.
+When generating your own explanations or transitional text, start those sentences with [AI]. 
+Every sentence or paragraph in your response must start with either [RAG] or [AI].
+The final line of your response MUST end with either [RAG] or [AI] based on whether the conclusion is from retrieved information or your own analysis."""
 
             user_message = f"""Answer the following query: "{query}"
 
@@ -711,8 +788,30 @@ Based on these documents:
             # Format final response
             response_text = response_text.replace("\n\n", "\n")
             
-            # Add source attribution
-            source_summary = f"\n\nInformation retrieved from {len(documents)} documents"
+            # Ensure the response properly uses [RAG] and [AI] prefixes
+            if not response_text.startswith("[RAG]") and not response_text.startswith("[AI]"):
+                lines = response_text.split("\n")
+                new_lines = []
+                for line in lines:
+                    if line.strip() and not line.startswith("[RAG]") and not line.startswith("[AI]"):
+                        new_lines.append(f"[AI] {line}")
+                    else:
+                        new_lines.append(line)
+                response_text = "\n".join(new_lines)
+            
+            # Ensure the response ends with [RAG] or [AI]
+            if not response_text.rstrip().endswith("[RAG]") and not response_text.rstrip().endswith("[AI]"):
+                # Check the last line to determine appropriate tag
+                lines = response_text.split("\n")
+                last_line = lines[-1] if lines else ""
+                
+                if last_line.startswith("[RAG]"):
+                    response_text = response_text.rstrip() + " [RAG]"
+                else:
+                    response_text = response_text.rstrip() + " [AI]"
+            
+            # Add source attribution with [AI] prefix
+            source_summary = f"\n\n[AI] Information retrieved from {len(documents)} documents"
             if vector_count > 0 and keyword_count > 0:
                 source_summary += f" using semantic search (Qdrant) ({vector_count} results) and keyword search (Supabase) ({keyword_count} results)"
             elif vector_count > 0:
@@ -726,14 +825,49 @@ Based on these documents:
                 sorted_sources = sorted(source_urls, key=lambda x: x['score'], reverse=True)
                 # Get top 2 sources
                 top_sources = sorted_sources[:2]
-                source_summary += "\n\nŠaltiniai:"
+                source_summary += "\n\n[AI] Šaltiniai:"
                 for idx, source in enumerate(top_sources, 1):
-                    source_summary += f"\n{idx}. {source['title']}: {source['url']}"
+                    source_summary += f"\n[AI] {idx}. {source['title']}: {source['url']}"
+                
+                # Ensure sources section ends with [AI]
+                source_summary += " [AI]"
+            else:
+                source_summary += " [AI]"
             
             response_text += source_summary
+            
+            # Check if this is for Telegram platform and remove tags if needed
+            platform = getattr(self, 'platform', None)
+            if platform and platform.lower() == 'telegram':
+                # More thorough removal of all variations of [RAG] and [AI] tags
+                # Remove tags at the beginning of lines with different spacing
+                response_text = re.sub(r'\[RAG\]\s*', '', response_text)
+                response_text = re.sub(r'\[AI\]\s*', '', response_text)
+                
+                # Remove tags at the end of lines with different spacing
+                response_text = re.sub(r'\s*\[RAG\]', '', response_text)
+                response_text = re.sub(r'\s*\[AI\]', '', response_text)
+                
+                # Remove any remaining tags (in case they appear in the middle)
+                response_text = response_text.replace('[RAG]', '')
+                response_text = response_text.replace('[AI]', '')
+                
+                logger.info("Removed [RAG] and [AI] tags for Telegram platform in _generate_response")
             
             return response_text
             
         except Exception as e:
             self.logger.error(f"Error in response generation: {e}", exc_info=True)
-            return f"Nepavyko sugeneruoti detalaus atsakymo. Bandykite dar kartą arba užduokite kitą klausimą.\n\nInformation retrieved from {len(documents)} documents using semantic search (Qdrant) (Collection: Information)." 
+            error_response = f"[AI] Nepavyko sugeneruoti detalaus atsakymo. Bandykite dar kartą arba užduokite kitą klausimą. [AI]"
+            
+            # Check if this is for Telegram platform and remove tags
+            platform = getattr(self, 'platform', None)
+            if platform and platform.lower() == 'telegram':
+                error_response = re.sub(r'\[RAG\]\s*', '', error_response)
+                error_response = re.sub(r'\[AI\]\s*', '', error_response)
+                error_response = re.sub(r'\s*\[RAG\]', '', error_response)
+                error_response = re.sub(r'\s*\[AI\]', '', error_response)
+                error_response = error_response.replace('[RAG]', '')
+                error_response = error_response.replace('[AI]', '')
+            
+            return error_response 

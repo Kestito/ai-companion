@@ -112,6 +112,50 @@ results = await store.parallel_search(
 )
 ```
 
+#### Configuration Notes
+
+- **Qdrant Client Configuration**: The Qdrant client is initialized with `check_compatibility=False` to prevent version compatibility warnings. This setting allows the client to connect to Qdrant servers of different versions without strict version checking, which is useful in environments where the Qdrant server version might be different from what the client expects.
+
+```python
+# Example Qdrant client initialization
+self.client = QdrantClient(
+    url=settings.QDRANT_URL,
+    api_key=settings.QDRANT_API_KEY,
+    timeout=60,
+    check_compatibility=False,  # Skip version compatibility checking
+)
+```
+
+- **Qdrant Authentication**: The system uses a JWT token-based authentication for connecting to the Qdrant cloud instance. The API key was updated in May 2025 to a non-expiring token, resolving previous authentication issues.
+
+```python
+# Example of the Qdrant API key format
+api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0..."  # JWT format
+```
+
+- **Azure OpenAI Embeddings Configuration**: The embeddings client is configured using settings from the centralized settings object to ensure consistency across the application.
+
+```python
+# Example Azure OpenAI Embeddings initialization
+self.embeddings = AzureOpenAIEmbeddings(
+    azure_deployment=settings.AZURE_EMBEDDING_DEPLOYMENT,
+    model=settings.FALLBACK_EMBEDDING_MODEL,
+    azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+    api_key=settings.AZURE_OPENAI_API_KEY,
+    api_version=settings.AZURE_EMBEDDING_API_VERSION,
+)
+```
+
+- **Embedding Response Format**: The AzureOpenAIEmbeddings client's `aembed_query` method returns a list directly containing the embedding vector, rather than an object with an embeddings attribute. This is handled in the `_get_embedding` method:
+
+```python
+# Example embedding retrieval
+embedding_result = await self.embeddings.aembed_query(text)
+if isinstance(embedding_result, list) and embedding_result:
+    # embedding_result is directly the embedding vector
+    return embedding_result
+```
+
 ### 4. Response Generator
 
 Creates coherent responses based on retrieved information:
