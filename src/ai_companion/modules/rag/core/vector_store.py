@@ -3,10 +3,9 @@
 from typing import List, Optional, Dict, Any, Tuple
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain_core.documents import Document
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 from qdrant_client.http.exceptions import UnexpectedResponse
 from supabase import create_client
-import os
 import logging
 import asyncio
 import re
@@ -39,7 +38,8 @@ class VectorStoreRetriever:
             self.embeddings = AzureOpenAIEmbeddings(
                 azure_deployment=embedding_deployment
                 or settings.AZURE_EMBEDDING_DEPLOYMENT,
-                model=embedding_model or settings.FALLBACK_EMBEDDING_MODEL,  # Use FALLBACK_EMBEDDING_MODEL from settings
+                model=embedding_model
+                or settings.FALLBACK_EMBEDDING_MODEL,  # Use FALLBACK_EMBEDDING_MODEL from settings
                 azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_EMBEDDING_API_VERSION,  # Use API version from settings
@@ -55,9 +55,7 @@ class VectorStoreRetriever:
             )
 
             # Initialize Supabase client
-            self.supabase = create_client(
-                settings.SUPABASE_URL, settings.SUPABASE_KEY
-            )
+            self.supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
             logger.info(
                 f"VectorStoreRetriever initialized with collection: {collection_name}"
@@ -108,20 +106,32 @@ class VectorStoreRetriever:
                     # Check if embedding_result is already a list (direct embedding vector)
                     if isinstance(embedding_result, list):
                         if embedding_result:
-                            self.logger.info(f"Got embedding with {len(embedding_result)} dimensions")
+                            self.logger.info(
+                                f"Got embedding with {len(embedding_result)} dimensions"
+                            )
                             return embedding_result
                         else:
-                            self.logger.error("Azure OpenAI returned empty embedding list")
+                            self.logger.error(
+                                "Azure OpenAI returned empty embedding list"
+                            )
                             return []
-                    
+
                     # If not a list, could be older format with embeddings attribute
-                    elif hasattr(embedding_result, "embeddings") and embedding_result.embeddings and len(embedding_result.embeddings) > 0:
-                        self.logger.info(f"Using embeddings attribute with {len(embedding_result.embeddings[0])} dimensions")
+                    elif (
+                        hasattr(embedding_result, "embeddings")
+                        and embedding_result.embeddings
+                        and len(embedding_result.embeddings) > 0
+                    ):
+                        self.logger.info(
+                            f"Using embeddings attribute with {len(embedding_result.embeddings[0])} dimensions"
+                        )
                         return embedding_result.embeddings[0]
-                    
+
                     # Unknown format
                     else:
-                        self.logger.error(f"Unknown embedding result format: {type(embedding_result)}")
+                        self.logger.error(
+                            f"Unknown embedding result format: {type(embedding_result)}"
+                        )
                         return []
 
                 except RateLimitError as rle:

@@ -24,7 +24,7 @@ class SpeechToText:
             if not settings.AZURE_OPENAI_API_KEY:
                 raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
             # Check for Whisper model name
-            if not hasattr(settings, 'STT_MODEL_NAME'):
+            if not hasattr(settings, "STT_MODEL_NAME"):
                 raise ValueError("Missing required setting: STT_MODEL_NAME")
         except AttributeError:
             raise ValueError("Missing required setting: AZURE_OPENAI_API_KEY")
@@ -36,7 +36,7 @@ class SpeechToText:
             self._client = AzureOpenAI(
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_OPENAI_API_VERSION,
-                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             )
         return self._client
 
@@ -66,7 +66,7 @@ class SpeechToText:
                 # Use aiofiles to read the file asynchronously
                 async with aiofiles.open(temp_file_path, "rb") as audio_file:
                     file_content = await audio_file.read()
-                
+
                 # Use the STT model name from settings
                 transcription = self.client.audio.transcriptions.create(
                     file=file_content,

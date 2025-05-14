@@ -1723,8 +1723,8 @@ class TelegramBot:
                 )
                 request_info = {"chat_id": chat_id, "text_preview": text_preview}
             logger.debug(f"Making request to {method} with params: {request_info}")
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Could not log request_info for {method}: {e}")
 
         while attempt < retries:
             try:
@@ -1793,7 +1793,7 @@ class TelegramBot:
                         retry_after = response_json.get("parameters", {}).get(
                             "retry_after", 5
                         )
-                    except:
+                    except Exception:
                         retry_after = (
                             5  # Default retry time if we couldn't parse the response
                         )
@@ -2227,7 +2227,7 @@ class TelegramBot:
         try:
             # Get all memory sources for comprehensive context
             # Use standardized session ID format
-            session_id = f"telegram-{chat_id}-{user_id}"
+            _session_id = f"telegram-{chat_id}-{user_id}"
 
             # Track important entities and topics mentioned
             important_topics = set()
@@ -2644,8 +2644,11 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Application shutdown requested by user (KeyboardInterrupt).")
     except Exception as e:
-        logging.critical(f"CRITICAL ERROR in telegram_bot.py __main__: {e}", exc_info=True)
+        logging.critical(
+            f"CRITICAL ERROR in telegram_bot.py __main__: {e}", exc_info=True
+        )
         # Optionally, re-raise or exit with error code
         # raise
         import sys
-        sys.exit(1) # Ensure a non-zero exit code on critical failure
+
+        sys.exit(1)  # Ensure a non-zero exit code on critical failure

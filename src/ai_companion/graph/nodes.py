@@ -2,19 +2,11 @@ import os
 from uuid import uuid4
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import re
-import asyncio
 import json
-import traceback
-import base64
-import aiohttp
-import httpx
 from langchain_core.messages import HumanMessage, RemoveMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import AzureChatOpenAI
-from openai.types.chat import ChatCompletionSystemMessageParam
-from langsmith import Client as LangSmithClient
 
 from ai_companion.graph.utils.chains import (
     get_character_response_chain,
@@ -29,12 +21,10 @@ from ai_companion.graph.state import AICompanionState
 from ai_companion.modules.schedules.context_generation import ScheduleContextGenerator
 from ai_companion.settings import settings
 from ai_companion.modules.memory.long_term.memory_manager import (
-    get_memory_manager,
     get_initialized_memory_manager,
 )
 from ai_companion.utils.supabase import get_supabase_client
 # Uncomment the import now that a stub exists
-from ai_companion.utils.elevenlabs import generate_audio
 # from ai_companion.core.prompts import (
 # VOICE_GENERATION_PROMPT,
 # DETAILED_INSTRUCTIONS_PROMPT,
@@ -42,16 +32,9 @@ from ai_companion.utils.elevenlabs import generate_audio
 # MEMORY_EXTRACTION_PROMPT,
 # SUMMARIZE_CONVERSATION_PROMPT,
 # )
-from ai_companion.modules.memory.long_term.memory_manager import (
-    get_memory_manager,
-    get_initialized_memory_manager,
-)
-from ai_companion.graph.utils.helpers import get_chat_model
 # from ai_companion.models.domain import PatientInfo # Commenting out missing import
 # from ai_companion.modules.database.user_repository import UserRepository # Commenting out missing import
 # from ai_companion.utils.sql import create_pgsql_connection # Commenting out missing import
-from ai_companion.settings import settings
-from ai_companion.graph.state import AICompanionState
 
 logger = logging.getLogger(__name__)
 
@@ -336,7 +319,7 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
         logger.info(f"Conversation response: {response_content}")
 
         # Store the response in memory
-        memory_manager = await get_initialized_memory_manager()
+        _memory_manager = await get_initialized_memory_manager()
 
         # Use multiple strategies to find platform/user_id and patient_id
         # First check if patient_id is already in state
@@ -430,7 +413,7 @@ async def conversation_node(state: AICompanionState, config: RunnableConfig):
                 }
 
                 # Store as a single conversation memory
-                memory_id = await memory_manager.add_memory(
+                _memory_id = await _memory_manager.add_memory(
                     json.dumps(memory_data), metadata=memory_metadata
                 )
 
@@ -506,14 +489,14 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
 
             # Get platform from metadata if available
             platform = message_metadata.get("platform", "")
-            
+
             # If platform is not in metadata, try to get it from other sources
             if not platform:
                 # Try to get platform from state
                 configurable = state.get("configurable", {})
                 user_metadata = configurable.get("user_metadata", {})
                 platform = user_metadata.get("platform", "")
-                
+
                 # If still not available, try thread_id which might contain platform info
                 if not platform and "thread_id" in configurable:
                     thread_id = configurable.get("thread_id", "")
@@ -521,9 +504,9 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                         # thread_id format is often "platform-chat_id-user_id"
                         platform = thread_id.split("-")[0]
                         logger.info(f"Extracted platform from thread_id: {platform}")
-            
+
             logger.info(f"Using platform '{platform}' for RAG response")
-            
+
             response, relevant_docs = await rag_chain.query(
                 query=last_message,
                 memory_context=combined_context,  # Pass combined context
@@ -619,27 +602,35 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 enhancement_text = enhancement_response.content.strip()
 
                 # Ensure enhancement text has proper prefixes
-                if enhancement_text and not enhancement_text.startswith("[RAG]") and not enhancement_text.startswith("[AI]"):
+                if (
+                    enhancement_text
+                    and not enhancement_text.startswith("[RAG]")
+                    and not enhancement_text.startswith("[AI]")
+                ):
                     lines = enhancement_text.split("\n")
                     new_lines = []
                     for line in lines:
-                        if line.strip() and not line.startswith("[RAG]") and not line.startswith("[AI]"):
+                        if (
+                            line.strip()
+                            and not line.startswith("[RAG]")
+                            and not line.startswith("[AI]")
+                        ):
                             new_lines.append(f"[AI] {line}")
                         else:
                             new_lines.append(line)
                     enhancement_text = "\n".join(new_lines)
-                
+
                 # Ensure enhancement text ends with the appropriate tag
-                if not enhancement_text.rstrip().endswith("[RAG]") and not enhancement_text.rstrip().endswith("[AI]"):
+                if not enhancement_text.rstrip().endswith(
+                    "[RAG]"
+                ) and not enhancement_text.rstrip().endswith("[AI]"):
                     if enhancement_text.rstrip().split("\n")[-1].startswith("[RAG]"):
                         enhancement_text = enhancement_text.rstrip() + " [RAG]"
                     else:
                         enhancement_text = enhancement_text.rstrip() + " [AI]"
 
                 # Append enhancement and confidence to the response
-                confidence_note = (
-                    f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
-                )
+                confidence_note = f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
                 enhanced_response = f"{response}\n\n{enhancement_text}{confidence_note}"
 
                 logger.info(
@@ -652,9 +643,7 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
                 logger.error(f"Error in response enhancement: {e}")
                 confidence_rating = 7  # Default value
                 confidence_level = "Medium"  # Default value
-                confidence_note = (
-                    f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
-                )
+                confidence_note = f"\n\n[AI] Confidence: {confidence_level} ({confidence_rating}/10) [AI]"
                 enhanced_response = response + confidence_note
 
             # Create context with sources
@@ -746,7 +735,9 @@ async def rag_node(state: AICompanionState, config: RunnableConfig) -> Dict[str,
         return {
             "messages": [
                 *state["messages"],
-                AIMessage(content="[AI] Atsiprašau, įvyko klaida. Prašome bandyti vėliau. [AI]"),
+                AIMessage(
+                    content="[AI] Atsiprašau, įvyko klaida. Prašome bandyti vėliau. [AI]"
+                ),
             ]
         }
 
@@ -943,13 +934,11 @@ async def summarize_conversation_node(state: AICompanionState):
 async def memory_injection_node(state: AICompanionState) -> Dict[str, str]:
     """Inject relevant memories into the conversation state."""
     logger.info("Starting memory injection")
-    
-    try:
-        # ... existing code ...
 
+    try:
         # Get memory manager instance
-        memory_manager = await get_initialized_memory_manager()
-        
+        _memory_manager = await get_initialized_memory_manager()
+
         # ... rest of the function continues unchanged ...
         return {}  # Return placeholder
     except Exception as e:
@@ -960,11 +949,11 @@ async def memory_injection_node(state: AICompanionState) -> Dict[str, str]:
 async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
     """Extract and store important memories from the conversation."""
     logger.info("Starting memory extraction node")
-    
+
     try:
         memory_manager = await get_initialized_memory_manager()
         messages = state.get("messages", [])
-        
+
         # Attempt to get a primary patient_id from the state if available
         # This could be set by an upstream node or initial session setup
         # Ensure config and configurable exist before trying to access them
@@ -981,42 +970,62 @@ async def memory_extraction_node(state: AICompanionState) -> Dict[str, Dict]:
 
         for message in messages:
             if isinstance(message, HumanMessage):
-                logger.debug(f"Processing HumanMessage for memory extraction: {message.content[:50]}...")
-                
+                logger.debug(
+                    f"Processing HumanMessage for memory extraction: {message.content[:50]}..."
+                )
+
                 current_message_patient_id = patient_id_from_state
-                
+
                 # Ensure metadata exists
                 if not hasattr(message, "metadata") or message.metadata is None:
                     message.metadata = {}
 
                 # Try to get platform and user_id from message metadata for more specific patient lookup
                 platform = message.metadata.get("platform")
-                platform_user_id = message.metadata.get("user_id") # Assuming 'user_id' in metadata is the platform_id
+                platform_user_id = message.metadata.get(
+                    "user_id"
+                )  # Assuming 'user_id' in metadata is the platform_id
 
                 if platform and platform_user_id:
-                    logger.debug(f"Message has platform ({platform}) and platform_user_id ({platform_user_id}). Looking up patient_id.")
-                    retrieved_patient_id = get_patient_id_from_platform_id(platform, platform_user_id)
+                    logger.debug(
+                        f"Message has platform ({platform}) and platform_user_id ({platform_user_id}). Looking up patient_id."
+                    )
+                    retrieved_patient_id = get_patient_id_from_platform_id(
+                        platform, platform_user_id
+                    )
                     if retrieved_patient_id:
                         current_message_patient_id = retrieved_patient_id
-                        logger.info(f"Using patient_id {current_message_patient_id} from platform details for message.")
+                        logger.info(
+                            f"Using patient_id {current_message_patient_id} from platform details for message."
+                        )
                     else:
-                        logger.warning(f"Could not retrieve patient_id for platform {platform}, user {platform_user_id}. May fall back to state patient_id or fail.")
+                        logger.warning(
+                            f"Could not retrieve patient_id for platform {platform}, user {platform_user_id}. May fall back to state patient_id or fail."
+                        )
                 elif patient_id_from_state:
-                    logger.info(f"Using patient_id {patient_id_from_state} from state for message as no platform details found in message metadata.")
+                    logger.info(
+                        f"Using patient_id {patient_id_from_state} from state for message as no platform details found in message metadata."
+                    )
                 else:
-                    logger.warning("No patient_id found in state or message metadata. Cannot store memory for this message.")
-                    continue # Skip this message
+                    logger.warning(
+                        "No patient_id found in state or message metadata. Cannot store memory for this message."
+                    )
+                    continue  # Skip this message
 
                 if current_message_patient_id:
                     message.metadata["patient_id"] = current_message_patient_id
-                    logger.debug(f"Attempting to store memory for patient_id: {current_message_patient_id}")
+                    logger.debug(
+                        f"Attempting to store memory for patient_id: {current_message_patient_id}"
+                    )
                     await memory_manager.extract_and_store_memories(message)
                 else:
-                    logger.warning(f"Skipping memory extraction for a message due to missing patient_id: {message.content[:50]}...")
-        
+                    logger.warning(
+                        f"Skipping memory extraction for a message due to missing patient_id: {message.content[:50]}..."
+                    )
+
         logger.info("Finished memory extraction process.")
         return {}
-        
+
     except Exception as e:
         logger.error(f"Error in memory extraction node: {e}", exc_info=True)
         return {}
@@ -1185,7 +1194,7 @@ async def rag_retry_node(state: AICompanionState) -> Dict[str, Any]:
 
         # Get current retry count and increment it
         retry_count = state.get("rag_retry_count", 0) + 1
-        
+
         last_message = (
             get_message_content(state["messages"][-1]) if state["messages"] else ""
         )
@@ -1212,22 +1221,25 @@ async def rag_retry_node(state: AICompanionState) -> Dict[str, Any]:
         try:
             # Extract options from message metadata if available
             message_metadata = {}
-            if hasattr(state["messages"][-1], "metadata") and state["messages"][-1].metadata:
+            if (
+                hasattr(state["messages"][-1], "metadata")
+                and state["messages"][-1].metadata
+            ):
                 message_metadata = state["messages"][-1].metadata
-            
+
             detailed_response = message_metadata.get("detailed_response", True)
             with_citations = message_metadata.get("with_citations", True)
-            
+
             # Get platform from metadata if available
             platform = message_metadata.get("platform", "")
-            
+
             # If platform is not in metadata, try to get it from other sources
             if not platform:
                 # Try to get platform from state
                 configurable = state.get("configurable", {})
                 user_metadata = configurable.get("user_metadata", {})
                 platform = user_metadata.get("platform", "")
-                
+
                 # If still not available, try thread_id which might contain platform info
                 if not platform and "thread_id" in configurable:
                     thread_id = configurable.get("thread_id", "")
@@ -1235,9 +1247,9 @@ async def rag_retry_node(state: AICompanionState) -> Dict[str, Any]:
                         # thread_id format is often "platform-chat_id-user_id"
                         platform = thread_id.split("-")[0]
                         logger.info(f"Extracted platform from thread_id: {platform}")
-            
+
             logger.info(f"Using platform '{platform}' for RAG response")
-            
+
             response, relevant_docs = await rag_chain.query(
                 query=last_message,
                 memory_context=combined_context,  # Pass combined context
@@ -1272,29 +1284,35 @@ async def rag_retry_node(state: AICompanionState) -> Dict[str, Any]:
             # Add retry information and confidence
             confidence_rating = 6  # Moderate confidence for retry responses
             confidence_level = "Medium"
-            
+
             # Add prefix to response if not already present
             if not response.startswith("[RAG]") and not response.startswith("[AI]"):
                 # Split into lines and add prefixes where missing
                 lines = response.split("\n")
                 new_lines = []
                 for line in lines:
-                    if line.strip() and not line.startswith("[RAG]") and not line.startswith("[AI]"):
+                    if (
+                        line.strip()
+                        and not line.startswith("[RAG]")
+                        and not line.startswith("[AI]")
+                    ):
                         new_lines.append(f"[AI] {line}")
                     else:
                         new_lines.append(line)
                 response = "\n".join(new_lines)
-            
+
             # Ensure the response ends with [RAG] or [AI]
-            if not response.rstrip().endswith("[RAG]") and not response.rstrip().endswith("[AI]"):
+            if not response.rstrip().endswith(
+                "[RAG]"
+            ) and not response.rstrip().endswith("[AI]"):
                 lines = response.split("\n")
                 last_line = lines[-1] if lines else ""
-                
+
                 if last_line.startswith("[RAG]"):
                     response = response.rstrip() + " [RAG]"
                 else:
                     response = response.rstrip() + " [AI]"
-            
+
             # Add retry information to the response
             enhanced_response = (
                 f"{response}\n\n"
@@ -1388,35 +1406,51 @@ async def rag_retry_node(state: AICompanionState) -> Dict[str, Any]:
                 },
                 "rag_retry_count": retry_count,
             }
-    
+
     except Exception as e:
         logger.error(f"Critical error in RAG retry node: {e}", exc_info=True)
         return {
             "messages": [
                 *state["messages"],
-                AIMessage(content="[AI] Atsiprašau, įvyko klaida bandant surasti papildomos informacijos. Prašome bandyti vėliau. [AI]"),
+                AIMessage(
+                    content="[AI] Atsiprašau, įvyko klaida bandant surasti papildomos informacijos. Prašome bandyti vėliau. [AI]"
+                ),
             ]
         }
 
 
-async def patient_registration_node(state: AICompanionState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+async def patient_registration_node(
+    state: AICompanionState, config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
     """Placeholder for patient registration logic."""
-    logger.info("Executing placeholder patient_registration_node. Actual registration logic needs implementation.")
+    logger.info(
+        "Executing placeholder patient_registration_node. Actual registration logic needs implementation."
+    )
     # This node should handle extracting patient details and saving them.
     # For now, it simulates a failure or an unimplemented state.
     return {
         "registration_result": "failed",
         "error": "Patient registration not yet implemented.",
-        "messages": [*state["messages"], AIMessage(content="Patient registration is currently unavailable.")]
+        "messages": [
+            *state["messages"],
+            AIMessage(content="Patient registration is currently unavailable."),
+        ],
     }
 
 
-async def schedule_message_node(state: AICompanionState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+async def schedule_message_node(
+    state: AICompanionState, config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
     """Placeholder for message scheduling logic."""
-    logger.info("Executing placeholder schedule_message_node. Actual scheduling logic needs implementation.")
+    logger.info(
+        "Executing placeholder schedule_message_node. Actual scheduling logic needs implementation."
+    )
     # This node should parse schedule commands, interact with a scheduler service, etc.
     return {
         "schedule_result": "failed",
         "error": "Message scheduling not yet implemented.",
-        "messages": [*state["messages"], AIMessage(content="Message scheduling is currently unavailable.")]
+        "messages": [
+            *state["messages"],
+            AIMessage(content="Message scheduling is currently unavailable."),
+        ],
     }

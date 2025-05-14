@@ -1,12 +1,10 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from pydantic import BaseModel, Field
-from typing import Dict, Any
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
-from langchain_core.runnables import RunnableConfig
 
-from ai_companion.core.prompts import CHARACTER_CARD_PROMPT, ROUTER_PROMPT
-from ai_companion.graph.utils.helpers import AsteriskRemovalParser, get_chat_model
+from ai_companion.core.prompts import CHARACTER_CARD_PROMPT
+from ai_companion.graph.utils.helpers import get_chat_model
 
 
 class RouterResponse(BaseModel):
@@ -17,26 +15,28 @@ class RouterResponse(BaseModel):
 
 def get_rag_chain():
     """Get the RAG chain for knowledge retrieval and response generation."""
-    from ai_companion.modules.rag.core.rag_chain import get_rag_chain as get_lithuanian_rag_chain
-    
+    from ai_companion.modules.rag.core.rag_chain import (
+        get_rag_chain as get_lithuanian_rag_chain,
+    )
+
     # Return the LithuanianRAGChain instance instead of creating a new LLMChain
     return get_lithuanian_rag_chain()
-    
+
     # The code below is commented out as we're now using the proper RAG chain
     # Original implementation:
     # template = """You are Evelina, a knowledgeable AI assistant. Use the provided context to answer questions accurately.
     # Always base your responses on the retrieved information from the knowledge base.
-    # 
+    #
     # Context: {context}
     # Question: {question}
-    # 
+    #
     # Instructions:
     # 1. Base your response ONLY on the provided context
     # 2. If the context doesn't contain relevant information, acknowledge that and suggest seeking more information
     # 3. Maintain a friendly and helpful tone while staying factual
     # 4. Respond in Lithuanian language
     # 5. Never make up information - only use what's in the context
-    # 
+    #
     # Response:"""
     #
     # prompt = PromptTemplate(
@@ -65,17 +65,10 @@ def get_router_chain() -> LLMChain:
     
     Return ONLY the workflow name without any explanation.
     """
-    
-    prompt = PromptTemplate(
-        template=template,
-        input_variables=["messages"]
-    )
-    
-    return LLMChain(
-        llm=get_chat_model(),
-        prompt=prompt,
-        verbose=True
-    )
+
+    prompt = PromptTemplate(template=template, input_variables=["messages"])
+
+    return LLMChain(llm=get_chat_model(), prompt=prompt, verbose=True)
 
 
 def get_character_response_chain(summary: str = ""):
@@ -83,9 +76,7 @@ def get_character_response_chain(summary: str = ""):
     system_message = CHARACTER_CARD_PROMPT
 
     if summary:
-        system_message += (
-            f"\n\nSummary of conversation earlier between Evelina and the user: {summary}"
-        )
+        system_message += f"\n\nSummary of conversation earlier between Evelina and the user: {summary}"
 
     # Add RAG handling instructions
     system_message += """
@@ -119,7 +110,7 @@ def get_character_response_chain(summary: str = ""):
         [
             ("system", system_message),
             MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}")
+            ("human", "{input}"),
         ]
     )
 

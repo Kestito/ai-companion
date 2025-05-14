@@ -10,14 +10,15 @@ import json
 import logging
 import asyncio
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple, Union, Set
+from typing import Dict, List, Optional, Any
 import uuid
 
-from langchain_core.messages import BaseMessage as LangchainMessage
-from langchain_community.chat_message_histories import ChatMessageHistory
 
 from ai_companion.modules.memory.short_term import get_short_term_memory_manager
-from ai_companion.modules.memory.long_term.memory_manager import get_memory_manager, get_initialized_memory_manager
+from ai_companion.modules.memory.long_term.memory_manager import (
+    get_memory_manager,
+    get_initialized_memory_manager,
+)
 from ai_companion.utils.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ class MemoryService:
         """
         # Ensure service is initialized
         await self.ensure_initialized()
-        
+
         try:
             # Create session ID with patient context
             session_id = f"{platform}-{user_id}-patient-{patient_id}"
@@ -205,7 +206,7 @@ class MemoryService:
         """
         # Ensure service is initialized
         await self.ensure_initialized()
-        
+
         try:
             # Create session ID using consistent format with patient context
             session_id = f"{platform}-{user_id}-patient-{patient_id}"
@@ -486,7 +487,10 @@ class MemoryService:
                             try:
                                 context = item.get("context", {})
                                 if isinstance(context, str):
-                                    context = json.loads(context)
+                                    try:
+                                        context = json.loads(context)
+                                    except json.JSONDecodeError:
+                                        context = {}
 
                                 # Extract conversation
                                 conversation = context.get("conversation")
@@ -545,7 +549,7 @@ class MemoryService:
                     if isinstance(context, str):
                         try:
                             context = json.loads(context)
-                        except:
+                        except json.JSONDecodeError:
                             context = {}
 
                     # Extract message from context

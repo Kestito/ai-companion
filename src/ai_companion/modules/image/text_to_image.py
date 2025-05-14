@@ -1,9 +1,7 @@
 import base64
 import logging
 import os
-import asyncio
-import random
-from typing import Optional, List
+from typing import Optional
 
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI
